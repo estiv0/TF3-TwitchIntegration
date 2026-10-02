@@ -45,6 +45,18 @@ web/
 - Oś y w grze rośnie na północ, a na ekranie w dół, dlatego mapa używa `(x, -y)`.
 - Linii nie da się jeszcze narysować, bo mod nie eksportuje pozycji stacji (patrz `docs/reactive-dynamic-export.md`, sekcja „stacje”).
 
+## Wdrożenie na Azure
+
+Strona działa na **Azure Static Web Apps** (plan Free: własna domena i HTTPS za darmo). Dane czyta z kontenera `live` konta `tf3liveblob` (`AZURE_DATA_URL` w `config.js`). Wgrywanie: [../infra/deploy-web.ps1](../infra/deploy-web.ps1), wymaga Node.js (`winget install OpenJS.NodeJS.LTS`).
+
+1. Portal → Static Web App → **Overview → Manage deployment token**, skopiuj token.
+2. Pierwszy raz: `.\infra\deploy-web.ps1 -DeployToken "<token>"` (token zostaje zapamiętany zaszyfrowany w `%LOCALAPPDATA%\Tf3Bridge`).
+3. Kolejne razy: `.\infra\deploy-web.ps1`. `-DryRun` tylko pokazuje listę plików.
+
+Skrypt wysyła całą stronę bez `data\`, `img_res\`, `serve.ps1` i `README.md`, przez Static Web Apps CLI (`npx @azure/static-web-apps-cli`).
+
+Zapasowo strona może też działać jako „Static website” konta Storage (kontener `$web`, adres `https://tf3liveblob.z36.web.core.windows.net/`, bez HTTPS dla własnej domeny): `.\infra\deploy-web.ps1 -Target storage -SasUrl "<Blob SAS URL kontenera $web>"` (SAS z prawami Create + Write). Ten wariant wysyła tylko zmienione pliki (`-Force` wszystkie) i sam ustawia typy plików i `Cache-Control`.
+
 ## Debug
 
 W konsoli przeglądarki: `tf3.map` (widok, dane) i `tf3.sidebar`.

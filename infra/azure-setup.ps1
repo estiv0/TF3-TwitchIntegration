@@ -1,4 +1,4 @@
-# Zakłada w Azure miejsce na dane strony: konto Storage z publicznym kontenerem "live".
+﻿# Zakłada w Azure miejsce na dane strony: konto Storage z publicznym kontenerem "live".
 # Tf3Bridge wysyła tam latest/*.json tokenem SAS (tylko zapis), strona czyta anonimowo.
 #
 # Wymaga Azure CLI (winget install Microsoft.AzureCLI) i subskrypcji Azure.
