@@ -31,8 +31,8 @@ const COLOR_VARS = ["--map-bg", "--map-street", "--map-street-tunnel", "--map-tr
 
 // Ikony stacji: od tej skali kółko z ikoną, poniżej sama kropka w kolorze rodzaju.
 const STATION_ICON_SCALE = 0.05;
-const STATION_ICON_PX = 14;
-const OUTPUT_ICON_PX = 16; // ikonki produkcji nad zakładem
+const STATION_ICON_PX = 24;
+const OUTPUT_ICON_PX = 26; // ikonki produkcji nad zakładem
 
 // Kolory z CSS (motyw) odczytywane raz na klatkę, nie dla każdego obiektu.
 function readTheme() {
@@ -326,7 +326,7 @@ export class MapView {
   drawIndustries() {
     const css = (name) => this.theme[name];
     const { ctx } = this;
-    const size = this.view.scale > 0.08 ? 7 : 5;
+    const size = this.view.scale > 0.08 ? 20 : 10;
     const colors = { raw: css("--industry-raw"), processing: css("--industry-processing") };
     const outputs = this.view.scale >= STATION_ICON_SCALE; // jak ikony stacji: tylko po przybliżeniu
     for (const ind of this.industries) {
@@ -360,7 +360,7 @@ export class MapView {
     const css = (name) => this.theme[name];
     const { ctx } = this;
     const icons = this.view.scale >= STATION_ICON_SCALE;
-    const r = icons ? 10 : 3.5;
+    const r = icons ? 10 : 8;
     for (const st of this.stations) {
       const [x, y] = this.toScreen(st.px, st.py);
       if (x < -20 || y < -20 || x > this.w + 20 || y > this.h + 20) continue;
