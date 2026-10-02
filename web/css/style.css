@@ -233,6 +233,8 @@ button { font: inherit; color: inherit; }
 .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 12px; margin: 12px 0 0; }
 .stats dt { color: var(--muted); font-size: 11px; }
 .stats dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stats .pos { color: var(--live); }
+.stats .neg { color: var(--error); }
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .chips li {

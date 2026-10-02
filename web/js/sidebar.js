@@ -2,7 +2,7 @@
 
 import {
   STATION_ORDER, carrierIcon, carrierName, cargoLabel, escapeHtml as esc, iconHtml, landUseName, stationName,
-  fmtDec, fmtInt, fmtPercent, industryOfStation, linesByIndustry, linesByStation, rgb, stationImg, stationUse, townSize,
+  fmtDec, fmtInt, fmtMoney, fmtPercent, industryOfStation, linesByIndustry, linesByStation, rgb, stationImg, stationUse, townSize,
 } from "./format.js";
 import { locale, t } from "./i18n.js";
 import { industryKind, industryOutputs } from "./map.js";
@@ -361,8 +361,21 @@ function lineDetail(l, focusedStop) {
     <dl class="stats">
       ${stat(t("line.vehicles"), fmtInt(l.vehicleCount))}
       ${stat(t("line.stops"), fmtInt(l.stops?.length ?? 0))}
+      ${l.stats ? lineStats(l.stats) : ""}
     </dl>
+    ${l.stats?.cargo?.length ? `<h3>${esc(t("line.loadNow"))}</h3><ul class="chips">${l.stats.cargo.map((c) => `<li>${cargoLabel(c.cargo)}<span>${fmtInt(c.used)} / ${fmtInt(c.capacity)}</span></li>`).join("")}</ul>` : ""}
     ${stops ? `<h3>${esc(t("line.stops"))}</h3><ol class="stops">${stops}</ol>` : ""}`;
+}
+
+// Statystyki z moda, odświeżane raz na miesiąc gry (lua_mod: collectors.lineStats).
+function lineStats(s) {
+  const money = (n) => (n == null ? "–" : `<span class="${n < 0 ? "neg" : "pos"}">${esc(fmtMoney(n))}</span>`);
+  return `
+      ${stat(t("line.profit12m"), money(s.profit12m))}
+      ${s.prevYear != null ? stat(t("line.profitYear", { year: s.prevYear }), money(s.profitPrevYear)) : ""}
+      ${stat(t("line.transported12m"), fmtInt(s.transported12m))}
+      ${stat(t("line.rate"), fmtInt(s.rate))}
+      ${stat(t("line.load"), fmtPercent(s.load))}`;
 }
 
 const stat = (label, value) => `<div><dt>${esc(label)}</dt><dd>${value}</dd></div>`;

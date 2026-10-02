@@ -292,6 +292,52 @@ function C.vehicles()
 	return out
 end
 
+-- Statystyki linii jak w oknie linii i statystykach gry (gui/line_vehicle_mgmt/line_react_util.tl,
+-- gui/statistics/statistic_lines.tl). prevYear = { year, from, to } albo nil.
+-- Każde pole osobno w pcall: błąd jednego API nie kasuje reszty.
+function C.lineStats(id, now, prevYear)
+	local function try(f)
+		local ok, v = pcall(f)
+		if ok and type(v) == "number" then return v end
+		return nil
+	end
+	local finance = api.engine.util.finance
+	local yearLen = try(function() return api.util.getDefaultYearDuration() end)
+	local s = {
+		-- przychody minus utrzymanie z ostatnich 12 miesięcy ("Zysk" w oknie linii)
+		profit12m = yearLen and try(function()
+			return finance.calculateBalance({ id }, math.max(now - yearLen, 0), now, true)
+		end),
+		transported12m = try(function()
+			return api.engine.util.logbook.getLogValuePerYear(id, "itemsTransported")
+		end),
+		rate = try(function() return api.engine.util.line.calcLineStationThroughput(id) end),
+	}
+	if prevYear then
+		s.prevYear = prevYear.year
+		s.profitPrevYear = try(function()
+			return finance.calculateBalance({ id }, prevYear.from, prevYear.to, true)
+		end)
+	end
+
+	-- zapełnienie pojazdów w chwili pomiaru, per ładunek i łącznie
+	local ok, usages = pcall(function() return api.engine.util.line.getLineCapacityUsages(id, false) end)
+	if ok and usages then
+		local used, capacity, cargo = 0, 0, {}
+		for cargoId, u in util.pairs(usages) do
+			local uu, uc = util.field(u, "used"), util.field(u, "capacity")
+			if type(uu) == "number" and type(uc) == "number" and uc > 0 then
+				used, capacity = used + uu, capacity + uc
+				cargo[#cargo + 1] = { cargo = C.cargoName(cargoId), used = util.round(uu, 0), capacity = util.round(uc, 0) }
+			end
+		end
+		table.sort(cargo, function(a, b) return a.capacity > b.capacity end)
+		s.load = capacity > 0 and util.round(used / capacity, 3) or nil
+		s.cargo = cargo
+	end
+	return s
+end
+
 -- stationKinds: encja stacji -> rodzaj (z C.stations); nośnik linii bez pojazdów.
 function C.lines(vehicles, stationKinds)
 	-- liczba pojazdów i nośnik linii z już zebranej listy pojazdów (bez drugiego przejścia)

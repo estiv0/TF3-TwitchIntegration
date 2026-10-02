@@ -168,4 +168,28 @@ function util.date(gameTime)
 	return { year = field(d, "year"), month = field(d, "month"), day = field(d, "day") }
 end
 
+-- gameTime początku roku kalendarzowego, w którym leży t. Odwrotności getCalendarDate
+-- w API nie ma, więc szukamy binarnie (~30 wywołań); tak jak getCalendarDate zakłada
+-- obecną prędkość kalendarza. 0, gdy rok zaczął się przed startem gry (albo kalendarz
+-- stoi), nil przy błędzie API.
+function util.yearStart(t)
+	local d = util.date(t)
+	if not d or type(d.year) ~= "number" then return nil end
+	local function sameYear(x)
+		local dx = util.date(x)
+		return dx ~= nil and dx.year == d.year
+	end
+	local span = 400 * util.dayLength()
+	while sameYear(t - span) do
+		if t - span <= 0 then return 0 end
+		span = span * 2
+	end
+	local lo, hi = math.max(t - span, 0), t -- lo: poprzedni rok, hi: ten rok
+	while hi - lo > 1 do
+		local mid = math.floor((lo + hi) / 2)
+		if sameYear(mid) then hi = mid else lo = mid end
+	end
+	return hi
+end
+
 return util

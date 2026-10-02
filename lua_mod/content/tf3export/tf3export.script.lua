@@ -55,6 +55,9 @@ local S = {
 	terrain = nil,           -- bieżące zadanie eksportu terenu
 	terrainSig = nil,        -- podpis rewizji terenu z ostatniego eksportu
 	lastTerrainCheckWall = nil,
+	lineStats = {},          -- id linii -> statystyki (collectors.lineStats), odświeżane co miesiąc gry
+	lineStatsKey = nil,      -- miesiąc kalendarza, z którego pochodzi cache
+	prevYear = nil,          -- { year, from, to } poprzedniego roku kalendarzowego albo nil
 }
 local terrainBenchDone = false -- raz na uruchomienie gry, nie na sesję
 
@@ -69,7 +72,38 @@ local function newSession(now)
 	S.lastDynamicTime, S.lastDynamicWall = nil, nil
 	S.rows, S.net, S.netDirtyWall, S.lastNetworkWall = nil, nil, nil, nil
 	S.seqTerrain, S.terrain, S.terrainSig, S.lastTerrainCheckWall = 0, nil, nil, nil
+	S.lineStats, S.lineStatsKey, S.prevYear = {}, nil, nil
 	util.log(string.format("new session %s (writer mode '%s')", S.session, writer.mode()))
+end
+
+---------------------------------------------------------------- statystyki linii
+-- Finanse i przewozy zmieniają się wolno, więc liczymy je raz na miesiąc kalendarza gry
+-- (nowa linia dostaje statystyki od razu), a w pozostałych eksportach wysyłamy cache.
+local function attachLineStats(lines, now)
+	local d = util.date(now)
+	local key = d and d.year and d.month and (d.year * 12 + d.month)
+		or math.floor(now / (30 * util.dayLength())) -- bez kalendarza: co ~30 dni
+	if key ~= S.lineStatsKey then
+		S.lineStatsKey, S.lineStats, S.prevYear = key, {}, nil
+		local okY, ys = pcall(util.yearStart, now)
+		if okY and ys and ys > 0 then
+			local okP, ps = pcall(util.yearStart, ys - 1)
+			if okP and ps then S.prevYear = { year = d.year - 1, from = ps, to = ys } end
+		end
+	end
+	local t0, n = util.clock(), 0
+	for _, l in ipairs(lines) do
+		if S.lineStats[l.id] == nil then
+			local ok, st = pcall(collectors.lineStats, l.id, now, S.prevYear)
+			S.lineStats[l.id] = ok and st or false
+			if not ok then util.log("lineStats failed for " .. tostring(l.id) .. ": " .. tostring(st)) end
+			n = n + 1
+		end
+		l.stats = S.lineStats[l.id] or nil
+	end
+	if n > 0 then
+		util.log(string.format("line stats: %d lines in %.1f ms", n, (util.clock() - t0) * 1000))
+	end
 end
 
 ---------------------------------------------------------------- eksport dynamiczny
@@ -84,6 +118,9 @@ local function exportDynamic(now)
 		util.log("stations failed: " .. tostring(stations))
 		stations, stationKinds = {}, {}
 	end
+	local lines = collectors.lines(vehicles, stationKinds)
+	local okLS, errLS = pcall(attachLineStats, lines, now) -- nowe API: błąd nie blokuje eksportu
+	if not okLS then util.log("line stats failed: " .. tostring(errLS)) end
 	local snapshot = {
 		v = cfg.formatVersion,
 		kind = "dynamic",
@@ -95,7 +132,7 @@ local function exportDynamic(now)
 		towns = collectors.towns(),
 		industries = collectors.industries(),
 		stations = stations,
-		lines = collectors.lines(vehicles, stationKinds),
+		lines = lines,
 		vehicles = vehicles,
 	}
 	local t1 = util.clock()
