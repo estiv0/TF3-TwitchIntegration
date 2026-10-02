@@ -8,6 +8,7 @@ TestResults/
 .idea/
 .vs/
 .vscode/
+.claude/
 
 # Lokalne wyniki middle app (Development publikuje do web/data)
 middle_app/src/Tf3Bridge/output/
