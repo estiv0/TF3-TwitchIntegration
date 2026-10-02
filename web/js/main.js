@@ -71,6 +71,16 @@ $("#stations").addEventListener("click", (e) => {
   e.currentTarget.setAttribute("aria-pressed", String(map.toggleStations()));
 });
 
+// Esc odznacza wybrany obiekt (linię, stację...), chyba że zamknął już pinezkę albo trwa pisanie w polu.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || e.defaultPrevented) return;
+  if (e.target.closest?.("input, textarea, select, [contenteditable]")) return;
+  if (!sidebar.selected) return;
+  map.select(null);
+  sidebar.setSelected(null);
+  map.hoverLine(null);
+});
+
 let stationLines = new Map();  // id stacji -> linie (do tooltipa)
 let industryLines = new Map(); // id zakładu -> linie jego stacji
 

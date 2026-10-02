@@ -43,6 +43,7 @@ export class PinController {
     this.linkRow = form.querySelector("[data-pin-link]");
     this.urlInput = form.querySelector("#pin-url");
     this.copyBtn = form.querySelector("[data-pin-copy]");
+    this.cancelBtn = form.querySelector("[data-pin-cancel]");
     this.saved = null; // pinezka z linku - wraca po anulowaniu nowej
     this.draft = null;
 
@@ -51,7 +52,7 @@ export class PinController {
     this.note.addEventListener("input", () => {
       if (!this.draft) return;
       this.draft.note = this.note.value;
-      this.linkRow.hidden = true; // opis się zmienił - stary link już nie pasuje
+      this.showLink(false); // opis się zmienił - stary link już nie pasuje
       map.setPin(this.draft);
     });
 
@@ -59,13 +60,15 @@ export class PinController {
       e.preventDefault();
       this.createLink();
     });
-    form.querySelector("[data-pin-cancel]").addEventListener("click", () => this.cancel());
-    this.copyBtn.addEventListener("click", () => this.copy());
+    this.cancelBtn.addEventListener("click", () => this.cancel());
+    this.copyBtn.addEventListener("click", () => this.copyAndClose());
 
     document.addEventListener("keydown", (e) => {
       if (e.key !== "Escape") return;
       if (map.pinMode) map.setPinMode(false);
       else if (!form.hidden) this.cancel();
+      else return;
+      e.preventDefault(); // obsłużone - main.js nie odznacza już zaznaczenia
     });
 
     window.addEventListener("hashchange", () => this.loadFromHash());
@@ -82,7 +85,7 @@ export class PinController {
     this.draft = { x, y, note: "" };
     this.map.setPin(this.draft);
     this.note.value = "";
-    this.linkRow.hidden = true;
+    this.showLink(false);
     this.form.hidden = false;
     this.position(sx, sy);
     this.note.focus();
@@ -102,21 +105,32 @@ export class PinController {
     history.replaceState(null, "", url);
     this.saved = { ...this.draft };
     this.urlInput.value = url;
-    this.linkRow.hidden = false;
+    this.showLink(true);
     this.position(...this.formAnchor());
-    this.copy();
+    this.copyAndClose();
   }
 
-  async copy() {
+  // Link gotowy: pole z linkiem i "Zamknij" zamiast "Anuluj" (pinezka jest już zapisana w linku).
+  showLink(on) {
+    clearTimeout(this.closeTimer);
+    this.linkRow.hidden = !on;
+    this.cancelBtn.textContent = t(on ? "pin.close" : "pin.cancel");
+    this.copyBtn.textContent = t("pin.copy");
+  }
+
+  // Po skopiowaniu chwilę pokazujemy "Skopiowano" i zamykamy okienko. Bez schowka (np. http)
+  // okienko zostaje z zaznaczonym linkiem do ręcznego Ctrl+C.
+  async copyAndClose() {
+    clearTimeout(this.closeTimer);
     this.urlInput.select();
     try {
       await navigator.clipboard.writeText(this.urlInput.value);
-      this.copyBtn.textContent = t("pin.copied");
     } catch {
-      this.copyBtn.textContent = "Ctrl+C"; // schowek niedostępny (np. http) - link jest zaznaczony
+      this.copyBtn.textContent = "Ctrl+C";
+      return;
     }
-    clearTimeout(this.copyTimer);
-    this.copyTimer = setTimeout(() => { this.copyBtn.textContent = t("pin.copy"); }, 2000);
+    this.copyBtn.textContent = t("pin.copied");
+    this.closeTimer = setTimeout(() => this.cancel(), 900);
   }
 
   // Formularz został przy pinezce: jej pozycja na ekranie (do ponownego dopasowania po zmianie wysokości).
@@ -126,6 +140,7 @@ export class PinController {
   }
 
   cancel() {
+    clearTimeout(this.closeTimer);
     this.form.hidden = true;
     this.draft = null;
     this.map.setPin(this.saved);
@@ -135,6 +150,7 @@ export class PinController {
     const pin = readPinHash();
     if (!pin) return;
     this.saved = { x: pin.x, y: pin.y, note: pin.note };
+    clearTimeout(this.closeTimer);
     this.form.hidden = true;
     this.draft = null;
     this.map.setPin(this.saved);
