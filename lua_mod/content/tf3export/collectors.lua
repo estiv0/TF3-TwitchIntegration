@@ -324,11 +324,12 @@ function C.lineStats(id, now, prevYear)
 	local ok, usages = pcall(function() return api.engine.util.line.getLineCapacityUsages(id, false) end)
 	if ok and usages then
 		local used, capacity, cargo = 0, 0, {}
-		for cargoId, u in util.pairs(usages) do
+		-- to tablica Lua indeksowana od 1: CargoTypeId = indeks - 1 (jak w gui/main/cargo_util.tl)
+		for index, u in util.pairs(usages) do
 			local uu, uc = util.field(u, "used"), util.field(u, "capacity")
-			if type(uu) == "number" and type(uc) == "number" and uc > 0 then
+			if type(index) == "number" and type(uu) == "number" and type(uc) == "number" and uc > 0 then
 				used, capacity = used + uu, capacity + uc
-				cargo[#cargo + 1] = { cargo = C.cargoName(cargoId), used = util.round(uu, 0), capacity = util.round(uc, 0) }
+				cargo[#cargo + 1] = { cargo = C.cargoName(index - 1), used = util.round(uu, 0), capacity = util.round(uc, 0) }
 			end
 		end
 		table.sort(cargo, function(a, b) return a.capacity > b.capacity end)

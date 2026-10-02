@@ -145,7 +145,7 @@ Ze strony [api.engine](https://wiki.transportfever3.com/script-doc/api/engine.ht
 - **Statystyki gotowe w grze** (`api.engine.util.*`):
   - `finance.getPlayersBalance(player)`, `finance.calculateEarnings(player)`
   - `stock.getCargoShippedPerYear(stockList)`, `getCargoDeliveredPerYear(...)`
-  - `line.getLineCapacityUsages(line)`, `line.getLineProblems()`
+  - `line.getLineCapacityUsages(line)`, `line.getLineProblems()`. Uwaga: mimo typu `{CargoTypeId : ...}` w tealdef wynik to tablica Lua od 1, więc `CargoTypeId = indeks - 1` (tak liczy `gui/main/cargo_util.tl`). Bez tego pasażerowie (id 0) wychodzą jako zboże (id 1).
   - `industry.getIndustryProductivityInfo(e)`
   - `headquarters.getTransportedData()`, `getCompaniesValue()`
   - `logbook.getLogValueMostRecent(e, name)`
