@@ -167,6 +167,9 @@ button { font: inherit; color: inherit; }
   background: var(--bg); border: 1px solid var(--border); font-size: 12px;
 }
 .chips li span { color: var(--muted); }
+.detail h2 .swatch { display: inline-block; vertical-align: middle; }
+.stops { margin: 0; padding-left: 22px; font-size: 13px; line-height: 1.6; }
+.stops li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
 
 .list { flex: 1; overflow-y: auto; margin: 0; padding: 0 6px 10px; list-style: none; }
 .row {

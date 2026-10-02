@@ -1,7 +1,7 @@
 // Panel boczny: listy (miasta, przemysł, linie) i szczegóły zaznaczonego obiektu.
 
 import {
-  CARRIER_ICON, LAND_USE_PL, cargoName, escapeHtml as esc,
+  CARRIER_ICON, CARRIER_PL, LAND_USE_PL, cargoName, escapeHtml as esc,
   fmtDec, fmtInt, fmtPercent, rgb, townSize,
 } from "./format.js";
 import { industryKind } from "./map.js";
@@ -79,7 +79,7 @@ export class Sidebar {
     } else {
       html = [...d.lines].filter((l) => match(l.name)).sort((a, b) => (b.vehicleCount ?? 0) - (a.vehicleCount ?? 0))
         .map((l) => `
-          <li class="row row-static">
+          <li class="row" data-kind="line" data-id="${l.id}" aria-current="${isSel("line", l.id)}">
             <span class="swatch" style="background:${rgb(l.color)}"></span>
             <span class="row-name">${CARRIER_ICON[l.carrier] ?? ""} ${esc(l.name)}</span>
             <span class="row-value">${fmtInt(l.vehicleCount)} poj. · ${l.stops?.length ?? 0} przyst.</span>
@@ -97,13 +97,15 @@ export class Sidebar {
       this.detail.hidden = true;
       return;
     }
-    const item = (sel.kind === "town" ? d.towns : d.industries).find((x) => x.id === sel.id);
+    const list = { town: d.towns, industry: d.industries, line: d.lines }[sel.kind] ?? [];
+    const item = list.find((x) => x.id === sel.id);
     if (!item) {
       this.detail.hidden = true;
       return;
     }
     this.detail.hidden = false;
-    this.detail.innerHTML = sel.kind === "town" ? townDetail(item) : industryDetail(item);
+    this.detail.innerHTML = sel.kind === "town" ? townDetail(item)
+      : sel.kind === "line" ? lineDetail(item, d.vehicles ?? []) : industryDetail(item);
   }
 }
 
@@ -142,6 +144,20 @@ function industryDetail(i) {
     </dl>
     ${inputs.length ? `<h3>Potrzebuje</h3><ul class="chips">${inputs.map((s) => `<li>${esc(cargoName(s.cargo))}</li>`).join("")}</ul>` : ""}
     ${outputs.size ? `<h3>Produkuje</h3><ul class="chips">${[...outputs].map(([c, a]) => `<li>${esc(cargoName(c))}<span>${fmtInt(a)}</span></li>`).join("")}</ul>` : ""}`;
+}
+
+function lineDetail(l, vehicles) {
+  const stopped = vehicles.filter((v) => v.line === l.id && v.stopped).length;
+  const stops = (l.stops ?? []).map((s, i) => `<li>${esc(s.name ?? `Przystanek ${i + 1}`)}</li>`).join("");
+  return `
+    <h2><span class="swatch" style="background:${rgb(l.color)}"></span> ${esc(l.name)}</h2>
+    <p class="detail-sub">${CARRIER_ICON[l.carrier] ?? ""} ${esc(CARRIER_PL[l.carrier] ?? "Linia")}</p>
+    <dl class="stats">
+      ${stat("Pojazdy", fmtInt(l.vehicleCount))}
+      ${stat("Zatrzymane", fmtInt(stopped))}
+      ${stat("Przystanki", fmtInt(l.stops?.length ?? 0))}
+    </dl>
+    ${stops ? `<h3>Przystanki</h3><ol class="stops">${stops}</ol>` : ""}`;
 }
 
 const stat = (label, value) => `<div><dt>${esc(label)}</dt><dd>${value}</dd></div>`;

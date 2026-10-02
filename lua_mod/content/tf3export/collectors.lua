@@ -180,6 +180,27 @@ function C.lines(vehicles)
 	for id in pairs(perLine) do addLine(id) end
 	table.sort(ids)
 
+	-- Pozycja przystanku: stop.station to indeks (od 0) w STATION_GROUP.stations.
+	-- Encja stacji zwykle nie ma BOUNDING_VOLUME, więc sięgamy do jej konstrukcji;
+	-- w ostateczności środek grupy stacji. Cache na jeden eksport (stacje się powtarzają).
+	local stopPos = {}
+	local function stationPos(group, index)
+		local key = tostring(group) .. ":" .. tostring(index)
+		if stopPos[key] == nil then
+			local sg = util.comp(group, ct.STATION_GROUP)
+			local station = sg and util.list(sg.stations)[(index or 0) + 1]
+			local pos = station and util.center(station)
+			if not pos and station then
+				local ok, constr = pcall(function()
+					return api.engine.system.streetConnectorSystem.getConstructionEntityForStation(station)
+				end)
+				if ok and constr and constr > 0 then pos = util.center(constr) end
+			end
+			stopPos[key] = pos or util.center(group) or false
+		end
+		return stopPos[key] or nil
+	end
+
 	local out = {}
 	for _, id in ipairs(ids) do
 		local l = util.comp(id, ct.LINE)
@@ -190,6 +211,8 @@ function C.lines(vehicles)
 					group = s.stationGroup,
 					station = s.station,
 					terminal = s.terminal,
+					pos = stationPos(s.stationGroup, s.station),
+					name = util.name(s.stationGroup),
 				}
 			end
 			local color = util.comp(id, ct.COLOR)

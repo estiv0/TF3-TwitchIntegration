@@ -1,7 +1,8 @@
 // Mapa: sieć (Path2D w układzie świata), miasta i zakłady (w układzie ekranu), pan/zoom, hover, wybór.
 // Układ "ścieżki" = (x, -y) ze świata gry, bo w grze oś y rośnie na północ, a na ekranie w dół.
 
-import { townSize } from "./format.js";
+import { rgb, townSize } from "./format.js";
+import { RouteGraph } from "./route.js";
 
 const RAW_INDUSTRIES = new Set([
   "coal_mine", "iron_ore_mine", "quarry", "forest", "farm", "oil_well",
@@ -34,6 +35,9 @@ export class MapView {
     this.bbox = null;           // zakres sieci w układzie ścieżki
     this.towns = [];
     this.industries = [];
+    this.lines = new Map();     // id -> linia z dynamic.json
+    this.graph = null;          // RouteGraph - do wyznaczania tras linii
+    this.routeCache = new Map(); // id linii -> { key, route }
     this.selected = null;       // { kind, id }
     this.hovered = null;
     this.fitted = false;
@@ -68,6 +72,8 @@ export class MapView {
     }
 
     this.paths = paths;
+    this.graph = new RouteGraph(network);
+    this.routeCache.clear();
     if (network.edges.length) this.bbox = { minX, minY, maxX, maxY };
     if (!this.fitted) this.fit();
     this.requestDraw();
@@ -78,6 +84,8 @@ export class MapView {
       kind: "town", id: t.id, data: t, px: t.pos[0], py: -t.pos[1],
       r: Math.max(4, Math.min(14, 2 + Math.sqrt(townSize(t)) * 0.4)),
     })).sort((a, b) => b.r - a.r);
+
+    this.lines = new Map((dynamic.lines ?? []).map((l) => [l.id, l]));
 
     this.industries = (dynamic.industries ?? []).filter((i) => i.pos).map((i) => ({
       kind: "industry", id: i.id, data: i, px: i.pos[0], py: -i.pos[1], type: industryKind(i),
@@ -105,17 +113,24 @@ export class MapView {
     this.requestDraw();
   }
 
-  fit() {
-    if (!this.bbox || !(this.w > 0) || !(this.h > 0)) return;
-    const { minX, minY, maxX, maxY } = this.bbox;
+  fit(bbox = this.bbox, maxScale = Infinity) {
+    if (!bbox || !(this.w > 0) || !(this.h > 0)) return;
+    const { minX, minY, maxX, maxY } = bbox;
     this.view.x = (minX + maxX) / 2;
     this.view.y = (minY + maxY) / 2;
-    this.view.scale = Math.min(this.w / (maxX - minX || 1), this.h / (maxY - minY || 1)) * 0.92;
-    this.fitted = true;
+    this.view.scale = Math.min(maxScale, this.w / (maxX - minX || 1) * 0.85, this.h / (maxY - minY || 1) * 0.85);
+    if (bbox === this.bbox) this.fitted = true;
     this.requestDraw();
   }
 
   focus(kind, id) {
+    if (kind === "line") {
+      this.selected = { kind, id };
+      const route = this.lineRoute(id);
+      if (route?.bbox) this.fit(route.bbox, 1);
+      this.requestDraw();
+      return;
+    }
     const item = (kind === "town" ? this.towns : this.industries).find((x) => x.id === id);
     if (!item) return;
     this.selected = { kind, id };
@@ -178,6 +193,52 @@ export class MapView {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.drawIndustries();
     this.drawTowns();
+    if (this.selected?.kind === "line") this.drawLine(this.selected.id);
+  }
+
+  // Trasa linii liczona leniwie i trzymana do zmiany przystanków / sieci.
+  lineRoute(id) {
+    const line = this.lines.get(id);
+    if (!line || !this.graph) return null;
+    const key = JSON.stringify([line.carrier, (line.stops ?? []).map((s) => s.pos)]);
+    const cached = this.routeCache.get(id);
+    if (cached?.key === key) return cached.route;
+    const route = this.graph.routeLine(line);
+    this.routeCache.set(id, { key, route });
+    return route;
+  }
+
+  // Linia na wierzchu: obrys w kolorze tła, trasa w kolorze linii, przystanki jako kółka.
+  drawLine(id) {
+    const route = this.lineRoute(id);
+    if (!route) return;
+    const css = (name) => this.theme[name];
+    const { ctx, dpr, w, h, view } = this;
+    const s = view.scale;
+    const color = rgb(this.lines.get(id).color, css("--accent"));
+
+    ctx.save();
+    ctx.setTransform(s * dpr, 0, 0, s * dpr, (w / 2 - view.x * s) * dpr, (h / 2 - view.y * s) * dpr);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = css("--map-bg");
+    ctx.lineWidth = 7 / s;
+    ctx.stroke(route.path);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 4 / s;
+    ctx.stroke(route.path);
+    ctx.restore();
+
+    ctx.lineWidth = 2.5;
+    for (const stop of route.stops) {
+      const [x, y] = this.toScreen(stop.x, stop.y);
+      ctx.fillStyle = css("--map-bg");
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      ctx.arc(x, y, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
   }
 
   drawIndustries() {
