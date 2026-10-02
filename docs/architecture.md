@@ -45,13 +45,13 @@ Na MVP wystarczy polling co 5–10 s. Dane i tak zmieniają się co 2 dni gry, c
 
 ## Middle app (C#)
 
-**Stan (2026-10-02):** wersja lokalna jest gotowa w `middle_app/` (`Tf3Bridge`) i przetestowana na prawdziwych plikach z gry. Publikuje `latest/dynamic.json`, `latest/network.json` i `latest/meta.json` do lokalnego folderu. Szczegóły w [../middle_app/README.md](../middle_app/README.md). Wysyłka do Azure jeszcze nie jest zrobiona.
+**Stan (2026-10-02):** wersja lokalna jest gotowa w `middle_app/` (`Tf3Bridge`) i przetestowana na prawdziwych plikach z gry. Publikuje `latest/dynamic.json`, `latest/network.json` i `latest/meta.json` do lokalnego folderu. Szczegóły w [../middle_app/README.md](../middle_app/README.md). Wysyłka do Azure Blob Storage jest zrobiona (`AzureMirror`, zasoby zakłada `infra/azure-setup.ps1`), ale jeszcze nie przetestowana na prawdziwym koncie. Hosting strony w Static Web Apps jeszcze nie jest zrobiony.
 
 - `FileSystemWatcher` na `local\tf3export\*.lua` plus okresowy skan katalogu jako zabezpieczenie, bo watcher gubi zdarzenia przy buforze.
 - Z pliku wyciąga literał `json = "..."` i odwraca escapowanie Lua (`\"`, `\\`, `\n`, `\r`, `\t`, `\ddd`). Plik bez końcowego `end` jest jeszcze zapisywany, więc odczyt trzeba ponowić.
 - Pliki obsługuje kolejno według `(session, seq)`. Wysyła z ponawianiem prób (backoff), a plik usuwa **dopiero po sukcesie** uploadu. Przy zaległościach wystarczy wysłać najnowszy `dynamic` i najnowszy `network`.
 - Zapas (gdy `app.saveUserdata` zawiedzie): tail `crash_dump\stdout.txt` i sklejanie linii `[tf3x] <kind> <session> <seq> <part>/<total> ...`.
-- Konfiguracja (URL kontenera, token SAS, katalog) w `appsettings.json`, poza repo.
+- Konfiguracja katalogów w `appsettings.json`; URL kontenera i token SAS wpisywane w oknie aplikacji i trzymane w `%LOCALAPPDATA%\Tf3Bridge\azure.json` (SAS szyfrowany DPAPI), poza repo.
 - Najlepiej jako aplikacja z ikoną w trayu, z podglądem statusu: ostatni seq i błędy.
 
 ## Rozszerzenie Twitcha (po MVP)

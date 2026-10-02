@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
+using Tf3Bridge.Cloud;
 using Tf3Bridge.Processing;
 
 namespace Tf3Bridge.Ui;
@@ -14,11 +15,13 @@ public sealed class MainForm : Form
     private const int MaxLogLines = 500;
 
     private readonly BridgeRunner _runner;
+    private readonly AzureMirror _mirror;
     private readonly BridgeOptions _options;
     private readonly UiLogProvider _log;
 
     private readonly Label _status = new() { AutoSize = true, Font = new Font("Segoe UI", 11f, FontStyle.Bold) };
     private readonly Label _lastUpdate = new() { AutoSize = true, ForeColor = SystemColors.GrayText };
+    private readonly Label _azure = new() { AutoSize = true };
     private readonly Button _toggle = new() { AutoSize = true, MinimumSize = new Size(110, 30) };
     private readonly TextBox _logBox = new()
     {
@@ -32,9 +35,10 @@ public sealed class MainForm : Form
     private readonly List<string> _lines = [];
     private bool _closing;
 
-    public MainForm(BridgeRunner runner, BridgeOptions options, UiLogProvider log)
+    public MainForm(BridgeRunner runner, AzureMirror mirror, BridgeOptions options, UiLogProvider log)
     {
         _runner = runner;
+        _mirror = mirror;
         _options = options;
         _log = log;
 
@@ -46,10 +50,11 @@ public sealed class MainForm : Form
 
         var header = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false, Margin = new Padding(0) };
         var statusBox = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, Margin = new Padding(0, 0, 16, 0) };
-        statusBox.Controls.AddRange([_status, _lastUpdate]);
+        statusBox.Controls.AddRange([_status, _lastUpdate, _azure]);
         var openOutput = new Button { Text = "Folder wyjściowy", AutoSize = true, MinimumSize = new Size(0, 30) };
         var openInput = new Button { Text = "Folder moda", AutoSize = true, MinimumSize = new Size(0, 30) };
-        header.Controls.AddRange([statusBox, _toggle, openOutput, openInput]);
+        var azure = new Button { Text = "Azure…", AutoSize = true, MinimumSize = new Size(0, 30) };
+        header.Controls.AddRange([statusBox, _toggle, openOutput, openInput, azure]);
 
         var paths = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, Margin = new Padding(0, 8, 0, 8) };
         paths.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -75,6 +80,7 @@ public sealed class MainForm : Form
         };
         openOutput.Click += (_, _) => OpenFolder(_options.OutputDir);
         openInput.Click += (_, _) => OpenFolder(_options.InputDir);
+        azure.Click += (_, _) => EditAzure();
 
         var menu = new ContextMenuStrip();
         menu.Items.Add("Pokaż", null, (_, _) => RestoreFromTray());
@@ -179,6 +185,29 @@ public sealed class MainForm : Form
         }
 
         _lastUpdate.Text = LastUpdateText();
+        UpdateAzure();
+    }
+
+    private void EditAzure()
+    {
+        using var dialog = new AzureDialog(AzureSettingsStore.Load());
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        AzureSettingsStore.Save(dialog.Settings);
+        _mirror.Configure(dialog.Settings);
+        UpdateAzure();
+    }
+
+    private void UpdateAzure()
+    {
+        var s = _mirror.Status;
+        var last = s.LastUploadUtc is { } t ? $", ostatnio {t.ToLocalTime():HH:mm:ss}" : "";
+        (_azure.Text, _azure.ForeColor) = s.State switch
+        {
+            AzureState.Ok => ($"Azure: {s.Message}{last}", Color.FromArgb(46, 160, 67)),
+            AzureState.Error => ($"Azure: błąd: {s.Message}{last}", Color.Firebrick),
+            AzureState.Incomplete => ($"Azure: {s.Message}", Color.DarkOrange),
+            _ => ("Azure: wyłączone (tylko lokalnie)", SystemColors.GrayText),
+        };
     }
 
     // Czas ostatniej publikacji = data zapisu meta.json (publikowany przy każdej zmianie).

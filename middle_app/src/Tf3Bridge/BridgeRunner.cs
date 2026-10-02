@@ -1,13 +1,14 @@
 using Microsoft.Extensions.Options;
+using Tf3Bridge.Cloud;
 using Tf3Bridge.Processing;
 
 namespace Tf3Bridge;
 
 /// <summary>
-/// Runs <see cref="ExportProcessor"/> every PollIntervalMs. Can be started and stopped
+/// Runs <see cref="ExportProcessor"/> every PollIntervalMs, then uploads changes with <see cref="AzureMirror"/>. Can be started and stopped
 /// repeatedly from the UI; processor state (e.g. the assembled network) survives a restart.
 /// </summary>
-public sealed class BridgeRunner(ExportProcessor processor, IOptions<BridgeOptions> options, ILogger<BridgeRunner> logger)
+public sealed class BridgeRunner(ExportProcessor processor, AzureMirror mirror, IOptions<BridgeOptions> options, ILogger<BridgeRunner> logger)
 {
     private CancellationTokenSource? _cts;
     private Task? _loop;
@@ -56,6 +57,15 @@ public sealed class BridgeRunner(ExportProcessor processor, IOptions<BridgeOptio
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 logger.LogError(ex, "Processing pass failed");
+            }
+            // osobno: błąd przetwarzania nie wstrzymuje dosyłania tego, co już jest lokalnie
+            try
+            {
+                await mirror.FlushAsync(ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "Azure upload pass failed");
             }
         } while (await timer.WaitForNextTickAsync(ct));
     }

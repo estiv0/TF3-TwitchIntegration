@@ -11,7 +11,7 @@ TF3 (mod) ──app.saveUserdata──▶ ...\3493540\local\tf3export\*.lua
                                output\latest\meta.json      session, seq, data gry, liczba krawędzi
 ```
 
-Na razie zapis idzie lokalnie (`LocalFolderPublisher`). Układ `latest/*.json` jest taki sam, jaki trafi do Azure Blob Storage, więc wysyłka do Azure będzie po prostu drugą implementacją `IPublisher`.
+Zapis idzie zawsze lokalnie (`LocalFolderPublisher`), a opcjonalnie także do Azure Blob Storage w tym samym układzie `latest/*` (patrz „Wysyłka do Azure”).
 
 ## Uruchomienie
 
@@ -52,6 +52,27 @@ dotnet test
 
 Każdy klucz można nadpisać z linii poleceń, np. `Tf3Bridge.exe --Bridge:OutputDir=D:\tf3out` (w polu „Element docelowy” skrótu) albo `dotnet run -- --Bridge:OutputDir=D:\tf3out`.
 
+## Wysyłka do Azure
+
+Zapis zawsze idzie lokalnie (`web\data`), a jeśli w oknie włączono Azure, `AzureMirror` dosyła zmienione pliki do kontenera Blob Storage, z którego czyta strona.
+
+**Pierwsza konfiguracja:**
+
+1. Zainstaluj Azure CLI: `winget install Microsoft.AzureCLI` (potem nowe okno PowerShell).
+2. Załóż zasoby: `.\infra\azure-setup.ps1 -Name <nazwa>`. Nazwa konta: 3–24 małe litery i cyfry, unikalna w Azure, bo jest w adresie (`https://<nazwa>.blob.core.windows.net`). Skrypt zakłada grupę `tf3-live` w `polandcentral`, konto Storage (Standard_LRS), publiczny kontener `live`, CORS i wypisuje adres kontenera oraz token SAS (ważny rok, prawa tylko create + write).
+3. W Tf3Bridge kliknij **Azure…**, wklej adres i token, **Testuj połączenie**, **Zapisz**.
+4. Na stronie ustaw `dataBaseUrl` w `web/config.js` na `https://<nazwa>.blob.core.windows.net/live/latest/`. Do testu bez zmiany pliku: `http://localhost:5080/?data=https://<nazwa>.blob.core.windows.net/live/latest/`.
+
+Nowy token (np. gdy stary wygasa): `.\infra\azure-setup.ps1 -Name <nazwa> -SasOnly`.
+
+**Jak działa wysyłka:**
+
+- Token SAS jest w `%LOCALAPPDATA%\Tf3Bridge\azure.json`, zaszyfrowany DPAPI dla bieżącego konta Windows. Nie trafia do repo ani do `appsettings.json`.
+- Po każdym przebiegu wysyłane są pliki zmienione lokalnie. Po włączeniu Azure (albo starcie aplikacji) idzie wszystko, co już jest w `latest\`.
+- JSON jest gzipowany (`Content-Encoding: gzip`), wszystko ma `Cache-Control: no-cache`.
+- `meta.json` idzie zawsze na końcu i tylko gdy reszta się udała, bo strona po zmianie seq w meta od razu pobiera pozostałe pliki.
+- Błąd (brak sieci, wygasły token) nie zatrzymuje lokalnego zapisu. Pliki zostają w kolejce i są dosyłane co 10 s; stan widać w oknie („Azure: błąd: …”).
+
 ## Co robi jeden przebieg (`ExportProcessor`)
 
 1. Wczytuje pliki `<kind>_<session>_<seq>.lua`. Inne pliki, np. `bench_*`, pomija.
@@ -82,9 +103,15 @@ end
 middle_app/
   Tf3Bridge.sln
   src/Tf3Bridge/
-    Program.cs                    rejestracja usług
+    Program.cs                    rejestracja usług, start okna
     BridgeOptions.cs              konfiguracja
-    BridgeWorker.cs               pętla co PollIntervalMs
+    BridgeRunner.cs               pętla co PollIntervalMs (start/stop z okna): przebieg + wysyłka do Azure
+    Ui/MainForm.cs                okno: stan, log, zasobnik
+    Ui/AzureDialog.cs             ustawienia Azure z testem połączenia
+    Ui/UiLogProvider.cs           logi do okna
+    Cloud/AzureSettings.cs        adres kontenera + SAS, zapis zaszyfrowany (DPAPI)
+    Cloud/AzureMirror.cs          kolejka zmienionych plików i upload do Blob Storage
+    Cloud/MirroringPublisher.cs   zapis lokalny + oznaczenie pliku do wysyłki
     Input/LuaUserdataReader.cs    wyciąganie JSON z plików .lua
     Input/ExportFile.cs           parsowanie nazw plików
     Processing/ExportProcessor.cs jeden przebieg: sesje, sieć, dynamic, publikacja
@@ -92,10 +119,12 @@ middle_app/
     Processing/JsonRead.cs        bezpieczne odczyty liczb i stringów z JsonNode
     Output/IPublisher.cs          interfejs celu publikacji
     Output/LocalFolderPublisher.cs
-  tests/Tf3Bridge.Tests/          xUnit: reader, składanie sieci, przebieg procesora
+  tests/Tf3Bridge.Tests/          xUnit: reader, składanie sieci, przebieg procesora, ustawienia Azure
 ```
+
+Skrypt zakładający zasoby w Azure: [../infra/azure-setup.ps1](../infra/azure-setup.ps1).
 
 ## Następne kroki
 
-- `AzureBlobPublisher`: gzip, `Content-Encoding`, `Cache-Control`, token SAS (patrz [../docs/architecture.md](../docs/architecture.md)).
+- Hosting strony w Azure Static Web Apps (plan Free) i ustawienie tam `dataBaseUrl`.
 - Strona jest osobnym projektem w [../web/](../web/README.md). Lokalnie czyta to, co Tf3Bridge publikuje do `web/data/latest/`.

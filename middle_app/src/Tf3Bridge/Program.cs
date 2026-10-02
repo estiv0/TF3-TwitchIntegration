@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using Tf3Bridge;
+using Tf3Bridge.Cloud;
 using Tf3Bridge.Output;
 using Tf3Bridge.Processing;
 using Tf3Bridge.Ui;
@@ -34,14 +35,18 @@ internal static class Program
 
         builder.Services.Configure<BridgeOptions>(builder.Configuration.GetSection(BridgeOptions.Section));
         builder.Services.PostConfigure<BridgeOptions>(o => o.OutputDir = BridgeOptions.ResolveOutputDir(o.OutputDir));
-        builder.Services.AddSingleton<IPublisher, LocalFolderPublisher>();
+        builder.Services.AddSingleton<LocalFolderPublisher>();
+        builder.Services.AddSingleton<AzureMirror>();
+        builder.Services.AddSingleton<IPublisher, MirroringPublisher>();
         builder.Services.AddSingleton<ExportProcessor>();
         builder.Services.AddSingleton<BridgeRunner>();
 
         using var host = builder.Build();
         var runner = host.Services.GetRequiredService<BridgeRunner>();
         var options = host.Services.GetRequiredService<IOptions<BridgeOptions>>().Value;
+        var mirror = host.Services.GetRequiredService<AzureMirror>();
+        mirror.Configure(AzureSettingsStore.Load());
 
-        Application.Run(new MainForm(runner, options, uiLog));
+        Application.Run(new MainForm(runner, mirror, options, uiLog));
     }
 }
