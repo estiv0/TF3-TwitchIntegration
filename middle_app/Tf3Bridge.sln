@@ -1,0 +1,36 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{1E929853-52CE-47D0-A9FF-CB8C513D6B48}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tf3Bridge", "src\Tf3Bridge\Tf3Bridge.csproj", "{54AA7174-08E6-47A5-9876-11ADC364BA9D}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{31ED3B50-96E3-4DE6-A2CE-87CEAF987918}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tf3Bridge.Tests", "tests\Tf3Bridge.Tests\Tf3Bridge.Tests.csproj", "{135D750A-9FFE-4A45-8B83-56C56CF2ECB8}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{54AA7174-08E6-47A5-9876-11ADC364BA9D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{54AA7174-08E6-47A5-9876-11ADC364BA9D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{54AA7174-08E6-47A5-9876-11ADC364BA9D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{54AA7174-08E6-47A5-9876-11ADC364BA9D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{135D750A-9FFE-4A45-8B83-56C56CF2ECB8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{135D750A-9FFE-4A45-8B83-56C56CF2ECB8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{135D750A-9FFE-4A45-8B83-56C56CF2ECB8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{135D750A-9FFE-4A45-8B83-56C56CF2ECB8}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{54AA7174-08E6-47A5-9876-11ADC364BA9D} = {1E929853-52CE-47D0-A9FF-CB8C513D6B48}
+		{135D750A-9FFE-4A45-8B83-56C56CF2ECB8} = {31ED3B50-96E3-4DE6-A2CE-87CEAF987918}
+	EndGlobalSection
+EndGlobal

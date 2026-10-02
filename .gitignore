@@ -1,0 +1,21 @@
+# .NET
+bin/
+obj/
+TestResults/
+*.user
+
+# IDE
+.idea/
+.vs/
+.vscode/
+
+# Lokalne wyniki middle app
+middle_app/src/Tf3Bridge/output/
+
+# Web
+node_modules/
+dist/
+
+# OS
+Thumbs.db
+.DS_Store

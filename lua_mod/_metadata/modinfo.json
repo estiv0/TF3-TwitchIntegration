@@ -1,0 +1,22 @@
+{
+    "name": "TF3 Data Export",
+    "summary": "Exports towns, industries, lines, vehicles and the network to JSON files.",
+    "description": "Periodically exports game data (towns, industries, lines, vehicles) and the road/rail network to JSON files for an external companion app.",
+    "localization": {
+        "pl": {
+            "name": "TF3 Data Export",
+            "summary": "Eksport miast, przemysłu, linii, pojazdów i sieci do plików JSON.",
+            "description": "Okresowo eksportuje dane gry (miasta, przemysł, linie, pojazdy) oraz sieć dróg i torów do plików JSON dla zewnętrznej aplikacji."
+        }
+    },
+    "authors": [
+        {
+            "name": "estiv0",
+            "role": "CREATOR"
+        }
+    ],
+    "tags": [
+        "Script Mod"
+    ],
+    "url": ""
+}

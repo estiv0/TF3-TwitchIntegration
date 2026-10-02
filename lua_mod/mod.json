@@ -1,0 +1,11 @@
+{
+    "modId": "estiv0_tf3export",
+    "revision": 1,
+    "severityAdd": "None",
+    "severityRemove": "None",
+    "visible": true,
+    "cosmetic": true,
+    "dependencies": null,
+    "incompatibilities": null,
+    "params": null
+}
