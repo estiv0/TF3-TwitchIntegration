@@ -149,6 +149,21 @@ button { font: inherit; color: inherit; }
 }
 .search:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 
+.filters { display: flex; flex-wrap: wrap; gap: 6px; margin: -2px 10px 10px; }
+.filters[hidden] { display: none; }
+.filters button {
+  padding: 4px 10px; border-radius: 999px; cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); font: inherit; font-size: 12px;
+}
+.filters button:hover { color: var(--text); }
+.filters button[aria-pressed="true"] { color: var(--text); border-color: var(--accent); }
+.filters button span { opacity: .7; margin-left: 2px; }
+
+.row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.row-main .row-name { flex: none; }
+.row-hint { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-hint mark { background: none; color: var(--accent); }
+
 .detail {
   margin: 0 10px 10px; padding: 14px; border-radius: var(--radius);
   background: var(--panel-2); border: 1px solid var(--border);

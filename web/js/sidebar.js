@@ -18,13 +18,25 @@ export class Sidebar {
     this.list = root.querySelector("[data-list]");
     this.detail = root.querySelector("[data-detail]");
     this.search = root.querySelector("[data-search]");
+    this.carriers = root.querySelector("[data-carriers]");
+    this.carrier = "";          // filtr typu linii, "" = wszystkie
 
     root.querySelectorAll("[data-tab]").forEach((btn) =>
       btn.addEventListener("click", () => {
         this.tab = btn.dataset.tab;
         root.querySelectorAll("[data-tab]").forEach((b) => b.setAttribute("aria-selected", String(b === btn)));
+        this.carriers.hidden = this.tab !== "lines";
+        this.search.placeholder = this.tab === "lines" ? "Szukaj linii lub stacji…" : "Szukaj…";
         this.renderList();
       }));
+
+    this.carriers.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-carrier]");
+      if (!btn) return;
+      this.carrier = btn.dataset.carrier;
+      this.renderCarriers();
+      this.renderList();
+    });
 
     this.search.addEventListener("input", () => {
       this.filter = this.search.value.trim().toLowerCase();
@@ -42,6 +54,7 @@ export class Sidebar {
     this.root.querySelector('[data-count="towns"]').textContent = dynamic.towns?.length ?? 0;
     this.root.querySelector('[data-count="industries"]').textContent = dynamic.industries?.length ?? 0;
     this.root.querySelector('[data-count="lines"]').textContent = dynamic.lines?.length ?? 0;
+    this.renderCarriers();
     this.renderList();
     this.renderDetail();
   }
@@ -77,16 +90,35 @@ export class Sidebar {
             <span class="row-value">poz. ${i.level ?? "–"}</span>
           </li>`).join("");
     } else {
-      html = [...d.lines].filter((l) => match(l.name)).sort((a, b) => (b.vehicleCount ?? 0) - (a.vehicleCount ?? 0))
-        .map((l) => `
+      // Szukanie po nazwie linii albo po nazwach jej stacji; trafione stacje pokazujemy pod nazwą.
+      html = d.lines.filter((l) => !this.carrier || carrierKey(l) === this.carrier)
+        .map((l) => ({ l, stations: match(l.name) ? [] : matchingStations(l, this.filter) }))
+        .filter(({ l, stations }) => match(l.name) || stations.length)
+        .sort((a, b) => (b.l.vehicleCount ?? 0) - (a.l.vehicleCount ?? 0))
+        .map(({ l, stations }) => `
           <li class="row" data-kind="line" data-id="${l.id}" aria-current="${isSel("line", l.id)}">
             <span class="swatch" style="background:${rgb(l.color)}"></span>
-            <span class="row-name">${CARRIER_ICON[l.carrier] ?? ""} ${esc(l.name)}</span>
+            <span class="row-main">
+              <span class="row-name">${CARRIER_ICON[l.carrier] ?? ""} ${esc(l.name)}</span>
+              ${stations.length ? `<span class="row-hint">przez ${stations.map((s) => highlight(s, this.filter)).join(", ")}</span>` : ""}
+            </span>
             <span class="row-value">${fmtInt(l.vehicleCount)} poj. · ${l.stops?.length ?? 0} przyst.</span>
           </li>`).join("");
     }
 
     this.list.innerHTML = html || `<li class="empty">Brak wyników</li>`;
+  }
+
+  // Przyciski typów linii: tylko typy obecne w danych, z liczbą linii.
+  renderCarriers() {
+    const counts = new Map();
+    for (const l of this.dynamic?.lines ?? []) counts.set(carrierKey(l), (counts.get(carrierKey(l)) ?? 0) + 1);
+    if (this.carrier && !counts.has(this.carrier)) this.carrier = "";
+    const btn = (key, label, n) =>
+      `<button type="button" data-carrier="${key}" aria-pressed="${this.carrier === key}">${label}<span>${fmtInt(n)}</span></button>`;
+    this.carriers.innerHTML = btn("", "Wszystkie", this.dynamic?.lines?.length ?? 0)
+      + CARRIER_ORDER.filter((c) => counts.has(c))
+        .map((c) => btn(c, `${CARRIER_ICON[c] ?? ""} ${esc(CARRIER_PL[c] ?? "Bez pojazdów")}`, counts.get(c))).join("");
   }
 
   // ---------------------------------------------------------------- szczegóły
@@ -144,6 +176,23 @@ function industryDetail(i) {
     </dl>
     ${inputs.length ? `<h3>Potrzebuje</h3><ul class="chips">${inputs.map((s) => `<li>${esc(cargoName(s.cargo))}</li>`).join("")}</ul>` : ""}
     ${outputs.size ? `<h3>Produkuje</h3><ul class="chips">${[...outputs].map(([c, a]) => `<li>${esc(cargoName(c))}<span>${fmtInt(a)}</span></li>`).join("")}</ul>` : ""}`;
+}
+
+// Nośnik znamy z pojazdów, więc linia bez pojazdów ląduje w osobnej grupie.
+const CARRIER_ORDER = ["RAIL", "ROAD", "TRAM", "WATER", "AIR", "OTHER", "NONE"];
+const carrierKey = (l) => l.carrier ?? "NONE";
+
+// Unikalne nazwy stacji linii pasujące do frazy (stacja bywa na linii dwa razy, np. w pętli).
+function matchingStations(l, filter) {
+  if (!filter) return [];
+  const names = new Set((l.stops ?? []).map((s) => s.name).filter(Boolean));
+  return [...names].filter((n) => n.toLowerCase().includes(filter));
+}
+
+function highlight(text, filter) {
+  const i = text.toLowerCase().indexOf(filter);
+  if (i < 0) return esc(text);
+  return esc(text.slice(0, i)) + `<mark>${esc(text.slice(i, i + filter.length))}</mark>` + esc(text.slice(i + filter.length));
 }
 
 function lineDetail(l, vehicles) {
