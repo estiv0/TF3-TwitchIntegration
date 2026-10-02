@@ -8,8 +8,11 @@ public sealed class BridgeOptions
     /// <summary>Folder the mod writes to (app.saveUserdata "tf3export").</summary>
     public string InputDir { get; set; } = "";
 
-    /// <summary>Local publish target; mirrors the planned Blob Storage layout (latest/*.json).</summary>
-    public string OutputDir { get; set; } = "output";
+    /// <summary>
+    /// Local publish target; mirrors the planned Blob Storage layout (latest/*.json).
+    /// Empty = web/data of the repository the exe sits in (see <see cref="ResolveOutputDir"/>).
+    /// </summary>
+    public string OutputDir { get; set; } = "";
 
     public int PollIntervalMs { get; set; } = 500;
 
@@ -24,4 +27,22 @@ public sealed class BridgeOptions
 
     /// <summary>Write indented JSON to the output (debugging; larger files).</summary>
     public bool IndentOutput { get; set; }
+
+    /// <summary>
+    /// Relative paths are resolved against the exe folder, not the working directory, so the app
+    /// behaves the same from a shortcut, Explorer or `dotnet run`. Empty: walk up from the exe
+    /// to the folder containing web/index.html and use its web/data (where the local site reads);
+    /// outside the repository fall back to output/ next to the exe.
+    /// </summary>
+    public static string ResolveOutputDir(string dir)
+    {
+        var baseDir = AppContext.BaseDirectory;
+        if (!string.IsNullOrWhiteSpace(dir)) return Path.GetFullPath(dir, baseDir);
+        for (var d = new DirectoryInfo(baseDir); d is not null; d = d.Parent)
+        {
+            if (File.Exists(Path.Combine(d.FullName, "web", "index.html")))
+                return Path.Combine(d.FullName, "web", "data");
+        }
+        return Path.Combine(baseDir, "output");
+    }
 }

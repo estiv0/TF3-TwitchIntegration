@@ -1,6 +1,6 @@
 # Tf3Bridge: middle app
 
-Aplikacja w .NET 9 (Worker Service), która odbiera dane z moda `estiv0_tf3export` i publikuje je jako gotowe pliki JSON dla strony.
+Aplikacja okienkowa w .NET 9 (WinForms), która odbiera dane z moda `estiv0_tf3export` i publikuje je jako gotowe pliki JSON dla strony.
 
 ```
 TF3 (mod) ──app.saveUserdata──▶ ...\3493540\local\tf3export\*.lua
@@ -15,12 +15,22 @@ Na razie zapis idzie lokalnie (`LocalFolderPublisher`). Układ `latest/*.json` j
 
 ## Uruchomienie
 
-```bash
-cd middle_app/src/Tf3Bridge
-dotnet run
+Tf3Bridge to mała aplikacja okienkowa (WinForms). Okno pokazuje stan (działa / zatrzymany), czas ostatniej publikacji, foldery wejścia i wyjścia oraz log. Most rusza od razu po starcie.
+
+- **Zatrzymaj / Uruchom** wstrzymuje i wznawia przetwarzanie bez zamykania aplikacji.
+- **Minimalizacja** chowa okno do zasobnika (zielona kropka = działa). Dwuklik na ikonie przywraca okno, menu ikony ma „Zamknij”.
+- **Zamknięcie okna** kończy bieżący przebieg i wyłącza aplikację.
+- Może działać tylko jedna instancja; druga pokaże komunikat i się zakończy.
+
+Gotowy exe ze skrótem na pulpicie:
+
+```powershell
+middle_app\publish.ps1
 ```
 
-Można też otworzyć `Tf3Bridge.sln` w Riderze. SDK leży w `C:\Users\kinek\.dotnet`. Jeśli `dotnet` nie jest w `PATH`, użyj `C:\Users\kinek\.dotnet\dotnet.exe`.
+Skrypt buduje `middle_app\dist\Tf3Bridge.exe` (folder `dist\` jest w `.gitignore`) i tworzy skrót `Tf3Bridge` na pulpicie (`-NoShortcut` pomija skrót). Przed ponowną publikacją zamknij działającą aplikację.
+
+Z kodu: `dotnet run` w `middle_app/src/Tf3Bridge` albo `Tf3Bridge.sln` w Riderze. SDK leży w `C:\Users\kinek\.dotnet`. Jeśli `dotnet` nie jest w `PATH`, użyj `C:\Users\kinek\.dotnet\dotnet.exe`.
 
 Testy:
 
@@ -34,13 +44,13 @@ dotnet test
 | Klucz | Domyślnie | Opis |
 |---|---|---|
 | `InputDir` | `...\3493540\local\tf3export` | folder, do którego pisze mod |
-| `OutputDir` | `output` (względem katalogu uruchomienia). W Development (`appsettings.Development.json`): `../../../web/data`, czyli tam, skąd czyta lokalna strona | gdzie publikować `latest/*.json` |
+| `OutputDir` | puste: `web\data` repozytorium, w którym leży exe (szukane w górę od folderu exe), czyli tam, skąd czyta lokalna strona; poza repozytorium `output\` obok exe. Ścieżka względna liczy się od folderu exe | gdzie publikować `latest/*.json` |
 | `PollIntervalMs` | 500 | co ile sprawdzać folder |
 | `IncompleteFileTimeoutSec` | 30 | plik, którego po tym czasie nadal nie da się odczytać, trafia do `InputDir\failed` |
 | `KeepProcessedFiles` | false | zamiast kasować, przenosi pliki do `InputDir\processed` (debug) |
 | `IndentOutput` | false | czytelny JSON na wyjściu (debug) |
 
-Każdy klucz można nadpisać z linii poleceń, np. `dotnet run -- --Bridge:OutputDir=D:\tf3out`.
+Każdy klucz można nadpisać z linii poleceń, np. `Tf3Bridge.exe --Bridge:OutputDir=D:\tf3out` (w polu „Element docelowy” skrótu) albo `dotnet run -- --Bridge:OutputDir=D:\tf3out`.
 
 ## Co robi jeden przebieg (`ExportProcessor`)
 
