@@ -130,7 +130,7 @@ Ze strony [api.engine](https://wiki.transportfever3.com/script-doc/api/engine.ht
 | `BASE_EDGE.position0/1, tangent0/1, node0/1` | ✅ **są w TF3** (w TF2 ich nie było). Do tego `distance`, `roadType`, `roadTemplate`. |
 | `BASE_EDGE.type` | ⚠️ typ `BaseEdgeType`, prawdopodobnie zwykła krawędź / most / tunel, a nie droga / tor. Komponent `BASE_EDGE_TRACK` **nie istnieje**, jest tylko `BASE_EDGE_STREET`. Drogi rozpoznamy po obecności `BASE_EDGE_STREET`, tory po braku albo po `roadType`. Wymaga sprawdzenia. |
 | `BOUNDING_VOLUME.bbox` | ✅ typ `Box3f`, nazwy pól (`min`/`max`?) do sprawdzenia przez `debugPrint`. |
-| `TOWN`: noise, pollution, developmentActive, initialLandUseCapacities, cargoNeeds | ✅ wszystkie istnieją |
+| `TOWN`: noise, pollution, developmentActive, initialLandUseCapacities, cargoNeeds | ✅ wszystkie istnieją. **`initialLandUseCapacities` to wartości startowe i nie rosną z miastem** (Szczecin: 457 wobec ~1800 w oknie miasta). Aktualne pojemności dzielnic daje `townBuildingSystem.getTown2personCapacitiesMap()` (miasto → {mieszkalne, usługowe, przemysłowe}); gra ma też `town_util.getTownSize`, ale jego źródło jest spakowane |
 | `INDUSTRY`: level, maxLevel, upgradeProgress, manualDevelopment, construction, stockList | ✅ |
 | `STOCK_LIST`: rules (input, output, capacity, booster), stocks (cargoType, capacity), modifiers.productivity | ✅ |
 | `TRANSPORT_VEHICLE`: line, stopIndex, userStopped, carrier | ✅. Do tego state, loadState, closestTown, sectionTimes… |

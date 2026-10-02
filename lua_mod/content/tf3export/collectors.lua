@@ -51,11 +51,29 @@ local function cargoNeeds(needs)
 	return out
 end
 
+-- Aktualne pojemności dzielnic {mieszkalne, usługowe, przemysłowe} wszystkich miast, jednym wywołaniem.
+-- To one rosną razem z miastem (suma = rozmiar z okna miasta); TOWN.initialLandUseCapacities
+-- to tylko wartości startowe.
+local function townCapacities()
+	local ok, map = pcall(function() return api.engine.system.townBuildingSystem.getTown2personCapacitiesMap() end)
+	if not ok or map == nil then
+		util.log("getTown2personCapacitiesMap failed: " .. tostring(map))
+		return {}
+	end
+	local out = {}
+	for town, caps in util.pairs(map) do
+		out[town] = util.list(caps)
+	end
+	return out
+end
+
 function C.towns()
 	local out = {}
+	local current = townCapacities()
 	for _, id in ipairs(util.entities(ct.TOWN)) do
 		local t = util.comp(id, ct.TOWN)
 		if t then
+			local initial = util.list(t.initialLandUseCapacities)
 			out[#out + 1] = {
 				id = id,
 				name = util.name(id),
@@ -63,7 +81,8 @@ function C.towns()
 				noise = util.round(t.noise),
 				pollution = util.round(t.pollution),
 				growing = t.developmentActive,
-				capacities = util.list(t.initialLandUseCapacities),
+				capacities = current[id] or initial,
+				initialCapacities = initial,
 				cargoNeeds = cargoNeeds(t.cargoNeeds),
 			}
 		end
