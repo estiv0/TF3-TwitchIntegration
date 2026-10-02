@@ -43,14 +43,28 @@ export class RouteGraph {
       a.adj.push({ to: b, edge, len, forward: true });
       b.adj.push({ to: a, edge, len, forward: false });
     }
+
+    // Siatka węzłów (komórka = SNAP_DISTANCE): przy wszystkich liniach na mapie przystanków jest dużo.
+    this.grid = new Map();
+    for (const n of this.nodes.values()) {
+      const k = cellKey(Math.floor(n.x / SNAP_DISTANCE), Math.floor(n.y / SNAP_DISTANCE));
+      const cell = this.grid.get(k);
+      if (cell) cell.push(n);
+      else this.grid.set(k, [n]);
+    }
   }
 
   nearestNode(x, y, road) {
     let best = null, bestD = SNAP_DISTANCE;
-    for (const n of this.nodes.values()) {
-      if (road && !n.roads.has(road)) continue;
-      const d = Math.hypot(n.x - x, n.y - y);
-      if (d < bestD) { best = n; bestD = d; }
+    const cx = Math.floor(x / SNAP_DISTANCE), cy = Math.floor(y / SNAP_DISTANCE);
+    for (let i = cx - 1; i <= cx + 1; i++) {
+      for (let j = cy - 1; j <= cy + 1; j++) {
+        for (const n of this.grid.get(cellKey(i, j)) ?? []) {
+          if (road && !n.roads.has(road)) continue;
+          const d = Math.hypot(n.x - x, n.y - y);
+          if (d < bestD) { best = n; bestD = d; }
+        }
+      }
     }
     return best;
   }
@@ -89,15 +103,16 @@ export class RouteGraph {
     return null;
   }
 
-  // Path2D trasy linii (zamknięta pętla, jak w grze) + bbox. Przystanki bez pozycji pomijamy.
+  // Path2D trasy linii (zamknięta pętla, jak w grze) + bbox + łamana po kolei (do sprawdzania,
+  // czy linia jest na ekranie). Przystanki bez pozycji pomijamy.
   routeLine(line) {
     const stops = (line.stops ?? []).filter((s) => s.pos).map((s) => ({ x: s.pos[0], y: -s.pos[1] }));
     const path = new Path2D();
-    if (stops.length < 2) return { path, stops, bbox: bboxOf(stops) };
+    if (stops.length < 2) return { path, stops, bbox: bboxOf(stops), poly: stops };
 
     const road = ROAD_FOR_CARRIER[line.carrier] ?? (line.carrier ? null : this.guessRoad(stops[0]));
     const snapped = stops.map((s) => (road ? this.nearestNode(s.x, s.y, road) : null));
-    const pts = [...stops];
+    const poly = [];
 
     for (let i = 0; i < stops.length; i++) {
       const j = (i + 1) % stops.length;
@@ -105,19 +120,22 @@ export class RouteGraph {
       const na = snapped[i], nb = snapped[j];
       const steps = na && nb ? this.path(na, nb, road) : null;
       path.moveTo(a.x, a.y);
+      poly.push(a);
       if (!steps) {
         path.lineTo(b.x, b.y);
         continue;
       }
       path.lineTo(na.x, na.y);
+      poly.push(na);
       for (const { edge: e, forward } of steps) {
         if (forward) path.bezierCurveTo(e.c0x, e.c0y, e.c1x, e.c1y, e.x1, e.y1);
         else path.bezierCurveTo(e.c1x, e.c1y, e.c0x, e.c0y, e.x0, e.y0);
-        pts.push(forward ? { x: e.x1, y: e.y1 } : { x: e.x0, y: e.y0 });
+        poly.push(forward ? { x: e.x1, y: e.y1 } : { x: e.x0, y: e.y0 });
       }
       path.lineTo(b.x, b.y);
     }
-    return { path, stops, bbox: bboxOf(pts) };
+    poly.push(stops[0]);
+    return { path, stops, bbox: bboxOf(poly), poly };
   }
 
   // Linia bez pojazdów nie ma znanego nośnika - wybierz typ sieci bliższy pierwszemu przystankowi.
@@ -128,6 +146,29 @@ export class RouteGraph {
     return Math.hypot(t.x - p.x, t.y - p.y) <= Math.hypot(s.x - p.x, s.y - p.y) ? "TRACK" : "STREET";
   }
 }
+
+/** Czy trasa (wynik routeLine) przecina prostokąt { minX, minY, maxX, maxY } w układzie ścieżki. */
+export function routeInRect(route, r) {
+  const b = route?.bbox;
+  if (!b || b.maxX < r.minX || b.minX > r.maxX || b.maxY < r.minY || b.minY > r.maxY) return false;
+  if (b.minX >= r.minX && b.maxX <= r.maxX && b.minY >= r.minY && b.maxY <= r.maxY) return true;
+  const p = route.poly;
+  if (p.length === 1) return true; // pojedynczy przystanek: bbox to punkt, już sprawdzony
+  for (let i = 1; i < p.length; i++) if (segmentInRect(p[i - 1], p[i], r)) return true;
+  return false;
+}
+
+// Odcinek przecina prostokąt, gdy ich bboxy się nakładają, a prosta odcinka nie zostawia
+// wszystkich narożników prostokąta po jednej stronie.
+function segmentInRect(a, b, r) {
+  if (Math.max(a.x, b.x) < r.minX || Math.min(a.x, b.x) > r.maxX
+    || Math.max(a.y, b.y) < r.minY || Math.min(a.y, b.y) > r.maxY) return false;
+  const side = (x, y) => Math.sign((b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x));
+  const s = [side(r.minX, r.minY), side(r.maxX, r.minY), side(r.minX, r.maxY), side(r.maxX, r.maxY)];
+  return !(s.every((v) => v > 0) || s.every((v) => v < 0));
+}
+
+const cellKey = (i, j) => `${i},${j}`;
 
 function bboxOf(pts) {
   if (!pts.length) return null;

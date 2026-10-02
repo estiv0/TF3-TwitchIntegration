@@ -2,7 +2,7 @@
 // Układ "ścieżki" = (x, -y) ze świata gry, bo w grze oś y rośnie na północ, a na ekranie w dół.
 
 import { cargoImg, industryOfStation, rgb, stationImg, townSize } from "./format.js";
-import { RouteGraph } from "./route.js";
+import { RouteGraph, routeInRect } from "./route.js";
 
 const RAW_INDUSTRIES = new Set([
   "coal_mine", "iron_ore_mine", "quarry", "forest", "farm", "oil_well",
@@ -42,13 +42,14 @@ function readTheme() {
 }
 
 export class MapView {
-  constructor(canvas, { onHover, onSelect, onPlace, onPinMode } = {}) {
+  constructor(canvas, { onHover, onSelect, onPlace, onPinMode, onVisibleLines } = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
     this.onHover = onHover;
     this.onSelect = onSelect;
     this.onPlace = onPlace;     // kliknięcie w trybie pinezki / prawy przycisk -> { x, y, sx, sy }
     this.onPinMode = onPinMode;
+    this.onVisibleLines = onVisibleLines; // Set id linii na ekranie (tylko przy włączonym linesView)
     this.pin = null;            // { x, y, note } - pinezka z linku albo właśnie stawiana
     this.pinMode = false;
 
@@ -64,6 +65,9 @@ export class MapView {
     this.lines = new Map();     // id -> linia z dynamic.json
     this.graph = null;          // RouteGraph - do wyznaczania tras linii
     this.routeCache = new Map(); // id linii -> { key, route }
+    this.linesView = null;      // { match(linia) } - zakładka Linie: rysuj wszystkie linie na ekranie
+    this.visibleKey = null;     // ostatnio zgłoszony zestaw linii na ekranie (żeby nie zgłaszać co klatkę)
+    this.hoveredLine = null;    // id linii wskazanej myszą na liście w panelu
     this.terrain = null;        // { image, x, y, w, h } - tło z heightmapy, prostokąt w układzie ścieżki
     this.showTerrain = true;
     this.selected = null;       // { kind, id }
@@ -155,6 +159,21 @@ export class MapView {
     this.showStations = !this.showStations;
     this.requestDraw();
     return this.showStations;
+  }
+
+  // Linia wskazana myszą na liście (id albo null) - podświetlana wśród linii z ekranu.
+  hoverLine(id) {
+    if (id === this.hoveredLine) return;
+    this.hoveredLine = id;
+    if (this.linesView) this.requestDraw();
+  }
+
+  // Zakładka Linie z włączonym "okiem": { match(linia) -> bool } (filtry panelu) albo null - wyłączone.
+  setLinesView(view) {
+    this.linesView = view;
+    if (!view) this.hoveredLine = null;
+    this.visibleKey = null; // po zmianie filtrów zgłoś zestaw linii na nowo
+    this.requestDraw();
   }
 
   // ---------------------------------------------------------------- widok
@@ -275,7 +294,8 @@ export class MapView {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.drawIndustries();
     if (this.showStations) this.drawStations();
-    if (this.selected?.kind === "line") this.drawLine(this.selected.id);
+    if (this.linesView) this.drawVisibleLines();
+    else if (this.selected?.kind === "line") this.drawLine(this.selected.id);
     this.drawTowns();
     this.drawPin();
   }
@@ -361,8 +381,37 @@ export class MapView {
     return route;
   }
 
+  // Wszystkie linie przecinające ekran (i pasujące do filtrów panelu); zaznaczona linia - tylko ona.
+  // Zestaw linii na ekranie zgłaszamy panelowi (lista linii), gdy się zmieni.
+  drawVisibleLines() {
+    const [minX, minY] = this.toWorld(0, 0);
+    const [maxX, maxY] = this.toWorld(this.w, this.h);
+    const rect = { minX, minY, maxX, maxY };
+    const visible = [...this.lines.values()]
+      .filter((l) => this.linesView.match(l) && routeInRect(this.lineRoute(l.id), rect))
+      .sort((a, b) => (a.vehicleCount ?? 0) - (b.vehicleCount ?? 0)); // najbardziej obłożone na wierzchu
+
+    // Linia wskazana na liście: pozostałe półprzezroczyste, ona na wierzchu i 50% szersza.
+    const hot = visible.some((l) => l.id === this.hoveredLine) ? this.hoveredLine : null;
+    if (this.selected?.kind === "line") this.drawLine(this.selected.id);
+    else {
+      this.ctx.globalAlpha = hot === null ? 1 : 0.3;
+      for (const l of visible) if (l.id !== hot) this.drawLine(l.id, true);
+      this.ctx.globalAlpha = 1;
+      if (hot !== null) this.drawLine(hot, true, 1.5);
+    }
+
+    const key = visible.map((l) => l.id).sort((a, b) => a - b).join(",");
+    if (key !== this.visibleKey) {
+      this.visibleKey = key;
+      this.onVisibleLines?.(new Set(visible.map((l) => l.id)));
+    }
+  }
+
   // Linia na wierzchu: obrys w kolorze tła, trasa w kolorze linii, przystanki jako kółka.
-  drawLine(id) {
+  // compact: cieńsza, do rysowania wielu linii naraz; przystanki dopiero po przybliżeniu.
+  // widen: mnożnik grubości trasy (podświetlenie linii wskazanej na liście).
+  drawLine(id, compact = false, widen = 1) {
     const route = this.lineRoute(id);
     if (!route) return;
     const css = (name) => this.theme[name];
@@ -375,24 +424,26 @@ export class MapView {
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.strokeStyle = css("--map-bg");
-    ctx.lineWidth = 7 / s;
+    ctx.lineWidth = ((compact ? 2.5 : 4) * widen + (compact ? 2 : 3)) / s; // obrys wokół trasy
     ctx.stroke(route.path);
     ctx.strokeStyle = color;
-    ctx.lineWidth = 4 / s;
+    ctx.lineWidth = (compact ? 2.5 : 4) * widen / s;
     ctx.stroke(route.path);
     ctx.restore();
 
-    ctx.lineWidth = 2.5;
+    if (compact && s < STATION_ICON_SCALE) return;
+    ctx.lineWidth = compact ? 1.5 : 2.5;
     for (const stop of route.stops) {
       const [x, y] = this.toScreen(stop.x, stop.y);
+      if (x < -10 || y < -10 || x > w + 10 || y > h + 10) continue;
       ctx.fillStyle = css("--map-bg");
       ctx.strokeStyle = color;
       ctx.beginPath();
-      ctx.arc(x, y, 5, 0, Math.PI * 2);
+      ctx.arc(x, y, compact ? 3 : 5, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
     }
-    if (this.focusedStop) {
+    if (this.focusedStop && !compact) {
       const [x, y] = this.toScreen(this.focusedStop.x, this.focusedStop.y);
       this.ring(x, y, 10);
     }

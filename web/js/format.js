@@ -1,35 +1,30 @@
-// Formatowanie i słowniki do wyświetlania danych gry.
+// Formatowanie i nazwy do wyświetlania danych gry (w bieżącym języku, patrz i18n.js).
 
-const numberFmt = new Intl.NumberFormat("pl-PL");
-const decimalFmt = new Intl.NumberFormat("pl-PL", { maximumFractionDigits: 1 });
+import { dict, locale, t } from "./i18n.js";
 
-export const fmtInt = (n) => (n == null ? "–" : numberFmt.format(Math.round(n)));
-export const fmtDec = (n) => (n == null ? "–" : decimalFmt.format(n));
-export const fmtMoney = (n) => (n == null ? "∞" : `$ ${numberFmt.format(n)}`);
+// Formatery liczb per język (tworzenie Intl.NumberFormat jest kosztowne).
+const formatters = new Map();
+function nf(kind) {
+  const key = `${locale()}|${kind}`;
+  if (!formatters.has(key)) {
+    formatters.set(key, new Intl.NumberFormat(locale(), kind === "dec" ? { maximumFractionDigits: 1 } : {}));
+  }
+  return formatters.get(key);
+}
+
+export const fmtInt = (n) => (n == null ? "–" : nf("int").format(Math.round(n)));
+export const fmtDec = (n) => (n == null ? "–" : nf("dec").format(n));
+export const fmtMoney = (n) => (n == null ? "∞" : `$ ${nf("int").format(n)}`);
 export const fmtPercent = (n) => (n == null ? "–" : `${Math.round(n * 100)}%`);
-
-const MONTHS = ["sty", "lut", "mar", "kwi", "maj", "cze", "lip", "sie", "wrz", "paź", "lis", "gru"];
-export const fmtDate = (d) => (d ? `${d.day} ${MONTHS[d.month - 1] ?? d.month} ${d.year}` : "–");
-
-const CARGO_PL = {
-  beverages: "Napoje", books: "Książki", cement: "Cement", chemicals: "Chemikalia",
-  clothes: "Ubrania", coal: "Węgiel", crude_oil: "Ropa naftowa", dyes: "Barwniki",
-  fabric: "Tkaniny", fertilizer: "Nawóz", fish: "Ryby", fuel: "Paliwo",
-  furniture: "Meble", glass: "Szkło", grain: "Zboże", iron_ore: "Ruda żelaza",
-  logs: "Drewno", machines: "Maszyny", meat: "Mięso", paper: "Papier",
-  planks: "Deski", plastic: "Tworzywa", sand: "Piasek", sawdust: "Trociny",
-  sheet_metal: "Blacha", steel: "Stal", stone: "Kamień", tinned_food: "Konserwy",
-  tools: "Narzędzia", vehicles: "Pojazdy", wool: "Wełna", passengers: "Pasażerowie",
-  bricks: "Cegły", clay: "Glina", rubber: "Kauczuk", tires: "Opony", vegetables: "Warzywa",
-};
+export const fmtDate = (d) => (d ? `${d.day} ${dict().months[d.month - 1] ?? d.month} ${d.year}` : "–");
 
 const cargoKey = (res) => String(res ?? "").split("/").pop().replace(/\.cargo$/, "");
 
-/** "::/cargos/fish/fish.cargo" -> "Ryby" */
+/** "::/cargos/fish/fish.cargo" -> "Ryby" / "Fish" */
 export function cargoName(res) {
   if (!res) return "–";
   const key = cargoKey(res);
-  return CARGO_PL[key] ?? key.replace(/_/g, " ");
+  return dict().cargo[key] ?? key.replace(/_/g, " ");
 }
 
 /** Kolorowa ikonka ładunku z gry (web/img/resources); brakujący plik po prostu znika. */
@@ -47,9 +42,8 @@ export function cargoImg(res) {
 /** Ikonka + nazwa ładunku (do chipów i list). */
 export const cargoLabel = (res) => `${cargoIcon(res)}${escapeHtml(cargoName(res))}`;
 
-export const CARRIER_PL = {
-  RAIL: "Kolej", ROAD: "Drogowe", TRAM: "Tramwaj", WATER: "Wodne", AIR: "Lotnicze", OTHER: "Inne",
-};
+/** Nazwa nośnika (RAIL -> "Kolej" / "Rail") albo undefined dla nieznanego. */
+export const carrierName = (carrier) => dict().carrier[carrier];
 
 // Ikonki pojazdów z gry (web/img/stations): białe maski, barwione kolorem (CSS mask / canvas).
 const CARRIER_IMG = {
@@ -76,16 +70,13 @@ export function iconHtml(src, tint) {
 
 export const carrierIcon = (carrier, tint) => iconHtml(carrierImg(carrier), tint);
 
-// Rodzaj stacji (stations[].kind) -> nazwa.
-export const STATION_PL = {
-  RAIL: "Dworzec kolejowy", ROAD: "Dworzec drogowy", TRAM: "Stacja tramwajowa", WATER: "Port", AIR: "Lotnisko",
-  INDUSTRY: "Przemysł", OTHER: "Inne",
-};
+/** Rodzaj stacji (stations[].kind, też "INDUSTRY") -> nazwa albo undefined. */
+export const stationName = (kind) => dict().station[kind];
 export const STATION_ORDER = ["RAIL", "ROAD", "TRAM", "WATER", "AIR", "INDUSTRY", "OTHER"];
 
 /** Pasażerska / towarowa / mieszana */
 export const stationUse = (s) =>
-  s.passengers && s.cargo ? "pasażerska i towarowa" : s.cargo ? "towarowa" : s.passengers ? "pasażerska" : "";
+  s.passengers && s.cargo ? t("use.both") : s.cargo ? t("use.cargo") : s.passengers ? t("use.passengers") : "";
 
 /** id stacji (konstrukcji) -> linie, które się na niej zatrzymują (stop.entity ∈ station.stations). */
 export function linesByStation(dynamic) {
@@ -133,7 +124,7 @@ export function linesByIndustry(dynamic, stationLines = linesByStation(dynamic),
 }
 
 // TF: initialLandUseCapacities = [mieszkalne, usługowe, przemysłowe]
-export const LAND_USE_PL = ["Mieszkalne", "Usługowe", "Przemysłowe"];
+export const landUseName = (i) => dict().landUse[i];
 
 export const townSize = (t) => (t.capacities ?? []).reduce((a, b) => a + b, 0);
 

@@ -10,67 +10,77 @@
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+  <!-- Napisy z data-i18n* podmienia js/i18n.js (PL / EN); tekst w HTML to wersja polska. -->
   <header class="topbar">
     <div class="brand">
-      <span class="brand-mark" aria-hidden="true"></span>
+      <img class="brand-logo" src="img/logo_gn.png" alt="" width="82" height="34">
       <div>
-        <h1 id="company">–</h1>
-        <p class="brand-sub">Transport Fever 3 · na żywo</p>
+        <h1>Gwizdkoniutolandia</h1>
+        <p class="brand-sub" data-i18n="brand.sub">Transport Fever 3 · na żywo</p>
       </div>
     </div>
     <dl class="kpis">
-      <div><dt>Data</dt><dd id="date">–</dd></div>
-      <div><dt>Saldo</dt><dd id="balance">–</dd></div>
-      <div><dt>Flota</dt><dd id="fleet" class="fleet">–</dd></div>
-      <div><dt>Odcinki sieci</dt><dd id="edges">–</dd></div>
+      <div><dt data-i18n="kpi.date">Data</dt><dd id="date">–</dd></div>
+      <div><dt data-i18n="kpi.balance">Saldo</dt><dd id="balance">–</dd></div>
+      <div><dt data-i18n="kpi.fleet">Flota</dt><dd id="fleet" class="fleet">–</dd></div>
+      <div><dt data-i18n="kpi.edges">Odcinki sieci</dt><dd id="edges">–</dd></div>
     </dl>
     <span id="status" class="status" data-state="waiting">Czekam na dane…</span>
+    <div id="lang" class="lang-switch" role="group" aria-label="Język" data-i18n-aria="lang.label"></div>
   </header>
 
   <main class="layout">
-    <section class="map-wrap" aria-label="Mapa">
+    <section class="map-wrap" aria-label="Mapa" data-i18n-aria="map.label">
       <canvas id="map"></canvas>
       <div id="tooltip" class="tooltip" hidden></div>
       <div class="map-tools">
-        <button id="fit" type="button" title="Pokaż całą mapę">⤢</button>
-        <button id="terrain" type="button" title="Teren (rzeźba)" aria-pressed="true">⛰</button>
-        <button id="stations" type="button" title="Stacje (dworce, porty, lotniska)" aria-pressed="true"><span class="ico" style="-webkit-mask-image:url('img/stations/vehicle_train_front_32.png');mask-image:url('img/stations/vehicle_train_front_32.png')"></span></button>
-        <button id="pin" type="button" title="Pinezka z linkiem – kliknij miejsce na mapie (albo prawy przycisk myszy)" aria-pressed="false">📍</button>
+        <button id="fit" type="button" title="Pokaż całą mapę" data-i18n-title="map.fit">⤢</button>
+        <button id="terrain" type="button" title="Teren (rzeźba)" data-i18n-title="map.terrain" aria-pressed="true">⛰</button>
+        <button id="stations" type="button" title="Stacje (dworce, porty, lotniska)" data-i18n-title="map.stations" aria-pressed="true"><span class="ico" style="-webkit-mask-image:url('img/stations/vehicle_train_front_32.png');mask-image:url('img/stations/vehicle_train_front_32.png')"></span></button>
+        <button id="pin" type="button" title="Pinezka z linkiem – kliknij miejsce na mapie (albo prawy przycisk myszy)" data-i18n-title="map.pin" aria-pressed="false">📍</button>
       </div>
       <form id="pin-form" class="pin-form" hidden>
-        <label for="pin-note">Opis pinezki</label>
-        <textarea id="pin-note" maxlength="200" rows="3" placeholder="np. Tu powstanie nowy port"></textarea>
+        <label for="pin-note" data-i18n="pin.note">Opis pinezki</label>
+        <textarea id="pin-note" maxlength="200" rows="3" placeholder="np. Tu powstanie nowy port" data-i18n-placeholder="pin.placeholder"></textarea>
         <div class="pin-actions">
-          <button type="submit" class="primary">Utwórz link</button>
-          <button type="button" data-pin-cancel>Anuluj</button>
+          <button type="submit" class="primary" data-i18n="pin.create">Utwórz link</button>
+          <button type="button" data-pin-cancel data-i18n="pin.cancel">Anuluj</button>
         </div>
         <div class="pin-link" data-pin-link hidden>
-          <input id="pin-url" type="text" readonly aria-label="Link do pinezki">
-          <button type="button" data-pin-copy>Kopiuj</button>
+          <input id="pin-url" type="text" readonly aria-label="Link do pinezki" data-i18n-aria="pin.link">
+          <button type="button" data-pin-copy data-i18n="pin.copy">Kopiuj</button>
         </div>
       </form>
-      <ul class="legend" aria-label="Legenda">
-        <li><span class="lg-line lg-track"></span>Tory</li>
-        <li><span class="lg-line lg-street"></span>Drogi</li>
-        <li><span class="dot dot-town"></span>Miasto</li>
-        <li><span class="dot dot-raw"></span>Surowce</li>
-        <li><span class="dot dot-processing"></span>Przetwórstwo</li>
-        <li><span class="ico ico-rail" style="-webkit-mask-image:url('img/stations/vehicle_train_front_32.png');mask-image:url('img/stations/vehicle_train_front_32.png')"></span>Dworzec</li>
-        <li><span class="ico ico-road" style="-webkit-mask-image:url('img/stations/vehicle_bus_front_32.png');mask-image:url('img/stations/vehicle_bus_front_32.png')"></span>Dworzec drogowy</li>
-        <li><span class="ico ico-water" style="-webkit-mask-image:url('img/stations/vehicle_ship_front_32.png');mask-image:url('img/stations/vehicle_ship_front_32.png')"></span>Port</li>
-        <li><span class="ico ico-air" style="-webkit-mask-image:url('img/stations/vehicle_airplane_front_32.png');mask-image:url('img/stations/vehicle_airplane_front_32.png')"></span>Lotnisko</li>
+      <ul class="legend" aria-label="Legenda" data-i18n-aria="legend.label">
+        <li><span class="lg-line lg-track"></span><span data-i18n="legend.track">Tory</span></li>
+        <li><span class="lg-line lg-street"></span><span data-i18n="legend.street">Drogi</span></li>
+        <li><span class="dot dot-town"></span><span data-i18n="legend.town">Miasto</span></li>
+        <li><span class="dot dot-raw"></span><span data-i18n="legend.raw">Surowce</span></li>
+        <li><span class="dot dot-processing"></span><span data-i18n="legend.processing">Przetwórstwo</span></li>
+        <li><span class="ico ico-rail" style="-webkit-mask-image:url('img/stations/vehicle_train_front_32.png');mask-image:url('img/stations/vehicle_train_front_32.png')"></span><span data-i18n="legend.rail">Dworzec</span></li>
+        <li><span class="ico ico-road" style="-webkit-mask-image:url('img/stations/vehicle_bus_front_32.png');mask-image:url('img/stations/vehicle_bus_front_32.png')"></span><span data-i18n="legend.road">Dworzec drogowy</span></li>
+        <li><span class="ico ico-water" style="-webkit-mask-image:url('img/stations/vehicle_ship_front_32.png');mask-image:url('img/stations/vehicle_ship_front_32.png')"></span><span data-i18n="legend.water">Port</span></li>
+        <li><span class="ico ico-air" style="-webkit-mask-image:url('img/stations/vehicle_airplane_front_32.png');mask-image:url('img/stations/vehicle_airplane_front_32.png')"></span><span data-i18n="legend.air">Lotnisko</span></li>
       </ul>
     </section>
 
     <aside id="sidebar" class="sidebar">
       <div class="tabs" role="tablist">
-        <button role="tab" data-tab="towns" aria-selected="true">Miasta <span data-count="towns">0</span></button>
-        <button role="tab" data-tab="industries" aria-selected="false">Przemysł <span data-count="industries">0</span></button>
-        <button role="tab" data-tab="stations" aria-selected="false">Stacje <span data-count="stations">0</span></button>
-        <button role="tab" data-tab="lines" aria-selected="false">Linie <span data-count="lines">0</span></button>
+        <button role="tab" data-tab="towns" aria-selected="true"><span data-i18n="tab.towns">Miasta</span> <span data-count="towns">0</span></button>
+        <button role="tab" data-tab="industries" aria-selected="false"><span data-i18n="tab.industries">Przemysł</span> <span data-count="industries">0</span></button>
+        <button role="tab" data-tab="stations" aria-selected="false"><span data-i18n="tab.stations">Stacje</span> <span data-count="stations">0</span></button>
+        <button role="tab" data-tab="lines" aria-selected="false"><span data-i18n="tab.lines">Linie</span> <span data-count="lines">0</span></button>
       </div>
-      <input class="search" data-search type="search" placeholder="Szukaj…" aria-label="Szukaj">
-      <div class="filters" data-carriers role="group" aria-label="Typ linii" hidden></div>
+      <div class="search-row">
+        <input class="search" data-search type="search" placeholder="Szukaj…" aria-label="Szukaj" data-i18n-aria="search">
+        <button class="eye" data-viewport type="button" aria-pressed="true" aria-label="Tylko linie z widoku mapy" data-i18n-aria="lines.viewport" hidden>
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>
+            <path class="eye-slash" d="M4 4l16 16"/>
+          </svg>
+        </button>
+      </div>
+      <div class="filters" data-carriers role="group" aria-label="Filtr typu" data-i18n-aria="filter.label" hidden></div>
       <section class="detail" data-detail hidden></section>
       <ul class="list" data-list></ul>
     </aside>

@@ -2,6 +2,8 @@
 // Format: #pin=<x>,<y>,<skala>&note=<opis> - x, y we współrzędnych gry (m, y na północ),
 // skala = przybliżenie widoku w chwili tworzenia linku.
 
+import { t } from "./i18n.js";
+
 const NOTE_MAX = 200;
 
 /** Pinezka z hasha adresu albo null. */
@@ -109,12 +111,12 @@ export class PinController {
     this.urlInput.select();
     try {
       await navigator.clipboard.writeText(this.urlInput.value);
-      this.copyBtn.textContent = "Skopiowano ✓";
+      this.copyBtn.textContent = t("pin.copied");
     } catch {
       this.copyBtn.textContent = "Ctrl+C"; // schowek niedostępny (np. http) - link jest zaznaczony
     }
     clearTimeout(this.copyTimer);
-    this.copyTimer = setTimeout(() => { this.copyBtn.textContent = "Kopiuj"; }, 2000);
+    this.copyTimer = setTimeout(() => { this.copyBtn.textContent = t("pin.copy"); }, 2000);
   }
 
   // Formularz został przy pinezce: jej pozycja na ekranie (do ponownego dopasowania po zmianie wysokości).
