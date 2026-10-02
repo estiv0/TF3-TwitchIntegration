@@ -1,10 +1,10 @@
 // Panel boczny: listy (miasta, przemysł, stacje, linie) i szczegóły zaznaczonego obiektu.
 
 import {
-  CARRIER_ICON, CARRIER_PL, LAND_USE_PL, STATION_ORDER, STATION_PL, cargoName, escapeHtml as esc,
-  fmtDec, fmtInt, fmtPercent, industryOfStation, linesByIndustry, linesByStation, rgb, stationUse, townSize,
+  CARRIER_PL, LAND_USE_PL, STATION_ORDER, STATION_PL, carrierIcon, cargoLabel, escapeHtml as esc, iconHtml,
+  fmtDec, fmtInt, fmtPercent, industryOfStation, linesByIndustry, linesByStation, rgb, stationImg, stationUse, townSize,
 } from "./format.js";
-import { industryKind } from "./map.js";
+import { industryKind, industryOutputs } from "./map.js";
 
 export class Sidebar {
   constructor(root, { onPick, onStop }) {
@@ -130,8 +130,8 @@ export class Sidebar {
           const [k, id] = ind ? ["industry", ind.id] : ["station", s.id];
           return `
           <li class="row" data-kind="${k}" data-id="${id}" aria-current="${isSel(k, id)}">
-            <span class="dot ${ind ? `dot-${industryKind(ind)}` : `dot-station st-${esc(String(s.kind).toLowerCase())}`}"></span>
-            <span class="row-name">${CARRIER_ICON[s.kind] ?? ""} ${esc(s.name ?? ind?.name ?? STATION_PL[s.kind])}</span>
+            ${ind ? `<span class="dot dot-${industryKind(ind)}"></span>` : iconHtml(stationImg(s), s.kind)}
+            <span class="row-name">${ind ? iconHtml(stationImg(s), s.kind) : ""} ${esc(s.name ?? ind?.name ?? STATION_PL[s.kind])}</span>
             <span class="row-value">${fmtInt(nLines(s))} lin.</span>
           </li>`;
         }).join("");
@@ -146,7 +146,7 @@ export class Sidebar {
           <li class="row" data-kind="line" data-id="${l.id}" aria-current="${isSel("line", l.id)}">
             <span class="swatch" style="background:${rgb(l.color)}"></span>
             <span class="row-main">
-              <span class="row-name">${CARRIER_ICON[l.carrier] ?? ""} ${esc(l.name)}</span>
+              <span class="row-name">${carrierIcon(l.carrier, l.carrier)} ${esc(l.name)}</span>
               ${stations.length ? `<span class="row-hint">przez ${stations.map((s) => highlight(s, this.filter)).join(", ")}</span>` : ""}
             </span>
             <span class="row-value">${fmtInt(l.vehicleCount)} poj. · ${l.stops?.length ?? 0} przyst.</span>
@@ -173,7 +173,7 @@ export class Sidebar {
       `<button type="button" data-carrier="${key}" aria-pressed="${this.typeFilter[this.tab] === key}">${label}<span>${fmtInt(n)}</span></button>`;
     this.carriers.innerHTML = btn("", "Wszystkie", items.length)
       + order.filter((c) => counts.has(c))
-        .map((c) => btn(c, `${CARRIER_ICON[c] ?? ""} ${esc(names[c] ?? "Bez pojazdów")}`, counts.get(c))).join("");
+        .map((c) => btn(c, `${carrierIcon(c, c)} ${esc(names[c] ?? "Bez pojazdów")}`, counts.get(c))).join("");
   }
 
   // ---------------------------------------------------------------- szczegóły
@@ -202,7 +202,7 @@ export class Sidebar {
 function lineLinks(lines) {
   const rows = [...lines].sort((a, b) => (b.vehicleCount ?? 0) - (a.vehicleCount ?? 0)).map((l) => `
     <li><button type="button" data-line="${l.id}">
-      <span class="swatch" style="background:${rgb(l.color)}"></span>${CARRIER_ICON[l.carrier] ?? ""} ${esc(l.name)}
+      <span class="swatch" style="background:${rgb(l.color)}"></span>${carrierIcon(l.carrier, l.carrier)} ${esc(l.name)}
     </button></li>`).join("");
   return rows ? `<h3>Linie</h3><ul class="line-links">${rows}</ul>` : "";
 }
@@ -210,7 +210,7 @@ function lineLinks(lines) {
 function stationDetail(s, lines) {
   const use = stationUse(s);
   return `
-    <h2>${CARRIER_ICON[s.kind] ?? ""} ${esc(s.name ?? STATION_PL[s.kind])}</h2>
+    <h2>${iconHtml(stationImg(s), s.kind)} ${esc(s.name ?? STATION_PL[s.kind])}</h2>
     <p class="detail-sub">${esc(STATION_PL[s.kind] ?? "Stacja")}${use ? ` · ${esc(use)}` : ""}</p>
     <dl class="stats">
       ${stat("Linie", fmtInt(lines.length))}
@@ -222,7 +222,7 @@ function stationDetail(s, lines) {
 function townDetail(t) {
   const caps = (t.capacities ?? []).map((c, i) => stat(LAND_USE_PL[i] ?? `Strefa ${i + 1}`, fmtInt(c))).join("");
   const needs = (t.cargoNeeds ?? []).flatMap((group) => Object.entries(group ?? {}))
-    .map(([cargo, v]) => `<li>${esc(cargoName(cargo))}<span>${fmtDec(v)}</span></li>`).join("");
+    .map(([cargo, v]) => `<li>${cargoLabel(cargo)}<span>${fmtDec(v)}</span></li>`).join("");
   return `
     <h2>${esc(t.name)}</h2>
     <p class="detail-sub">Miasto · ${t.growing ? "rośnie" : "rozwój wstrzymany"}</p>
@@ -235,12 +235,7 @@ function townDetail(t) {
 }
 
 function industryDetail(i, lines) {
-  const outputs = new Map();
-  for (const rule of i.rules ?? []) {
-    if (rule.booster) continue;
-    for (const [cargo, amount] of Object.entries(rule.output ?? {}))
-      outputs.set(cargo, (outputs.get(cargo) ?? 0) + amount);
-  }
+  const outputs = industryOutputs(i);
   const produced = new Set(outputs.keys());
   const inputs = (i.stocks ?? []).filter((s) => !produced.has(s.cargo));
 
@@ -252,8 +247,8 @@ function industryDetail(i, lines) {
       ${stat("Produktywność", fmtPercent(i.productivity))}
       ${stat("Postęp rozbudowy", fmtPercent(i.upgrade))}
     </dl>
-    ${inputs.length ? `<h3>Potrzebuje</h3><ul class="chips">${inputs.map((s) => `<li>${esc(cargoName(s.cargo))}</li>`).join("")}</ul>` : ""}
-    ${outputs.size ? `<h3>Produkuje</h3><ul class="chips">${[...outputs].map(([c, a]) => `<li>${esc(cargoName(c))}<span>${fmtInt(a)}</span></li>`).join("")}</ul>` : ""}
+    ${inputs.length ? `<h3>Potrzebuje</h3><ul class="chips">${inputs.map((s) => `<li>${cargoLabel(s.cargo)}</li>`).join("")}</ul>` : ""}
+    ${outputs.size ? `<h3>Produkuje</h3><ul class="chips">${[...outputs].map(([c, a]) => `<li>${cargoLabel(c)}<span>${fmtInt(a)}</span></li>`).join("")}</ul>` : ""}
     ${lineLinks(lines)}`;
 }
 
@@ -283,7 +278,7 @@ function lineDetail(l, focusedStop) {
   }).join("");
   return `
     <h2><span class="swatch" style="background:${rgb(l.color)}"></span> ${esc(l.name)}</h2>
-    <p class="detail-sub">${CARRIER_ICON[l.carrier] ?? ""} ${esc(CARRIER_PL[l.carrier] ?? "Linia")}</p>
+    <p class="detail-sub">${carrierIcon(l.carrier, l.carrier)} ${esc(CARRIER_PL[l.carrier] ?? "Linia")}</p>
     <dl class="stats">
       ${stat("Pojazdy", fmtInt(l.vehicleCount))}
       ${stat("Przystanki", fmtInt(l.stops?.length ?? 0))}

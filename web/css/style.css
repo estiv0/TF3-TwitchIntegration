@@ -132,13 +132,23 @@ button { font: inherit; color: inherit; }
 .dot-town { border-radius: 50%; background: var(--town); }
 .dot-raw { background: var(--industry-raw); }
 .dot-processing { background: var(--industry-processing); }
-.dot-station { border-radius: 50%; background: var(--panel); box-shadow: inset 0 0 0 2px var(--accent); }
-.dot-station.st-rail { box-shadow: inset 0 0 0 2px var(--station-rail); }
-.dot-station.st-road { box-shadow: inset 0 0 0 2px var(--station-road); }
-.dot-station.st-tram { box-shadow: inset 0 0 0 2px var(--station-tram); }
-.dot-station.st-water { box-shadow: inset 0 0 0 2px var(--station-water); }
-.dot-station.st-air { box-shadow: inset 0 0 0 2px var(--station-air); }
 .swatch { width: 10px; height: 10px; flex: none; border-radius: 3px; }
+
+/* Ikonki z gry: białe maski barwione kolorem tekstu (format.js: iconHtml), kolorowe ładunki jako <img>. */
+.ico {
+  display: inline-block; flex: none; width: 1.2em; height: 1.2em; vertical-align: -0.22em;
+  background-color: currentColor;
+  -webkit-mask: center / contain no-repeat;
+  mask: center / contain no-repeat;
+  /* obrazek: mask-image w stylu inline (url w zmiennej CSS liczyłby się względem css/, nie strony) */
+}
+.ico-rail { color: var(--station-rail); }
+.ico-road { color: var(--station-road); }
+.ico-tram { color: var(--station-tram); }
+.ico-water { color: var(--station-water); }
+.ico-air { color: var(--station-air); }
+.cargo-ico { width: 1.3em; height: 1.3em; flex: none; vertical-align: -0.3em; margin-right: 4px; object-fit: contain; }
+.legend .ico { width: 14px; height: 14px; }
 .line-links { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; font-size: 13px; }
 .line-links button {
   display: flex; align-items: center; gap: 8px; width: 100%; padding: 3px 0;
@@ -232,3 +242,5 @@ button { font: inherit; color: inherit; }
   .sidebar { border-left: 0; border-top: 1px solid var(--border); max-height: none; }
   .list { max-height: 60vh; }
 }
+.chips li { align-items: center; }
+.chips li .cargo-ico { margin-right: 0; }

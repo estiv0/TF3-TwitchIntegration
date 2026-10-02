@@ -20,22 +20,63 @@ const CARGO_PL = {
   planks: "Deski", plastic: "Tworzywa", sand: "Piasek", sawdust: "Trociny",
   sheet_metal: "Blacha", steel: "Stal", stone: "Kamień", tinned_food: "Konserwy",
   tools: "Narzędzia", vehicles: "Pojazdy", wool: "Wełna", passengers: "Pasażerowie",
+  bricks: "Cegły", clay: "Glina", rubber: "Kauczuk", tires: "Opony", vegetables: "Warzywa",
 };
+
+const cargoKey = (res) => String(res ?? "").split("/").pop().replace(/\.cargo$/, "");
 
 /** "::/cargos/fish/fish.cargo" -> "Ryby" */
 export function cargoName(res) {
   if (!res) return "–";
-  const key = String(res).split("/").pop().replace(/\.cargo$/, "");
+  const key = cargoKey(res);
   return CARGO_PL[key] ?? key.replace(/_/g, " ");
 }
+
+/** Kolorowa ikonka ładunku z gry (web/img/resources); brakujący plik po prostu znika. */
+export function cargoIcon(res) {
+  const src = cargoImg(res);
+  return src ? `<img class="cargo-ico" src="${src}" alt="" onerror="this.remove()">` : "";
+}
+
+/** Adres ikonki ładunku albo null (nazwa spoza [a-z0-9_]). */
+export function cargoImg(res) {
+  const key = cargoKey(res);
+  return /^[a-z0-9_]+$/.test(key) ? `img/resources/${key}.png` : null;
+}
+
+/** Ikonka + nazwa ładunku (do chipów i list). */
+export const cargoLabel = (res) => `${cargoIcon(res)}${escapeHtml(cargoName(res))}`;
 
 export const CARRIER_PL = {
   RAIL: "Kolej", ROAD: "Drogowe", TRAM: "Tramwaj", WATER: "Wodne", AIR: "Lotnicze", OTHER: "Inne",
 };
 
-export const CARRIER_ICON = { RAIL: "🚆", ROAD: "🚌", TRAM: "🚋", WATER: "⛴", AIR: "✈", OTHER: "•" };
+// Ikonki pojazdów z gry (web/img/stations): białe maski, barwione kolorem (CSS mask / canvas).
+const CARRIER_IMG = {
+  RAIL: "vehicle_train_front_32", ROAD: "vehicle_bus_front_32", TRAM: "vehicle_tram_front_32",
+  WATER: "vehicle_ship_front_32", AIR: "vehicle_airplane_front_32", TRUCK: "vehicle_truck_front_32",
+};
+const imgUrl = (key) => (CARRIER_IMG[key] ? `img/stations/${CARRIER_IMG[key]}.png` : null);
 
-// Rodzaj stacji (stations[].kind) -> nazwa; ikony jak dla nośników.
+/** Obrazek nośnika albo null. */
+export const carrierImg = (carrier) => imgUrl(carrier);
+
+/** Obrazek stacji: dworzec drogowy tylko dla ładunków dostaje ciężarówkę zamiast autobusu. */
+export const stationImg = (s) => imgUrl(s.kind === "ROAD" && s.cargo && !s.passengers ? "TRUCK" : s.kind);
+
+/**
+ * Ikonka jako <span> z maską CSS, barwiona przez `color` (domyślnie kolor tekstu).
+ * `tint` = rodzaj z kolorem z motywu (np. "RAIL" -> var(--station-rail)).
+ */
+export function iconHtml(src, tint) {
+  if (!src) return "";
+  const color = tint ? ` ico-${String(tint).toLowerCase()}` : "";
+  return `<span class="ico${color}" style="-webkit-mask-image:url('${src}');mask-image:url('${src}')" aria-hidden="true"></span>`;
+}
+
+export const carrierIcon = (carrier, tint) => iconHtml(carrierImg(carrier), tint);
+
+// Rodzaj stacji (stations[].kind) -> nazwa.
 export const STATION_PL = {
   RAIL: "Dworzec kolejowy", ROAD: "Dworzec drogowy", TRAM: "Stacja tramwajowa", WATER: "Port", AIR: "Lotnisko",
   INDUSTRY: "Przemysł", OTHER: "Inne",

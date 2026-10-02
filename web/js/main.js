@@ -3,7 +3,8 @@
 import { config } from "../config.js";
 import { DataFeed } from "./api.js";
 import {
-  CARRIER_ICON, STATION_PL, cargoName, escapeHtml as esc, fmtDate, fmtInt, fmtMoney, linesByIndustry, linesByStation, stationUse, townSize,
+  CARRIER_PL, STATION_PL, carrierIcon, cargoLabel, escapeHtml as esc, fmtDate, fmtInt, fmtMoney,
+  iconHtml, linesByIndustry, linesByStation, stationImg, stationUse, townSize,
 } from "./format.js";
 import { MapView } from "./map.js";
 import { Sidebar } from "./sidebar.js";
@@ -56,14 +57,14 @@ window.tf3 = { map, sidebar };
 function tooltipHtml(item) {
   const d = item.data;
   if (item.kind === "town") {
-    const needs = (d.cargoNeeds ?? []).flatMap((g) => Object.keys(g ?? {})).map(cargoName);
+    const needs = (d.cargoNeeds ?? []).flatMap((g) => Object.keys(g ?? {}));
     return `<strong>${esc(d.name)}</strong><span>Miasto · pojemność ${fmtInt(townSize(d))}</span>`
-      + (needs.length ? `<span>Potrzebuje: ${esc(needs.join(", "))}</span>` : "");
+      + (needs.length ? `<span class="tip-cargo">Potrzebuje: ${needs.map(cargoLabel).join(" ")}</span>` : "");
   }
   if (item.kind === "station") {
     const use = stationUse(d);
     const n = stationLines.get(d.id)?.length ?? 0;
-    return `<strong>${CARRIER_ICON[d.kind] ?? ""} ${esc(d.name ?? STATION_PL[d.kind])}</strong>`
+    return `<strong>${iconHtml(stationImg(d), d.kind)} ${esc(d.name ?? STATION_PL[d.kind])}</strong>`
       + `<span>${esc(STATION_PL[d.kind] ?? "Stacja")}${use ? ` · ${esc(use)}` : ""}</span>`
       + `<span>Linie: ${fmtInt(n)}</span>`;
   }
@@ -81,7 +82,7 @@ function renderHeader(dynamic) {
   const byCarrier = {};
   for (const v of dynamic.vehicles ?? []) byCarrier[v.carrier] = (byCarrier[v.carrier] ?? 0) + 1;
   $("#fleet").innerHTML = Object.entries(byCarrier).sort((a, b) => b[1] - a[1])
-    .map(([c, n]) => `<span title="${esc(c)}">${CARRIER_ICON[c] ?? "•"} ${fmtInt(n)}</span>`).join("");
+    .map(([c, n]) => `<span title="${esc(CARRIER_PL[c] ?? c)}">${carrierIcon(c) || "•"} ${fmtInt(n)}</span>`).join("");
 }
 
 function renderStatus() {

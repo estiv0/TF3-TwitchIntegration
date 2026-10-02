@@ -1,7 +1,7 @@
 // Mapa: sieć (Path2D w układzie świata), miasta i zakłady (w układzie ekranu), pan/zoom, hover, wybór.
 // Układ "ścieżki" = (x, -y) ze świata gry, bo w grze oś y rośnie na północ, a na ekranie w dół.
 
-import { CARRIER_ICON, industryOfStation, rgb, townSize } from "./format.js";
+import { cargoImg, industryOfStation, rgb, stationImg, townSize } from "./format.js";
 import { RouteGraph } from "./route.js";
 
 const RAW_INDUSTRIES = new Set([
@@ -14,12 +14,25 @@ export const industryKind = (ind) => {
   return RAW_INDUSTRIES.has(key) ? "raw" : "processing";
 };
 
+/** Ładunek -> ilość produkowana przez zakład (reguły bez boosterów). */
+export function industryOutputs(ind) {
+  const outputs = new Map();
+  for (const rule of ind.rules ?? []) {
+    if (rule.booster) continue;
+    for (const [cargo, amount] of Object.entries(rule.output ?? {}))
+      outputs.set(cargo, (outputs.get(cargo) ?? 0) + amount);
+  }
+  return outputs;
+}
+
 const COLOR_VARS = ["--map-bg", "--map-street", "--map-street-tunnel", "--map-track", "--map-track-tunnel",
   "--industry-raw", "--industry-processing", "--town", "--town-label", "--accent", "--font", "--panel",
   "--station-rail", "--station-road", "--station-tram", "--station-water", "--station-air"];
 
 // Ikony stacji: od tej skali kółko z ikoną, poniżej sama kropka w kolorze rodzaju.
 const STATION_ICON_SCALE = 0.05;
+const STATION_ICON_PX = 14;
+const OUTPUT_ICON_PX = 16; // ikonki produkcji nad zakładem
 
 // Kolory z CSS (motyw) odczytywane raz na klatkę, nie dla każdego obiektu.
 function readTheme() {
@@ -41,6 +54,8 @@ export class MapView {
     this.industries = [];
     this.stations = [];         // dworce, porty, lotniska (bez przystanków)
     this.showStations = true;
+    this.iconImages = new Map(); // url -> Image (ikony z gry: maski stacji, ładunki)
+    this.iconCache = new Map();  // url|kolor|px -> canvas z zabarwioną ikoną
     this.lines = new Map();     // id -> linia z dynamic.json
     this.graph = null;          // RouteGraph - do wyznaczania tras linii
     this.routeCache = new Map(); // id linii -> { key, route }
@@ -98,6 +113,7 @@ export class MapView {
 
     this.industries = (dynamic.industries ?? []).filter((i) => i.pos).map((i) => ({
       kind: "industry", id: i.id, data: i, px: i.pos[0], py: -i.pos[1], type: industryKind(i),
+      outputs: [...industryOutputs(i).keys()].map(cargoImg).filter(Boolean),
     }));
 
     // Stacja wbudowana w zakład: na mapie jest już ikonka zakładu, więc stacji nie rysujemy.
@@ -312,9 +328,10 @@ export class MapView {
     const { ctx } = this;
     const size = this.view.scale > 0.08 ? 7 : 5;
     const colors = { raw: css("--industry-raw"), processing: css("--industry-processing") };
+    const outputs = this.view.scale >= STATION_ICON_SCALE; // jak ikony stacji: tylko po przybliżeniu
     for (const ind of this.industries) {
       const [x, y] = this.toScreen(ind.px, ind.py);
-      if (x < -10 || y < -10 || x > this.w + 10 || y > this.h + 10) continue;
+      if (x < -30 || y < -30 || x > this.w + 30 || y > this.h + 30) continue;
       ctx.fillStyle = colors[ind.type];
       ctx.strokeStyle = css("--map-bg");
       ctx.lineWidth = 1.5;
@@ -323,6 +340,18 @@ export class MapView {
       ctx.fill();
       ctx.stroke();
       if (this.isMarked(ind)) this.ring(x, y, size);
+      if (outputs) this.drawOutputs(ind.outputs, x, y - size / 2 - 3);
+    }
+  }
+
+  // Ikonki produkowanych ładunków w rzędzie, wyśrodkowane nad kwadratem zakładu (bottomY = dół rzędu).
+  drawOutputs(srcs, x, bottomY) {
+    const s = OUTPUT_ICON_PX, gap = 1;
+    const imgs = srcs.map((src) => this.image(src)).filter(Boolean);
+    let left = x - (imgs.length * s + (imgs.length - 1) * gap) / 2;
+    for (const img of imgs) {
+      this.ctx.drawImage(img, left, bottomY - s, s, s);
+      left += s + gap;
     }
   }
 
@@ -331,10 +360,7 @@ export class MapView {
     const css = (name) => this.theme[name];
     const { ctx } = this;
     const icons = this.view.scale >= STATION_ICON_SCALE;
-    const r = icons ? 9 : 3.5;
-    ctx.font = `11px ${css("--font")}`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
+    const r = icons ? 10 : 3.5;
     for (const st of this.stations) {
       const [x, y] = this.toScreen(st.px, st.py);
       if (x < -20 || y < -20 || x > this.w + 20 || y > this.h + 20) continue;
@@ -347,8 +373,15 @@ export class MapView {
         ctx.lineWidth = 2;
         ctx.fill();
         ctx.stroke();
-        ctx.fillStyle = color;
-        ctx.fillText(CARRIER_ICON[st.type] ?? "•", x, y + 1);
+        const icon = this.tintedIcon(stationImg(st.data), color, STATION_ICON_PX);
+        if (icon) {
+          ctx.drawImage(icon, x - STATION_ICON_PX / 2, y - STATION_ICON_PX / 2, STATION_ICON_PX, STATION_ICON_PX);
+        } else { // obrazek jeszcze się ładuje albo go nie ma
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.arc(x, y, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
       } else {
         ctx.fillStyle = color;
         ctx.strokeStyle = css("--map-bg");
@@ -358,7 +391,42 @@ export class MapView {
       }
       if (this.isMarked(st)) this.ring(x, y, r * 2);
     }
-    ctx.textAlign = "start";
+  }
+
+  // Obrazek z cache; ładowany przy pierwszym użyciu (po wczytaniu przerysowujemy). null, dopóki
+  // się nie wczyta - albo na stałe, gdy pliku nie ma.
+  image(src) {
+    if (!src) return null;
+    let img = this.iconImages.get(src);
+    if (!img) {
+      img = new Image();
+      img.onload = () => this.requestDraw();
+      img.src = src;
+      this.iconImages.set(src, img);
+    }
+    return img.complete && img.naturalWidth ? img : null;
+  }
+
+  // Ikonka z gry to biała maska: barwimy ją raz na kolor i rozmiar (w pikselach urządzenia)
+  // na osobnym canvasie i trzymamy w cache. null, dopóki obrazek się nie wczyta.
+  tintedIcon(src, color, size) {
+    const img = this.image(src);
+    if (!img) return null;
+    const px = Math.round(size * this.dpr);
+    const key = `${src}|${color}|${px}`;
+    let canvas = this.iconCache.get(key);
+    if (!canvas) {
+      canvas = document.createElement("canvas");
+      canvas.width = canvas.height = px;
+      const c = canvas.getContext("2d");
+      c.imageSmoothingQuality = "high";
+      c.drawImage(img, 0, 0, px, px);
+      c.globalCompositeOperation = "source-in";
+      c.fillStyle = color;
+      c.fillRect(0, 0, px, px);
+      this.iconCache.set(key, canvas);
+    }
+    return canvas;
   }
 
   drawTowns() {
