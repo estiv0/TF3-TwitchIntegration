@@ -27,12 +27,13 @@ export function industryOutputs(ind) {
 
 const COLOR_VARS = ["--map-bg", "--map-street", "--map-street-tunnel", "--map-track", "--map-track-tunnel",
   "--industry-raw", "--industry-processing", "--town", "--town-label", "--accent", "--font", "--panel",
-  "--station-rail", "--station-road", "--station-tram", "--station-water", "--station-air"];
+  "--station-rail", "--station-road", "--station-tram", "--station-water", "--station-air", "--pin"];
 
 // Ikony stacji: od tej skali kółko z ikoną, poniżej sama kropka w kolorze rodzaju.
 const STATION_ICON_SCALE = 0.05;
 const STATION_ICON_PX = 24;
-const OUTPUT_ICON_PX = 26; // ikonki produkcji nad zakładem
+const OUTPUT_ICON_PX = 30; // ikonki produkcji nad zakładem
+const PIN_HEAD_Y = 22;      // główka pinezki tyle px nad wskazanym punktem
 
 // Kolory z CSS (motyw) odczytywane raz na klatkę, nie dla każdego obiektu.
 function readTheme() {
@@ -41,11 +42,15 @@ function readTheme() {
 }
 
 export class MapView {
-  constructor(canvas, { onHover, onSelect } = {}) {
+  constructor(canvas, { onHover, onSelect, onPlace, onPinMode } = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
     this.onHover = onHover;
     this.onSelect = onSelect;
+    this.onPlace = onPlace;     // kliknięcie w trybie pinezki / prawy przycisk -> { x, y, sx, sy }
+    this.onPinMode = onPinMode;
+    this.pin = null;            // { x, y, note } - pinezka z linku albo właśnie stawiana
+    this.pinMode = false;
 
     this.view = { x: 0, y: 0, scale: 0.02 };
     this.paths = null;          // { street, streetTunnel, track, trackTunnel }
@@ -125,7 +130,7 @@ export class MapView {
     if (!this.bbox && this.towns.length) {
       const xs = this.towns.map((t) => t.px), ys = this.towns.map((t) => t.py);
       this.bbox = { minX: Math.min(...xs), minY: Math.min(...ys), maxX: Math.max(...xs), maxY: Math.max(...ys) };
-      this.fit();
+      if (!this.fitted) this.fit();
     }
     this.requestDraw();
   }
@@ -135,7 +140,7 @@ export class MapView {
     this.terrain = { image, x: info.minX, y: -info.maxY, w: info.maxX - info.minX, h: info.maxY - info.minY };
     if (!this.bbox) {
       this.bbox = { minX: info.minX, minY: -info.maxY, maxX: info.maxX, maxY: -info.minY };
-      this.fit();
+      if (!this.fitted) this.fit();
     }
     this.requestDraw();
   }
@@ -270,8 +275,78 @@ export class MapView {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.drawIndustries();
     if (this.showStations) this.drawStations();
-    this.drawTowns();
     if (this.selected?.kind === "line") this.drawLine(this.selected.id);
+    this.drawTowns();
+    this.drawPin();
+  }
+
+  // ---------------------------------------------------------------- pinezka (link do miejsca)
+  // pin = { x, y, note } we współrzędnych gry (y na północ) albo null.
+  setPin(pin) {
+    this.pin = pin;
+    this.requestDraw();
+  }
+
+  // Centruje widok na pinezce; scale z linku, a bez niego - przybliżenie jak przy wyborze miasta.
+  showPin(scale) {
+    if (!this.pin) return;
+    this.view.x = this.pin.x;
+    this.view.y = -this.pin.y;
+    this.view.scale = scale ?? Math.max(this.view.scale, 0.25);
+    this.fitted = true; // dane przychodzące później nie mogą przestawić widoku na całą mapę
+    this.requestDraw();
+  }
+
+  setPinMode(on) {
+    this.pinMode = on;
+    this.canvas.style.cursor = on ? "crosshair" : "grab";
+    this.onPinMode?.(on);
+  }
+
+  // Szpilka: główka w kolorze akcentu nad punktem, pod nią opis (skrócony) w dymku.
+  drawPin() {
+    if (!this.pin) return;
+    const css = (name) => this.theme[name];
+    const { ctx } = this;
+    const [x, y] = this.toScreen(this.pin.x, -this.pin.y);
+    if (x < -300 || y < -60 || x > this.w + 300 || y > this.h + 60) return;
+    const hy = y - PIN_HEAD_Y;
+
+    ctx.fillStyle = "rgba(0, 0, 0, .35)";
+    ctx.beginPath();
+    ctx.ellipse(x, y, 5, 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = css("--map-bg");
+    ctx.fillStyle = css("--pin");
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x - 7, hy + 5);
+    ctx.arc(x, hy, 9, Math.PI * 0.8, Math.PI * 0.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = css("--map-bg");
+    ctx.beginPath();
+    ctx.arc(x, hy, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    const note = truncate((this.pin.note ?? "").replace(/\s+/g, " ").trim(), 48); // pełny opis w tooltipie
+    if (!note) return;
+    ctx.font = `600 12px ${css("--font")}`;
+    ctx.textBaseline = "middle";
+    const w = ctx.measureText(note).width + 14;
+    const bx = x + 14, by = hy - 11;
+    ctx.fillStyle = css("--panel");
+    ctx.strokeStyle = css("--pin");
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, w, 22, 6);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = css("--town-label");
+    ctx.fillText(note, bx + 7, hy);
   }
 
   // Trasa linii liczona leniwie i trzymana do zmiany przystanków / sieci.
@@ -360,7 +435,7 @@ export class MapView {
     const css = (name) => this.theme[name];
     const { ctx } = this;
     const icons = this.view.scale >= STATION_ICON_SCALE;
-    const r = icons ? 10 : 8;
+    const r = icons ? 16 : 8;
     for (const st of this.stations) {
       const [x, y] = this.toScreen(st.px, st.py);
       if (x < -20 || y < -20 || x > this.w + 20 || y > this.h + 20) continue;
@@ -379,7 +454,7 @@ export class MapView {
         } else { // obrazek jeszcze się ładuje albo go nie ma
           ctx.fillStyle = color;
           ctx.beginPath();
-          ctx.arc(x, y, 3, 0, Math.PI * 2);
+          ctx.arc(x, y, 4, 0, Math.PI * 2);
           ctx.fill();
         }
       } else {
@@ -493,7 +568,21 @@ export class MapView {
       const r = this.view.scale >= STATION_ICON_SCALE ? 11 : 6;
       for (const s of this.stations) consider(s, r);
     }
+    // pinezka na wierzchu: łapiemy jej główkę (PIN_HEAD_Y px nad wskazanym punktem)
+    if (this.pin) {
+      const [x, y] = this.toScreen(this.pin.x, -this.pin.y);
+      if (Math.hypot(x - sx, y - PIN_HEAD_Y - sy) <= 12) return { kind: "pin", id: "pin", data: this.pin };
+    }
     return best;
+  }
+
+  // Miejsce kliknięcia -> współrzędne gry (x, y; y na północ) dla onPlace.
+  place(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+    const [px, py] = this.toWorld(sx, sy);
+    this.setPinMode(false);
+    this.onPlace?.({ x: Math.round(px), y: Math.round(-py), sx, sy });
   }
 
   bindEvents() {
@@ -513,7 +602,14 @@ export class MapView {
       this.requestDraw();
     }, { passive: false });
 
+    // Prawy przycisk stawia pinezkę (zamiast menu przeglądarki).
+    c.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      this.place(e);
+    });
+
     c.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
       drag = { x: e.clientX, y: e.clientY, vx: this.view.x, vy: this.view.y, moved: false };
       c.setPointerCapture(e.pointerId);
     });
@@ -531,7 +627,7 @@ export class MapView {
       const hit = this.hitTest(e.clientX - rect.left, e.clientY - rect.top);
       const changed = (hit?.id ?? null) !== (this.hovered?.id ?? null);
       this.hovered = hit ? { kind: hit.kind, id: hit.id } : null;
-      c.style.cursor = hit ? "pointer" : "grab";
+      c.style.cursor = this.pinMode ? "crosshair" : hit ? "pointer" : "grab";
       this.onHover?.(hit, e.clientX - rect.left, e.clientY - rect.top);
       if (changed) this.requestDraw();
     });
@@ -540,8 +636,13 @@ export class MapView {
       const wasClick = drag && !drag.moved;
       drag = null;
       if (!wasClick) return;
+      if (this.pinMode) {
+        this.place(e);
+        return;
+      }
       const rect = c.getBoundingClientRect();
       const hit = this.hitTest(e.clientX - rect.left, e.clientY - rect.top);
+      if (hit?.kind === "pin") return; // pinezka ma tylko tooltip
       this.select(hit?.kind, hit?.id);
       this.onSelect?.(hit);
     });
@@ -553,5 +654,7 @@ export class MapView {
     });
   }
 }
+
+const truncate = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
 const overlaps = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;

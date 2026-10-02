@@ -7,6 +7,7 @@ import {
   iconHtml, linesByIndustry, linesByStation, stationImg, stationUse, townSize,
 } from "./format.js";
 import { MapView } from "./map.js";
+import { PinController } from "./pin.js";
 import { Sidebar } from "./sidebar.js";
 
 const $ = (sel) => document.querySelector(sel);
@@ -28,7 +29,15 @@ const map = new MapView($("#map"), {
   onSelect(item) {
     sidebar.setSelected(item?.kind, item?.id);
   },
+  onPlace(place) {
+    pins.place(place);
+  },
+  onPinMode(on) {
+    pins.modeChanged(on);
+  },
 });
+
+const pins = new PinController(map, { form: $("#pin-form"), button: $("#pin"), wrap: $(".map-wrap") });
 
 const sidebar = new Sidebar($("#sidebar"), {
   onPick(kind, id) {
@@ -52,10 +61,13 @@ let stationLines = new Map();  // id stacji -> linie (do tooltipa)
 let industryLines = new Map(); // id zakładu -> linie jego stacji
 
 // Podgląd stanu z konsoli przeglądarki (debug).
-window.tf3 = { map, sidebar };
+window.tf3 = { map, sidebar, pins };
 
 function tooltipHtml(item) {
   const d = item.data;
+  if (item.kind === "pin") {
+    return `<strong>📍 Pinezka</strong>${d.note ? `<span class="tip-note">${esc(d.note)}</span>` : ""}`;
+  }
   if (item.kind === "town") {
     const needs = (d.cargoNeeds ?? []).flatMap((g) => Object.keys(g ?? {}));
     return `<strong>${esc(d.name)}</strong><span>Miasto · pojemność ${fmtInt(townSize(d))}</span>`

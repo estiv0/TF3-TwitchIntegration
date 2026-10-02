@@ -35,7 +35,20 @@
         <button id="fit" type="button" title="Pokaż całą mapę">⤢</button>
         <button id="terrain" type="button" title="Teren (rzeźba)" aria-pressed="true">⛰</button>
         <button id="stations" type="button" title="Stacje (dworce, porty, lotniska)" aria-pressed="true"><span class="ico" style="-webkit-mask-image:url('img/stations/vehicle_train_front_32.png');mask-image:url('img/stations/vehicle_train_front_32.png')"></span></button>
+        <button id="pin" type="button" title="Pinezka z linkiem – kliknij miejsce na mapie (albo prawy przycisk myszy)" aria-pressed="false">📍</button>
       </div>
+      <form id="pin-form" class="pin-form" hidden>
+        <label for="pin-note">Opis pinezki</label>
+        <textarea id="pin-note" maxlength="200" rows="3" placeholder="np. Tu powstanie nowy port"></textarea>
+        <div class="pin-actions">
+          <button type="submit" class="primary">Utwórz link</button>
+          <button type="button" data-pin-cancel>Anuluj</button>
+        </div>
+        <div class="pin-link" data-pin-link hidden>
+          <input id="pin-url" type="text" readonly aria-label="Link do pinezki">
+          <button type="button" data-pin-copy>Kopiuj</button>
+        </div>
+      </form>
       <ul class="legend" aria-label="Legenda">
         <li><span class="lg-line lg-track"></span>Tory</li>
         <li><span class="lg-line lg-street"></span>Drogi</li>

@@ -27,6 +27,7 @@
   --station-tram: #f06fb0;
   --station-water: #33c4e8;
   --station-air: #ffcc4d;
+  --pin: #ff5d6c;
 
   --radius: 10px;
   color-scheme: dark;
@@ -116,6 +117,29 @@ button { font: inherit; color: inherit; }
   background: var(--panel); border: 1px solid var(--border);
 }
 .map-tools button:hover { border-color: var(--accent); }
+
+.map-tools button[aria-pressed="true"]#pin { border-color: var(--pin); }
+
+/* Formularz pinezki: przy klikniętym miejscu (main.js ustawia left/top). */
+.pin-form {
+  position: absolute; z-index: 3; width: 280px;
+  display: grid; gap: 8px; padding: 12px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .45);
+}
+.pin-form label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.pin-form textarea, .pin-form input {
+  width: 100%; padding: 7px 9px; border-radius: 8px; resize: vertical;
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text); font: inherit; font-size: 13px;
+}
+.pin-form textarea:focus, .pin-form input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.pin-actions, .pin-link { display: flex; gap: 6px; }
+.pin-form button {
+  padding: 6px 12px; border-radius: 8px; cursor: pointer; white-space: nowrap;
+  background: var(--panel-2); border: 1px solid var(--border); font-size: 13px;
+}
+.pin-form button:hover { border-color: var(--accent); }
+.pin-form button.primary { background: var(--accent); border-color: var(--accent); color: #1a1405; font-weight: 600; }
 
 .legend {
   position: absolute; left: 12px; bottom: 12px;
@@ -244,3 +268,4 @@ button { font: inherit; color: inherit; }
 }
 .chips li { align-items: center; }
 .chips li .cargo-ico { margin-right: 0; }
+.tooltip .tip-note { color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
