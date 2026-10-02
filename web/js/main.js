@@ -32,9 +32,15 @@ const sidebar = new Sidebar($("#sidebar"), {
     map.focus(kind, id);
     sidebar.setSelected(kind, id);
   },
+  onStop(lineId, index) {
+    map.focusStop(lineId, index);
+  },
 });
 
 $("#fit").addEventListener("click", () => map.fit());
+$("#terrain").addEventListener("click", (e) => {
+  e.currentTarget.setAttribute("aria-pressed", String(map.toggleTerrain()));
+});
 
 // Podgląd stanu z konsoli przeglądarki (debug).
 window.tf3 = { map, sidebar };
@@ -78,6 +84,9 @@ new DataFeed({
   onMeta(meta) {
     lastMeta = meta;
     renderStatus();
+  },
+  onTerrain(terrain) {
+    map.setTerrain(terrain);
   },
   onNetwork(network) {
     map.setNetwork(network);

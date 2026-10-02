@@ -104,7 +104,8 @@ button { font: inherit; color: inherit; }
 .tooltip strong { font-size: 13px; }
 .tooltip span { color: var(--muted); }
 
-.map-tools { position: absolute; top: 12px; right: 12px; }
+.map-tools { position: absolute; top: 12px; right: 12px; display: flex; flex-direction: column; gap: 6px; }
+.map-tools button[aria-pressed="false"] { opacity: .5; }
 .map-tools button {
   width: 34px; height: 34px; border-radius: 8px; cursor: pointer; font-size: 16px;
   background: var(--panel); border: 1px solid var(--border);
@@ -185,6 +186,11 @@ button { font: inherit; color: inherit; }
 .detail h2 .swatch { display: inline-block; vertical-align: middle; }
 .stops { margin: 0; padding-left: 22px; font-size: 13px; line-height: 1.6; }
 .stops li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
+.stops button {
+  padding: 0; border: 0; background: none; cursor: pointer; text-align: left; font: inherit; color: var(--text);
+}
+.stops button:hover { color: var(--accent); text-decoration: underline; }
+.stops li[aria-current="true"] button { color: var(--accent); font-weight: 600; }
 
 .list { flex: 1; overflow-y: auto; margin: 0; padding: 0 6px 10px; list-style: none; }
 .row {

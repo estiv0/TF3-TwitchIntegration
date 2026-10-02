@@ -25,6 +25,7 @@ lua_mod/                              → w grze: staging_area/estiv0_tf3export 
     json.lua              enkoder JSON (escapowanie, table.concat, null dla NaN)
     util.lua              bezpieczny dostęp do API, enumy -> nazwy, czas gry, log
     writer.lua            zapis: app.saveUserdata albo log gry (zapas)
+    terrain.lua           heightmapa (getBaseHeightAt porcjami) + jednorazowy benchmark metod odczytu terenu
 ```
 
 Moduły ładuje się względnie przez `ug_require "util.lua"`. Wszystkie leżą w jednym folderze.
@@ -72,6 +73,13 @@ Middle app wyciąga `json = "..."`, odwraca escapowanie Lua (`\"`, `\\`, `\n`, `
   - `base` to `seq` wersji, do której stosuje się różnicę. `network` i `networkDelta` mają wspólny licznik `seq`, więc `base = seq - 1`.
 
   Odbiorca stosuje różnice po kolei. Jeśli brakuje któregoś `seq`, czeka na nowy pełny zrzut, który powstaje przy następnej sesji.
+
+- **`terrain`**: heightmapa do tła mapy (`terrain.lua`). `{ v, kind, session, seq, gameTime, method, nx, ny, step, x0, y0, zMin, zMax, zScale, waterLevel, encoding, data }`
+  - próbka `(i, j)` leży w świecie w `(x0 + i*step, y0 + j*step)`; wiersze od `j = 0` (południe, najmniejsze y), w wierszu `i` rosnąco;
+  - `encoding = "b64x3"`: każda próbka to 3 znaki base64 (18 bitów, najstarsze pierwsze), `h = zMin + q * zScale` (`zScale = 0.1` m);
+  - `waterLevel` z komponentu `TERRAIN` świata, `null`, jeśli nie udało się go odczytać.
+
+  Powstaje raz na sesję (po pierwszym zrzucie sieci) i ponownie, gdy zmieni się podpis `getTerrainEntityRevisions()` (sprawdzany co `terrainCheckEveryWallSec`). Domyślnie krok 20 m, najwyżej 2048 próbek na bok: mapa 20×41 km daje krok 21 m i 976×1951 próbek (ok. 5,7 MB, ok. 4 s CPU w porcjach po 4 ms, czyli ~18 s w tle). Middle app robi z tego `latest/terrain.png` (cieniowana rzeźba) i `latest/terrain.json` (zakres w świecie).
 
 Typowe rozmiary to ok. 120 KB (`dynamic`) i ok. 1 MB (`network`, ok. 8700 krawędzi).
 

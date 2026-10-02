@@ -152,6 +152,29 @@ Ze strony [api.engine](https://wiki.transportfever3.com/script-doc/api/engine.ht
 - **Systemy** (`api.engine.system.*`): `getLineVehicles(line)`, `getLinesForPlayer(player)`, `getStations(town)`, `getNodeTrackSegments(node)` / `getNodeStreetSegments(node)` (to rozstrzyga, czy krawędź jest torem, czy drogą).
 - **Nazwy ładunków:** `api.res.cargoTypeRep.get(id).name` (używane w `landmarks_notification.script.tl`).
 
+### Teren (heightmapa)
+
+Z `api/tealdef/api/engine.d.tl` (`UtilTerrain`), `type.d.tl` (`GameMap`) i `app.d.tl`:
+
+- `api.engine.terrain.getBaseHeightAt(Vec2f)`: wysokość z siatki 4 m, bez wyrównań (wkopów i nasypów pod tory i drogi). `getHeightAt` je uwzględnia.
+- `getBoundingBox()` zwraca zakres świata, a `getTerrainEntityRevisions()` rewizje kafli 256×256 m, z których da się wykryć terraformowanie.
+- `makeMapFromGame(withHeightmap, ...)` zwraca `GameMap` z płaską tablicą `heightmap` i polami `numTilesX/Y`, `resolution`, `offsetZ`, `waterLevel`. Używa go edytor map (`gui/map_editor/map_editor.tl`).
+- `app.writeHeightmap(map, name, writeStl, sixteenBits, biomes)` to natywny zapis obrazka heightmapy, ten sam co eksport w edytorze map. Plik trafia do `userdata\heightmaps`, a listę zwraca `app.getAllHeightmaps()`.
+- `api.gui.util.takeScreenshot(scale)` robi zrzut z bieżącej kamery w perspektywie, więc pod mapę 2D się nie nadaje.
+
+Eksport używa metody A (`getBaseHeightAt` co 32 m, porcjami). `terrain.bench` (`cfg.terrainBench`) raz na uruchomienie gry mierzy A, B (`makeMapFromGame` i odczyt tablicy z Lua) oraz C (`writeHeightmap`). Wyniki trafiają do logu jako `[tf3export] terrain bench ...`.
+
+Pomiar w grze z 2026-10-02. Mapa miała 80×160 kafli, czyli 20,5×41 km, `waterLevel` 0, a `TERRAIN` na encji świata działa:
+
+| Metoda | Wynik | Wniosek |
+|---|---|---|
+| A `getBaseHeightAt` | 1,8 µs/wywołanie (`getHeightAt` 2,25 µs). Przy kroku 32 m to 821 tys. próbek, ok. 1,5 s CPU rozłożone na klatki | **wybrana**, bo nie zacina gry |
+| B `makeMapFromGame` | samo wywołanie trwa 55 ms, ale `.heightmap` zamienia się na tabelę Lua z 52 mln liczb w 476 ms w jednej klatce i zajmuje setki MB | odpada |
+| C `writeHeightmap` (16 bit) | 5,3 s w jednej klatce, PNG ma 5121×10241 px i 38 MB | odpada |
+
+- Wartości z `heightmap` to metry, identyczne z `getBaseHeightAt`. Tablica ma układ `(numTiles*64+1)` × `(numTilesY*64+1)` (siatka 4 m), wiersz po wierszu od min y.
+- `getTerrainEntityRevisions()` działa w wątku GUI. Rewizje są za duże na `string.format("%d")`, więc podpis składamy przez `tostring`.
+
 ## 6. Lista kontrolna do konsoli (zastępuje tę z `lua_mod/README.md`)
 
 ```lua

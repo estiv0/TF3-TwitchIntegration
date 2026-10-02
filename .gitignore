@@ -11,7 +11,9 @@ TestResults/
 .claude/
 
 # Lokalne wyniki middle app (Development publikuje do web/data)
-middle_app/src/Tf3Bridge/output/
+# Windows nie rozróżnia wielkości liter: "output/" łapałoby też źródła w Output/, stąd wyjątek dla *.cs
+middle_app/src/Tf3Bridge/output/*
+!middle_app/src/Tf3Bridge/output/*.cs
 web/data/
 
 # Web

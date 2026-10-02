@@ -12,6 +12,7 @@ namespace Tf3Bridge.Processing;
 /// <item>files of older sessions are retired (a new game start / loaded save makes them obsolete),</item>
 /// <item>network files of the current session are applied in seq order (full snapshot, then deltas),</item>
 /// <item>only the newest dynamic snapshot is published, older ones are retired,</item>
+/// <item>the newest terrain heightmap is rendered to latest/terrain.png + latest/terrain.json,</item>
 /// <item>latest/network.json, latest/dynamic.json and latest/meta.json are published when something changed.</item>
 /// </list>
 /// Files that cannot be parsed yet are assumed to be mid-write and retried on the next pass.
@@ -21,12 +22,16 @@ public sealed class ExportProcessor(IOptions<BridgeOptions> options, IPublisher 
     public const string DynamicPath = "latest/dynamic.json";
     public const string NetworkPath = "latest/network.json";
     public const string MetaPath = "latest/meta.json";
+    public const string TerrainPngPath = "latest/terrain.png";
+    public const string TerrainInfoPath = "latest/terrain.json";
 
     private readonly BridgeOptions _options = options.Value;
     private readonly NetworkState _network = new();
 
     private string? _session;
     private long _dynamicSeq;
+    private string? _terrainSession;
+    private long? _terrainSeq;
     private long? _gameTime;
     private JsonNode? _date;
 
@@ -61,19 +66,57 @@ public sealed class ExportProcessor(IOptions<BridgeOptions> options, IPublisher 
         var current = files.Where(f => f.Session == session).ToList();
         var networkChanged = ProcessNetwork(current);
         var dynamicChanged = ProcessDynamic(current, out var dynamicJson);
+        var terrainChanged = await ProcessTerrainAsync(current, ct);
 
         if (networkChanged)
             await publisher.PublishAsync(NetworkPath, _network.ToJson().ToJsonString(JsonOptions), ct);
         if (dynamicJson is not null)
             await publisher.PublishAsync(DynamicPath, dynamicJson, ct);
-        if (networkChanged || dynamicChanged)
+        if (networkChanged || dynamicChanged || terrainChanged)
             await publisher.PublishAsync(MetaPath, BuildMeta().ToJsonString(JsonOptions), ct);
+    }
+
+    /// <summary>Newest terrain file -> PNG + placement JSON (PNG first, so meta never points at a missing image).</summary>
+    private async Task<bool> ProcessTerrainAsync(List<ExportFile> files, CancellationToken ct)
+    {
+        var terrains = files.Where(f => f.Kind == ExportKind.Terrain).OrderByDescending(f => f.Seq).ToList();
+        if (terrains.Count == 0) return false;
+
+        var newest = terrains[0];
+        var doc = ReadJsonObject(newest);
+        if (doc is null) return false; // mid-write (or moved to failed); retry next pass
+
+        TerrainGrid grid;
+        try
+        {
+            grid = TerrainGrid.Parse(doc);
+        }
+        catch (FormatException ex)
+        {
+            logger.LogError(ex, "terrain #{Seq}: invalid data, moving to failed", newest.Seq);
+            MoveTo(newest, "failed");
+            return false;
+        }
+
+        var started = DateTime.UtcNow;
+        var png = TerrainRenderer.RenderPng(grid);
+        await publisher.PublishBytesAsync(TerrainPngPath, png, ct);
+        await publisher.PublishAsync(TerrainInfoPath,
+            TerrainRenderer.Info(grid, newest.Session, newest.Seq).ToJsonString(JsonOptions), ct);
+
+        _terrainSession = newest.Session;
+        _terrainSeq = newest.Seq;
+        logger.LogInformation("terrain #{Seq}: {Nx} x {Ny} @ {Step} m, z {ZMin:F0}..{ZMax:F0}, PNG {Bytes} B in {Ms:F0} ms",
+            newest.Seq, grid.Nx, grid.Ny, grid.Step, grid.ZMin, grid.ZMax, png.Length, (DateTime.UtcNow - started).TotalMilliseconds);
+
+        terrains.ForEach(Retire);
+        return true;
     }
 
     private bool ProcessNetwork(List<ExportFile> files)
     {
         var changed = false;
-        foreach (var file in files.Where(f => f.Kind != ExportKind.Dynamic).OrderBy(f => f.Seq))
+        foreach (var file in files.Where(f => f.Kind is ExportKind.Network or ExportKind.NetworkDelta).OrderBy(f => f.Seq))
         {
             var doc = ReadJsonObject(file);
             if (doc is null)
@@ -157,6 +200,8 @@ public sealed class ExportProcessor(IOptions<BridgeOptions> options, IPublisher 
         ["networkSeq"] = _network.HasData ? _network.Seq : null,
         ["networkSession"] = _network.Session,
         ["edges"] = _network.EdgeCount,
+        ["terrainSeq"] = _terrainSeq,
+        ["terrainSession"] = _terrainSession,
         ["gameTime"] = _gameTime,
         ["date"] = _date?.DeepClone(),
         ["updatedAtUtc"] = DateTime.UtcNow.ToString("O"),

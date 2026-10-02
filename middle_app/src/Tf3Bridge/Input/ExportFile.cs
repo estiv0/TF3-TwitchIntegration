@@ -7,6 +7,7 @@ public enum ExportKind
     Dynamic,
     Network,
     NetworkDelta,
+    Terrain,
 }
 
 /// <summary>
@@ -15,7 +16,7 @@ public enum ExportKind
 /// </summary>
 public sealed partial record ExportFile(string Path, ExportKind Kind, string Session, long Seq, DateTime LastWriteUtc)
 {
-    [GeneratedRegex(@"^(dynamic|network|networkDelta)_([0-9a-f]+)_(\d+)\.lua$")]
+    [GeneratedRegex(@"^(dynamic|network|networkDelta|terrain)_([0-9a-f]+)_(\d+)\.lua$")]
     private static partial Regex NamePattern();
 
     public static ExportFile? TryParse(string path, DateTime lastWriteUtc)
@@ -27,6 +28,7 @@ public sealed partial record ExportFile(string Path, ExportKind Kind, string Ses
         {
             "dynamic" => ExportKind.Dynamic,
             "network" => ExportKind.Network,
+            "terrain" => ExportKind.Terrain,
             _ => ExportKind.NetworkDelta,
         };
         return new ExportFile(path, kind, match.Groups[2].Value, long.Parse(match.Groups[3].Value), lastWriteUtc);

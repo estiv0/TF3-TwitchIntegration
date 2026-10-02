@@ -7,13 +7,15 @@ import {
 import { industryKind } from "./map.js";
 
 export class Sidebar {
-  constructor(root, { onPick }) {
+  constructor(root, { onPick, onStop }) {
     this.root = root;
     this.onPick = onPick;
+    this.onStop = onStop;
     this.tab = "towns";
     this.filter = "";
     this.dynamic = null;
     this.selected = null;
+    this.focusedStop = null;    // indeks przystanku zaznaczonej linii, na który przeniesiono mapę
 
     this.list = root.querySelector("[data-list]");
     this.detail = root.querySelector("[data-detail]");
@@ -47,6 +49,14 @@ export class Sidebar {
       const row = e.target.closest("[data-kind]");
       if (row) this.onPick(row.dataset.kind, Number(row.dataset.id));
     });
+
+    this.detail.addEventListener("click", (e) => {
+      const stop = e.target.closest("[data-stop]");
+      if (!stop || this.selected?.kind !== "line") return;
+      this.focusedStop = Number(stop.dataset.stop);
+      this.onStop?.(this.selected.id, this.focusedStop);
+      this.renderDetail();
+    });
   }
 
   setDynamic(dynamic) {
@@ -61,6 +71,7 @@ export class Sidebar {
 
   setSelected(kind, id) {
     this.selected = kind ? { kind, id } : null;
+    this.focusedStop = null;
     this.renderList();
     this.renderDetail();
   }
@@ -137,7 +148,7 @@ export class Sidebar {
     }
     this.detail.hidden = false;
     this.detail.innerHTML = sel.kind === "town" ? townDetail(item)
-      : sel.kind === "line" ? lineDetail(item, d.vehicles ?? []) : industryDetail(item);
+      : sel.kind === "line" ? lineDetail(item, this.focusedStop) : industryDetail(item);
   }
 }
 
@@ -195,15 +206,18 @@ function highlight(text, filter) {
   return esc(text.slice(0, i)) + `<mark>${esc(text.slice(i, i + filter.length))}</mark>` + esc(text.slice(i + filter.length));
 }
 
-function lineDetail(l, vehicles) {
-  const stopped = vehicles.filter((v) => v.line === l.id && v.stopped).length;
-  const stops = (l.stops ?? []).map((s, i) => `<li>${esc(s.name ?? `Przystanek ${i + 1}`)}</li>`).join("");
+// Przystanek z pozycją jest klikalny (data-stop = indeks na linii) - przenosi mapę do niego.
+function lineDetail(l, focusedStop) {
+  const stops = (l.stops ?? []).map((s, i) => {
+    const name = esc(s.name ?? `Przystanek ${i + 1}`);
+    if (!s.pos) return `<li>${name}</li>`;
+    return `<li data-stop="${i}" aria-current="${focusedStop === i}"><button type="button">${name}</button></li>`;
+  }).join("");
   return `
     <h2><span class="swatch" style="background:${rgb(l.color)}"></span> ${esc(l.name)}</h2>
     <p class="detail-sub">${CARRIER_ICON[l.carrier] ?? ""} ${esc(CARRIER_PL[l.carrier] ?? "Linia")}</p>
     <dl class="stats">
       ${stat("Pojazdy", fmtInt(l.vehicleCount))}
-      ${stat("Zatrzymane", fmtInt(stopped))}
       ${stat("Przystanki", fmtInt(l.stops?.length ?? 0))}
     </dl>
     ${stops ? `<h3>Przystanki</h3><ol class="stops">${stops}</ol>` : ""}`;

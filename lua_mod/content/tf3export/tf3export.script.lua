@@ -11,13 +11,15 @@
 --     licznik netVersion we wspólnym stanie.
 --   * guiUpdate (GUI): eksport dynamiczny w jednej klatce; sieć przebudowywana porcjami
 --     po zmianie netVersion (z debounce) i zapisywana jako pełny zrzut (raz na sesję)
---     albo różnica względem poprzedniej wersji.
+--     albo różnica względem poprzedniej wersji; teren (terrain.lua) porcjami po sieci
+--     i ponownie po zmianie rewizji kafli terenu.
 
 local json = ug_require "json.lua"
 local util = ug_require "util.lua"
 local collectors = ug_require "collectors.lua"
 local writer = ug_require "writer.lua"
 local bench = ug_require "bench.lua"
+local terrain = ug_require "terrain.lua"
 
 local cfg = {
 	dynamicEveryDays = 2,          -- eksport miast, przemysłu, linii i pojazdów (czas gry)...
@@ -27,6 +29,12 @@ local cfg = {
 	networkBudgetMs = 2,           -- czas pracy nad siecią na klatkę
 	formatVersion = 5,
 	benchmark = false,             -- jednorazowy pomiar formatu zapisu (bench.lua), wyniki w docs
+	terrainStepM = 20,             -- odstęp próbek heightmapy (m)
+	terrainMaxSide = 2048,         -- najwyżej tyle próbek na bok (większa mapa -> większy krok);
+	                               -- mapa 20x41 km -> krok 21 m, 976 x 1951 (~2 mln próbek, ~4 s CPU w porcjach)
+	terrainBudgetMs = 4,           -- czas pracy nad terenem na klatkę
+	terrainCheckEveryWallSec = 30, -- jak często sprawdzać rewizje kafli terenu (terraformowanie)
+	terrainBench = false,          -- jednorazowy pomiar metod odczytu terenu (terrain.lua); zacina grę na ~6 s, wyniki w docs
 }
 
 ---------------------------------------------------------------- stan GUI
@@ -43,7 +51,12 @@ local S = {
 	netVersionSeen = nil,    -- ostatnio obsłużona wartość netVersion ze stanu wspólnego
 	netDirtyWall = nil,      -- kiedy zauważyliśmy zmianę (debounce)
 	lastNetworkWall = nil,   -- kiedy ostatnio startowała przebudowa
+	seqTerrain = 0,
+	terrain = nil,           -- bieżące zadanie eksportu terenu
+	terrainSig = nil,        -- podpis rewizji terenu z ostatniego eksportu
+	lastTerrainCheckWall = nil,
 }
+local terrainBenchDone = false -- raz na uruchomienie gry, nie na sesję
 
 local function wallTime()
 	return (os and os.time) and os.time() or nil
@@ -55,6 +68,7 @@ local function newSession(now)
 	S.seqDynamic, S.seqNetwork = 0, 0
 	S.lastDynamicTime, S.lastDynamicWall = nil, nil
 	S.rows, S.net, S.netDirtyWall, S.lastNetworkWall = nil, nil, nil, nil
+	S.seqTerrain, S.terrain, S.terrainSig, S.lastTerrainCheckWall = 0, nil, nil, nil
 	util.log(string.format("new session %s (writer mode '%s')", S.session, writer.mode()))
 end
 
@@ -181,6 +195,56 @@ local function stepNetwork()
 	finishNetwork(net)
 end
 
+---------------------------------------------------------------- eksport terenu
+-- Heightmapa porcjami (terrainBudgetMs na klatkę), tylko gdy nie trwa praca nad siecią.
+-- Ponownie po zmianie rewizji kafli terenu (sprawdzane co terrainCheckEveryWallSec).
+local function startTerrain(now, reason)
+	S.terrain = terrain.start({ stepM = cfg.terrainStepM, maxSide = cfg.terrainMaxSide,
+		gameTime = now, reason = reason })
+	if S.terrain == nil then
+		S.terrainSig = "unavailable"
+		util.log("terrain: api.engine.terrain unavailable, terrain export disabled for this session")
+	end
+end
+
+local function stepTerrain()
+	local job = S.terrain
+	if not terrain.step(job, cfg.terrainBudgetMs) then return end
+	S.terrain = nil
+	S.terrainSig = job.revSig or "?"
+	S.seqTerrain = S.seqTerrain + 1
+	local t = util.clock()
+	local content = terrain.content(job, {
+		v = cfg.formatVersion, kind = "terrain", session = S.session, seq = S.seqTerrain, gameTime = job.gameTime,
+	})
+	local t1 = util.clock()
+	writer.write("terrain", S.session, S.seqTerrain, content)
+	local t2 = util.clock()
+	util.log(string.format("terrain #%d (%s): %d x %d @ %d m, z %.1f..%.1f, sample %.0f ms (%d calls), "
+		.. "encode %.0f ms + concat %.0f ms, write %.0f ms, total %.1f s wall, %d B",
+		S.seqTerrain, job.reason, job.nx, job.ny, job.step, job.zMin, job.zMax,
+		job.sampleWork * 1000, job.calls, job.encodeWork * 1000, (t1 - t) * 1000,
+		(t2 - t1) * 1000, t2 - job.t0, #content))
+end
+
+local function updateTerrain(now, wall)
+	if S.terrain then
+		stepTerrain()
+	elseif S.net == nil and S.rows ~= nil then -- najpierw sieć
+		if cfg.terrainBench and not terrainBenchDone then
+			terrainBenchDone = true
+			terrain.bench({ budgetMs = cfg.terrainBudgetMs })
+		elseif S.terrainSig == nil then
+			S.lastTerrainCheckWall = wall
+			startTerrain(now, "initial")
+		elseif S.terrainSig ~= "unavailable" and wall - (S.lastTerrainCheckWall or 0) >= cfg.terrainCheckEveryWallSec then
+			S.lastTerrainCheckWall = wall
+			local sig = terrain.revisionSignature()
+			if sig ~= nil and sig ~= S.terrainSig then startTerrain(now, "terrain changed") end
+		end
+	end
+end
+
 ---------------------------------------------------------------- game script
 local function due(last, now, everyDays, day)
 	return last == nil or now - last >= everyDays * day
@@ -275,6 +339,13 @@ local script = {
 		elseif not paused and wall - (S.lastNetworkWall or 0) >= cfg.networkSafetyEveryWallSec then
 			S.lastNetworkWall = wall
 			startNetwork(now, "periodic")
+		end
+
+		-- teren to nowe, niesprawdzone API: błąd wyłącza go na tę sesję zamiast psuć guiUpdate
+		local okTerrain, errTerrain = pcall(updateTerrain, now, wall)
+		if not okTerrain then
+			S.terrain, S.terrainSig = nil, "unavailable"
+			util.log("terrain export failed, disabled for this session: " .. tostring(errTerrain))
 		end
 
 		if not paused and due(S.lastDynamicTime, now, cfg.dynamicEveryDays, util.dayLength())

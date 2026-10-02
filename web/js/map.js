@@ -38,7 +38,10 @@ export class MapView {
     this.lines = new Map();     // id -> linia z dynamic.json
     this.graph = null;          // RouteGraph - do wyznaczania tras linii
     this.routeCache = new Map(); // id linii -> { key, route }
+    this.terrain = null;        // { image, x, y, w, h } - tło z heightmapy, prostokąt w układzie ścieżki
+    this.showTerrain = true;
     this.selected = null;       // { kind, id }
+    this.focusedStop = null;    // { x, y } przystanku zaznaczonej linii wybranego w panelu
     this.hovered = null;
     this.fitted = false;
     this.frame = 0;
@@ -99,6 +102,22 @@ export class MapView {
     this.requestDraw();
   }
 
+  // Obrazek terenu z Tf3Bridge (terrain.png + terrain.json z zakresem w świecie gry; północ u góry).
+  setTerrain({ info, image }) {
+    this.terrain = { image, x: info.minX, y: -info.maxY, w: info.maxX - info.minX, h: info.maxY - info.minY };
+    if (!this.bbox) {
+      this.bbox = { minX: info.minX, minY: -info.maxY, maxX: info.maxX, maxY: -info.minY };
+      this.fit();
+    }
+    this.requestDraw();
+  }
+
+  toggleTerrain() {
+    this.showTerrain = !this.showTerrain;
+    this.requestDraw();
+    return this.showTerrain;
+  }
+
   // ---------------------------------------------------------------- widok
   resize() {
     const dpr = window.devicePixelRatio || 1;
@@ -124,6 +143,7 @@ export class MapView {
   }
 
   focus(kind, id) {
+    this.focusedStop = null;
     if (kind === "line") {
       this.selected = { kind, id };
       const route = this.lineRoute(id);
@@ -140,7 +160,20 @@ export class MapView {
     this.requestDraw();
   }
 
+  // Przystanek zaznaczonej linii: centrujemy na nim i obrysowujemy go do zmiany wyboru.
+  focusStop(lineId, index) {
+    const pos = this.lines.get(lineId)?.stops?.[index]?.pos;
+    if (!pos) return;
+    this.selected = { kind: "line", id: lineId };
+    this.focusedStop = { x: pos[0], y: -pos[1] };
+    this.view.x = this.focusedStop.x;
+    this.view.y = this.focusedStop.y;
+    this.view.scale = Math.max(this.view.scale, 0.5);
+    this.requestDraw();
+  }
+
   select(kind, id) {
+    this.focusedStop = null;
     this.selected = kind ? { kind, id } : null;
     this.requestDraw();
   }
@@ -169,6 +202,14 @@ export class MapView {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = css("--map-bg");
     ctx.fillRect(0, 0, w, h);
+
+    if (this.terrain && this.showTerrain) {
+      const s = view.scale, t = this.terrain;
+      ctx.setTransform(s * dpr, 0, 0, s * dpr, (w / 2 - view.x * s) * dpr, (h / 2 - view.y * s) * dpr);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(t.image, t.x, t.y, t.w, t.h);
+    }
 
     if (this.paths) {
       const s = view.scale;
@@ -238,6 +279,10 @@ export class MapView {
       ctx.arc(x, y, 5, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
+    }
+    if (this.focusedStop) {
+      const [x, y] = this.toScreen(this.focusedStop.x, this.focusedStop.y);
+      this.ring(x, y, 10);
     }
   }
 
