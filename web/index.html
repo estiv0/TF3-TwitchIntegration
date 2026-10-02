@@ -34,6 +34,7 @@
       <div class="map-tools">
         <button id="fit" type="button" title="Pokaż całą mapę">⤢</button>
         <button id="terrain" type="button" title="Teren (rzeźba)" aria-pressed="true">⛰</button>
+        <button id="stations" type="button" title="Stacje (dworce, porty, lotniska)" aria-pressed="true">🚉</button>
       </div>
       <ul class="legend" aria-label="Legenda">
         <li><span class="lg-line lg-track"></span>Tory</li>
@@ -41,6 +42,10 @@
         <li><span class="dot dot-town"></span>Miasto</li>
         <li><span class="dot dot-raw"></span>Surowce</li>
         <li><span class="dot dot-processing"></span>Przetwórstwo</li>
+        <li><span class="dot dot-station st-rail"></span>Dworzec</li>
+        <li><span class="dot dot-station st-road"></span>Dworzec drogowy</li>
+        <li><span class="dot dot-station st-water"></span>Port</li>
+        <li><span class="dot dot-station st-air"></span>Lotnisko</li>
       </ul>
     </section>
 
@@ -48,6 +53,7 @@
       <div class="tabs" role="tablist">
         <button role="tab" data-tab="towns" aria-selected="true">Miasta <span data-count="towns">0</span></button>
         <button role="tab" data-tab="industries" aria-selected="false">Przemysł <span data-count="industries">0</span></button>
+        <button role="tab" data-tab="stations" aria-selected="false">Stacje <span data-count="stations">0</span></button>
         <button role="tab" data-tab="lines" aria-selected="false">Linie <span data-count="lines">0</span></button>
       </div>
       <input class="search" data-search type="search" placeholder="Szukaj…" aria-label="Szukaj">

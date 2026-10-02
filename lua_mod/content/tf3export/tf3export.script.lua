@@ -22,7 +22,7 @@ local bench = ug_require "bench.lua"
 local terrain = ug_require "terrain.lua"
 
 local cfg = {
-	dynamicEveryDays = 2,          -- eksport miast, przemysłu, linii i pojazdów (czas gry)...
+	dynamicEveryDays = 2,          -- eksport miast, przemysłu, stacji, linii i pojazdów (czas gry)...
 	minDynamicWallSec = 10,        -- ...ale nie częściej niż co tyle sekund czasu rzeczywistego
 	networkDebounceSec = 2,        -- po zdarzeniu budowy czekamy, aż gracz skończy klikać
 	networkSafetyEveryWallSec = 300, -- pełne porównanie sieci także bez zdarzeń (zabezpieczenie)
@@ -73,11 +73,17 @@ local function newSession(now)
 end
 
 ---------------------------------------------------------------- eksport dynamiczny
--- Miasta, przemysł, linie i pojazdy w JEDNEJ klatce, żeby snapshot był spójny.
+-- Miasta, przemysł, stacje, linie i pojazdy w JEDNEJ klatce, żeby snapshot był spójny.
 local function exportDynamic(now)
 	local t0 = util.clock()
 	S.seqDynamic = S.seqDynamic + 1
 	local vehicles = collectors.vehicles()
+	-- stacje to nowe, niesprawdzone API: błąd nie może zablokować reszty eksportu
+	local okSt, stations, stationKinds = pcall(collectors.stations)
+	if not okSt then
+		util.log("stations failed: " .. tostring(stations))
+		stations, stationKinds = {}, {}
+	end
 	local snapshot = {
 		v = cfg.formatVersion,
 		kind = "dynamic",
@@ -88,7 +94,8 @@ local function exportDynamic(now)
 		player = collectors.player(),
 		towns = collectors.towns(),
 		industries = collectors.industries(),
-		lines = collectors.lines(vehicles),
+		stations = stations,
+		lines = collectors.lines(vehicles, stationKinds),
 		vehicles = vehicles,
 	}
 	local t1 = util.clock()

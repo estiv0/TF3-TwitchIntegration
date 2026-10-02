@@ -1,8 +1,8 @@
-// Panel boczny: listy (miasta, przemysł, linie) i szczegóły zaznaczonego obiektu.
+// Panel boczny: listy (miasta, przemysł, stacje, linie) i szczegóły zaznaczonego obiektu.
 
 import {
-  CARRIER_ICON, CARRIER_PL, LAND_USE_PL, cargoName, escapeHtml as esc,
-  fmtDec, fmtInt, fmtPercent, rgb, townSize,
+  CARRIER_ICON, CARRIER_PL, LAND_USE_PL, STATION_ORDER, STATION_PL, cargoName, escapeHtml as esc,
+  fmtDec, fmtInt, fmtPercent, industryOfStation, linesByIndustry, linesByStation, rgb, stationUse, townSize,
 } from "./format.js";
 import { industryKind } from "./map.js";
 
@@ -21,21 +21,25 @@ export class Sidebar {
     this.detail = root.querySelector("[data-detail]");
     this.search = root.querySelector("[data-search]");
     this.carriers = root.querySelector("[data-carriers]");
-    this.carrier = "";          // filtr typu linii, "" = wszystkie
+    this.typeFilter = { lines: "", stations: "" }; // filtr nośnika / rodzaju stacji, "" = wszystkie
+    this.stationLines = new Map();                 // id stacji -> linie
+    this.industryLines = new Map();                // id zakładu -> linie jego stacji
+    this.stationIndustry = new Map();              // id stacji -> id zakładu (stacje przemysłu)
 
     root.querySelectorAll("[data-tab]").forEach((btn) =>
       btn.addEventListener("click", () => {
         this.tab = btn.dataset.tab;
         root.querySelectorAll("[data-tab]").forEach((b) => b.setAttribute("aria-selected", String(b === btn)));
-        this.carriers.hidden = this.tab !== "lines";
+        this.carriers.hidden = !(this.tab in this.typeFilter);
         this.search.placeholder = this.tab === "lines" ? "Szukaj linii lub stacji…" : "Szukaj…";
+        this.renderCarriers();
         this.renderList();
       }));
 
     this.carriers.addEventListener("click", (e) => {
       const btn = e.target.closest("[data-carrier]");
       if (!btn) return;
-      this.carrier = btn.dataset.carrier;
+      this.typeFilter[this.tab] = btn.dataset.carrier;
       this.renderCarriers();
       this.renderList();
     });
@@ -51,6 +55,11 @@ export class Sidebar {
     });
 
     this.detail.addEventListener("click", (e) => {
+      const line = e.target.closest("[data-line]");
+      if (line) {
+        this.onPick("line", Number(line.dataset.line));
+        return;
+      }
       const stop = e.target.closest("[data-stop]");
       if (!stop || this.selected?.kind !== "line") return;
       this.focusedStop = Number(stop.dataset.stop);
@@ -61,8 +70,12 @@ export class Sidebar {
 
   setDynamic(dynamic) {
     this.dynamic = dynamic;
+    this.stationLines = linesByStation(dynamic);
+    this.stationIndustry = industryOfStation(dynamic);
+    this.industryLines = linesByIndustry(dynamic, this.stationLines, this.stationIndustry);
     this.root.querySelector('[data-count="towns"]').textContent = dynamic.towns?.length ?? 0;
     this.root.querySelector('[data-count="industries"]').textContent = dynamic.industries?.length ?? 0;
+    this.root.querySelector('[data-count="stations"]').textContent = dynamic.stations?.length ?? 0;
     this.root.querySelector('[data-count="lines"]').textContent = dynamic.lines?.length ?? 0;
     this.renderCarriers();
     this.renderList();
@@ -74,6 +87,11 @@ export class Sidebar {
     this.focusedStop = null;
     this.renderList();
     this.renderDetail();
+  }
+
+  // Klucz filtra stacji: stacje zakładów osobno, niezależnie od nośnika.
+  stationKey(s) {
+    return this.stationIndustry.has(s.id) ? "INDUSTRY" : s.kind;
   }
 
   // ---------------------------------------------------------------- listy
@@ -100,9 +118,27 @@ export class Sidebar {
             <span class="row-name">${esc(i.name)}</span>
             <span class="row-value">poz. ${i.level ?? "–"}</span>
           </li>`).join("");
+    } else if (this.tab === "stations") {
+      const kind = this.typeFilter.stations;
+      const nLines = (s) => this.stationLines.get(s.id)?.length ?? 0;
+      const industries = new Map(d.industries.map((i) => [i.id, i]));
+      html = (d.stations ?? []).filter((s) => (!kind || this.stationKey(s) === kind) && match(s.name))
+        .sort((a, b) => nLines(b) - nLines(a) || String(a.name).localeCompare(String(b.name), "pl"))
+        .map((s) => {
+          // Stacja zakładu: ikonka zakładu, a kliknięcie otwiera zakład (tam są też jego linie).
+          const ind = industries.get(this.stationIndustry.get(s.id));
+          const [k, id] = ind ? ["industry", ind.id] : ["station", s.id];
+          return `
+          <li class="row" data-kind="${k}" data-id="${id}" aria-current="${isSel(k, id)}">
+            <span class="dot ${ind ? `dot-${industryKind(ind)}` : `dot-station st-${esc(String(s.kind).toLowerCase())}`}"></span>
+            <span class="row-name">${CARRIER_ICON[s.kind] ?? ""} ${esc(s.name ?? ind?.name ?? STATION_PL[s.kind])}</span>
+            <span class="row-value">${fmtInt(nLines(s))} lin.</span>
+          </li>`;
+        }).join("");
     } else {
       // Szukanie po nazwie linii albo po nazwach jej stacji; trafione stacje pokazujemy pod nazwą.
-      html = d.lines.filter((l) => !this.carrier || carrierKey(l) === this.carrier)
+      const carrier = this.typeFilter.lines;
+      html = d.lines.filter((l) => !carrier || carrierKey(l) === carrier)
         .map((l) => ({ l, stations: match(l.name) ? [] : matchingStations(l, this.filter) }))
         .filter(({ l, stations }) => match(l.name) || stations.length)
         .sort((a, b) => (b.l.vehicleCount ?? 0) - (a.l.vehicleCount ?? 0))
@@ -120,16 +156,24 @@ export class Sidebar {
     this.list.innerHTML = html || `<li class="empty">Brak wyników</li>`;
   }
 
-  // Przyciski typów linii: tylko typy obecne w danych, z liczbą linii.
+  // Przyciski typów linii / rodzajów stacji: tylko typy obecne w danych, z liczbą pozycji.
   renderCarriers() {
+    if (!(this.tab in this.typeFilter)) return;
+    const stations = this.tab === "stations";
+    const items = (stations ? this.dynamic?.stations : this.dynamic?.lines) ?? [];
+    const keyOf = stations ? (s) => this.stationKey(s) : carrierKey;
+    const order = stations ? STATION_ORDER : CARRIER_ORDER;
+    const names = stations ? STATION_PL : CARRIER_PL;
+
     const counts = new Map();
-    for (const l of this.dynamic?.lines ?? []) counts.set(carrierKey(l), (counts.get(carrierKey(l)) ?? 0) + 1);
-    if (this.carrier && !counts.has(this.carrier)) this.carrier = "";
+    for (const x of items) counts.set(keyOf(x), (counts.get(keyOf(x)) ?? 0) + 1);
+    const current = this.typeFilter[this.tab];
+    if (current && !counts.has(current)) this.typeFilter[this.tab] = "";
     const btn = (key, label, n) =>
-      `<button type="button" data-carrier="${key}" aria-pressed="${this.carrier === key}">${label}<span>${fmtInt(n)}</span></button>`;
-    this.carriers.innerHTML = btn("", "Wszystkie", this.dynamic?.lines?.length ?? 0)
-      + CARRIER_ORDER.filter((c) => counts.has(c))
-        .map((c) => btn(c, `${CARRIER_ICON[c] ?? ""} ${esc(CARRIER_PL[c] ?? "Bez pojazdów")}`, counts.get(c))).join("");
+      `<button type="button" data-carrier="${key}" aria-pressed="${this.typeFilter[this.tab] === key}">${label}<span>${fmtInt(n)}</span></button>`;
+    this.carriers.innerHTML = btn("", "Wszystkie", items.length)
+      + order.filter((c) => counts.has(c))
+        .map((c) => btn(c, `${CARRIER_ICON[c] ?? ""} ${esc(names[c] ?? "Bez pojazdów")}`, counts.get(c))).join("");
   }
 
   // ---------------------------------------------------------------- szczegóły
@@ -140,7 +184,7 @@ export class Sidebar {
       this.detail.hidden = true;
       return;
     }
-    const list = { town: d.towns, industry: d.industries, line: d.lines }[sel.kind] ?? [];
+    const list = { town: d.towns, industry: d.industries, station: d.stations, line: d.lines }[sel.kind] ?? [];
     const item = list.find((x) => x.id === sel.id);
     if (!item) {
       this.detail.hidden = true;
@@ -148,8 +192,31 @@ export class Sidebar {
     }
     this.detail.hidden = false;
     this.detail.innerHTML = sel.kind === "town" ? townDetail(item)
-      : sel.kind === "line" ? lineDetail(item, this.focusedStop) : industryDetail(item);
+      : sel.kind === "line" ? lineDetail(item, this.focusedStop)
+      : sel.kind === "station" ? stationDetail(item, this.stationLines.get(item.id) ?? [])
+      : industryDetail(item, this.industryLines.get(item.id) ?? []);
   }
+}
+
+// Linie są klikalne (data-line) - przełączają wybór na linię.
+function lineLinks(lines) {
+  const rows = [...lines].sort((a, b) => (b.vehicleCount ?? 0) - (a.vehicleCount ?? 0)).map((l) => `
+    <li><button type="button" data-line="${l.id}">
+      <span class="swatch" style="background:${rgb(l.color)}"></span>${CARRIER_ICON[l.carrier] ?? ""} ${esc(l.name)}
+    </button></li>`).join("");
+  return rows ? `<h3>Linie</h3><ul class="line-links">${rows}</ul>` : "";
+}
+
+function stationDetail(s, lines) {
+  const use = stationUse(s);
+  return `
+    <h2>${CARRIER_ICON[s.kind] ?? ""} ${esc(s.name ?? STATION_PL[s.kind])}</h2>
+    <p class="detail-sub">${esc(STATION_PL[s.kind] ?? "Stacja")}${use ? ` · ${esc(use)}` : ""}</p>
+    <dl class="stats">
+      ${stat("Linie", fmtInt(lines.length))}
+      ${stat("Pojazdy linii", fmtInt(lines.reduce((n, l) => n + (l.vehicleCount ?? 0), 0)))}
+    </dl>
+    ${lineLinks(lines)}`;
 }
 
 function townDetail(t) {
@@ -167,7 +234,7 @@ function townDetail(t) {
     ${needs ? `<h3>Zapotrzebowanie</h3><ul class="chips">${needs}</ul>` : ""}`;
 }
 
-function industryDetail(i) {
+function industryDetail(i, lines) {
   const outputs = new Map();
   for (const rule of i.rules ?? []) {
     if (rule.booster) continue;
@@ -186,10 +253,11 @@ function industryDetail(i) {
       ${stat("Postęp rozbudowy", fmtPercent(i.upgrade))}
     </dl>
     ${inputs.length ? `<h3>Potrzebuje</h3><ul class="chips">${inputs.map((s) => `<li>${esc(cargoName(s.cargo))}</li>`).join("")}</ul>` : ""}
-    ${outputs.size ? `<h3>Produkuje</h3><ul class="chips">${[...outputs].map(([c, a]) => `<li>${esc(cargoName(c))}<span>${fmtInt(a)}</span></li>`).join("")}</ul>` : ""}`;
+    ${outputs.size ? `<h3>Produkuje</h3><ul class="chips">${[...outputs].map(([c, a]) => `<li>${esc(cargoName(c))}<span>${fmtInt(a)}</span></li>`).join("")}</ul>` : ""}
+    ${lineLinks(lines)}`;
 }
 
-// Nośnik znamy z pojazdów, więc linia bez pojazdów ląduje w osobnej grupie.
+// Nośnik linii jest z pojazdów albo z rodzaju stacji; bez obu (np. same przystanki) ląduje w "NONE".
 const CARRIER_ORDER = ["RAIL", "ROAD", "TRAM", "WATER", "AIR", "OTHER", "NONE"];
 const carrierKey = (l) => l.carrier ?? "NONE";
 

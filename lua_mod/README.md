@@ -21,7 +21,7 @@ lua_mod/                              → w grze: staging_area/estiv0_tf3export 
   content/tf3export/
     tf3export.gs.lua      deskryptor game scriptu (update / handleEvent / guiUpdate)
     tf3export.script.lua  główny skrypt: harmonogram, sesja, eksport (globalne data())
-    collectors.lua        kolektory: player, towns, industries, lines, vehicles, edges
+    collectors.lua        kolektory: player, towns, industries, stations, lines, vehicles, edges
     json.lua              enkoder JSON (escapowanie, table.concat, null dla NaN)
     util.lua              bezpieczny dostęp do API, enumy -> nazwy, czas gry, log
     writer.lua            zapis: app.saveUserdata albo log gry (zapas)
@@ -58,9 +58,12 @@ end
 Middle app wyciąga `json = "..."`, odwraca escapowanie Lua (`\"`, `\\`, `\n`, `\r`, `\t`, `\ddd`), wysyła dane i usuwa plik. Nie wiadomo, czy zapis jest atomowy, więc gdy plik jest niekompletny (brak końcowego `end`), middle app ponawia odczyt.
 
 - **`session`**: losowe ID wątku GUI. Nowe powstaje przy starcie gry i przy cofnięciu czasu gry, czyli po wczytaniu starszego save'a. `seq` liczy się od 1 w każdej sesji, osobno dla `dynamic` i `network`.
-- **`dynamic`**: `{ v, kind, session, seq, gameTime, date{year,month,day}, player{id,name,balance}, towns[], industries[], lines[], vehicles[] }`
+- **`dynamic`**: `{ v, kind, session, seq, gameTime, date{year,month,day}, player{id,name,balance}, towns[], industries[], stations[], lines[], vehicles[] }`
   - ładunki są podawane jako nazwy zasobów, np. `"::/cargos/logs/logs.cargo"`;
-  - `carrier` i `state` pojazdów to nazwy enumów (`RAIL`, `EN_ROUTE`…).
+  - `carrier` i `state` pojazdów to nazwy enumów (`RAIL`, `EN_ROUTE`…);
+  - `stations[]`: jeden wiersz na konstrukcję stacji `{ id, kind, industry, carriers[], name, file, pos, owner, passengers, cargo, groups[], stations[] }`, gdzie `kind` to `RAIL`, `ROAD`, `WATER`, `AIR` (rzadko `TRAM`, `OTHER` = nierozpoznana stacja przemysłu), a `industry` to id zakładu, gdy stacja jest jego częścią, wyznaczany ze ścieżki konstrukcji, a dla stacji z modów z `carriers` (nośniki całej grupy stacji). Przystanki (bez konstrukcji, `small_stops`, `underground_station`) są pomijane;
+  - przystanek linii (`lines[].stops[]`) ma `entity` = encja stacji, którą można dopasować do `stations[].stations`;
+  - `carrier` linii bierze się z jej pojazdów, a gdy linia nie ma pojazdów, z rodzaju jej stacji.
 - **`network`**: `{ v, kind, session, seq, gameTime, fields[], edges[][] }`. Każda krawędź to tablica wartości w kolejności z `fields`:
   - `id`, `node0`, `node1`
   - pozycje i tangenty

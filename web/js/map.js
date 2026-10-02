@@ -1,7 +1,7 @@
 // Mapa: sieć (Path2D w układzie świata), miasta i zakłady (w układzie ekranu), pan/zoom, hover, wybór.
 // Układ "ścieżki" = (x, -y) ze świata gry, bo w grze oś y rośnie na północ, a na ekranie w dół.
 
-import { rgb, townSize } from "./format.js";
+import { CARRIER_ICON, industryOfStation, rgb, townSize } from "./format.js";
 import { RouteGraph } from "./route.js";
 
 const RAW_INDUSTRIES = new Set([
@@ -15,7 +15,11 @@ export const industryKind = (ind) => {
 };
 
 const COLOR_VARS = ["--map-bg", "--map-street", "--map-street-tunnel", "--map-track", "--map-track-tunnel",
-  "--industry-raw", "--industry-processing", "--town", "--town-label", "--accent", "--font"];
+  "--industry-raw", "--industry-processing", "--town", "--town-label", "--accent", "--font", "--panel",
+  "--station-rail", "--station-road", "--station-tram", "--station-water", "--station-air"];
+
+// Ikony stacji: od tej skali kółko z ikoną, poniżej sama kropka w kolorze rodzaju.
+const STATION_ICON_SCALE = 0.05;
 
 // Kolory z CSS (motyw) odczytywane raz na klatkę, nie dla każdego obiektu.
 function readTheme() {
@@ -35,6 +39,8 @@ export class MapView {
     this.bbox = null;           // zakres sieci w układzie ścieżki
     this.towns = [];
     this.industries = [];
+    this.stations = [];         // dworce, porty, lotniska (bez przystanków)
+    this.showStations = true;
     this.lines = new Map();     // id -> linia z dynamic.json
     this.graph = null;          // RouteGraph - do wyznaczania tras linii
     this.routeCache = new Map(); // id linii -> { key, route }
@@ -94,6 +100,12 @@ export class MapView {
       kind: "industry", id: i.id, data: i, px: i.pos[0], py: -i.pos[1], type: industryKind(i),
     }));
 
+    // Stacja wbudowana w zakład: na mapie jest już ikonka zakładu, więc stacji nie rysujemy.
+    const stationIndustry = industryOfStation(dynamic);
+    this.stations = (dynamic.stations ?? []).filter((s) => s.pos && !stationIndustry.has(s.id)).map((s) => ({
+      kind: "station", id: s.id, data: s, px: s.pos[0], py: -s.pos[1], type: s.kind,
+    }));
+
     if (!this.bbox && this.towns.length) {
       const xs = this.towns.map((t) => t.px), ys = this.towns.map((t) => t.py);
       this.bbox = { minX: Math.min(...xs), minY: Math.min(...ys), maxX: Math.max(...xs), maxY: Math.max(...ys) };
@@ -116,6 +128,12 @@ export class MapView {
     this.showTerrain = !this.showTerrain;
     this.requestDraw();
     return this.showTerrain;
+  }
+
+  toggleStations() {
+    this.showStations = !this.showStations;
+    this.requestDraw();
+    return this.showStations;
   }
 
   // ---------------------------------------------------------------- widok
@@ -151,8 +169,10 @@ export class MapView {
       this.requestDraw();
       return;
     }
-    const item = (kind === "town" ? this.towns : this.industries).find((x) => x.id === id);
+    const items = { town: this.towns, industry: this.industries, station: this.stations }[kind] ?? [];
+    const item = items.find((x) => x.id === id);
     if (!item) return;
+    if (kind === "station" && !this.showStations) this.showStations = true;
     this.selected = { kind, id };
     this.view.x = item.px;
     this.view.y = item.py;
@@ -233,6 +253,7 @@ export class MapView {
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.drawIndustries();
+    if (this.showStations) this.drawStations();
     this.drawTowns();
     if (this.selected?.kind === "line") this.drawLine(this.selected.id);
   }
@@ -305,6 +326,41 @@ export class MapView {
     }
   }
 
+  // Przybliżone: ciemne kółko z obwódką w kolorze rodzaju i ikoną; oddalone: sama kropka.
+  drawStations() {
+    const css = (name) => this.theme[name];
+    const { ctx } = this;
+    const icons = this.view.scale >= STATION_ICON_SCALE;
+    const r = icons ? 9 : 3.5;
+    ctx.font = `11px ${css("--font")}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    for (const st of this.stations) {
+      const [x, y] = this.toScreen(st.px, st.py);
+      if (x < -20 || y < -20 || x > this.w + 20 || y > this.h + 20) continue;
+      const color = css(`--station-${String(st.type).toLowerCase()}`) || css("--accent");
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      if (icons) {
+        ctx.fillStyle = css("--panel");
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = color;
+        ctx.fillText(CARRIER_ICON[st.type] ?? "•", x, y + 1);
+      } else {
+        ctx.fillStyle = color;
+        ctx.strokeStyle = css("--map-bg");
+        ctx.lineWidth = 1.5;
+        ctx.fill();
+        ctx.stroke();
+      }
+      if (this.isMarked(st)) this.ring(x, y, r * 2);
+    }
+    ctx.textAlign = "start";
+  }
+
   drawTowns() {
     const css = (name) => this.theme[name];
     const { ctx } = this;
@@ -365,6 +421,10 @@ export class MapView {
     };
     for (const t of this.towns) consider(t, t.r + 4);
     for (const i of this.industries) consider(i, 8);
+    if (this.showStations) {
+      const r = this.view.scale >= STATION_ICON_SCALE ? 11 : 6;
+      for (const s of this.stations) consider(s, r);
+    }
     return best;
   }
 

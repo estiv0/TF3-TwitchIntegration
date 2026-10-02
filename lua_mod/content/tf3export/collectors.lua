@@ -132,6 +132,127 @@ function C.industries()
 	return out
 end
 
+---------------------------------------------------------------- stacje
+-- Stacje z własną konstrukcją: dworce kolejowe, dworce autobusowe/ciężarówkowe, porty,
+-- lotniska. Przystanki przy ulicy nie mają konstrukcji albo są na liście STOP_PATHS - pomijamy je.
+-- STATION nie wiadomo, czy da się listować (LINE i BASE_EDGE się nie dało), więc bierzemy
+-- mapę stacja -> konstrukcja. Jedna konstrukcja (np. lotnisko) bywa kilkoma stacjami,
+-- dlatego wiersz = konstrukcja.
+
+-- Rodzaj najpierw ze ścieżki konstrukcji (base/content/stations/<air|water|rail|street>/...).
+-- getCarriers(group, -1, -1) zwraca sumę dla całej GRUPY stacji, a dworzec autobusowy
+-- zgrupowany z kolejowym dostałby wtedy RAIL - dlatego nośniki to tylko zapas (mody).
+local STATION_PATHS = { { "/air/", "AIR" }, { "/water/", "WATER" }, { "/rail/", "RAIL" }, { "/street/", "ROAD" } }
+local STATION_KINDS = { "AIR", "WATER", "RAIL", "ROAD", "TRAM" } -- kolejność = priorytet
+-- Przystanki, które są konstrukcjami: małe przystanki i przystanek podziemny ("Underground Stop").
+local STOP_PATHS = { "small_stops", "underground_station" }
+
+local function isStop(file)
+	for _, p in ipairs(STOP_PATHS) do
+		if file and string.find(file, p, 1, true) then return true end
+	end
+	return false
+end
+
+-- Zakład, do którego należy konstrukcja stacji (stacja wbudowana w przemysł) albo nil.
+-- Stacja może być podkonstrukcją, więc sprawdzamy też konstrukcję nadrzędną.
+local function stationIndustry(constrId, constr)
+	local first = constr and util.list(util.field(constr, "industries"))[1]
+	if first then return first end
+	local ok, parent = pcall(function()
+		return api.engine.system.streetConnectorSystem.getConstructionEntityForSubconstruction(constrId)
+	end)
+	if ok and parent and parent > 0 and parent ~= constrId then
+		local pc = util.comp(parent, ct.CONSTRUCTION)
+		return pc and util.list(util.field(pc, "industries"))[1] or nil
+	end
+	return nil
+end
+
+local function stationKind(carriers, file)
+	for _, p in ipairs(STATION_PATHS) do
+		if file and string.find(file, p[1], 1, true) then return p[2] end
+	end
+	local set = {}
+	for _, c in ipairs(carriers) do set[c] = true end
+	for _, k in ipairs(STATION_KINDS) do
+		if set[k] then return k end
+	end
+	return nil
+end
+
+-- Zwraca listę stacji i mapę encja stacji -> rodzaj (do nośnika linii bez pojazdów).
+function C.stations()
+	local ok, map = pcall(function() return api.engine.system.streetConnectorSystem.getStation2ConstructionMap() end)
+	if not ok or map == nil then
+		util.log("getStation2ConstructionMap failed: " .. tostring(map))
+		return {}, {}
+	end
+
+	local byConstr, order = {}, {}
+	for station, constr in util.pairs(map) do
+		if constr and constr > 0 then
+			if not byConstr[constr] then byConstr[constr] = {}; order[#order + 1] = constr end
+			table.insert(byConstr[constr], station)
+		end
+	end
+	table.sort(order)
+
+	local out, kindOf = {}, {}
+	for _, constrId in ipairs(order) do
+		local stations = byConstr[constrId]
+		table.sort(stations)
+		local constr = util.comp(constrId, ct.CONSTRUCTION)
+		local file = constr and util.scalar(constr.fileName)
+		file = file and tostring(file)
+		if not isStop(file) then
+			local carriers, carrierSet, groups, groupSet = {}, {}, {}, {}
+			local passengers, cargo = false, false
+			for _, st in ipairs(stations) do
+				local okG, group = pcall(function() return api.engine.system.stationGroupSystem.getStationGroup(st) end)
+				if okG and group and group > 0 then
+					if not groupSet[group] then groupSet[group] = true; groups[#groups + 1] = group end
+				end
+				local s = util.comp(st, ct.STATION)
+				for _, t in ipairs(util.list(s and s.terminals)) do
+					if util.field(t, "passengersLoad") or util.field(t, "passengersUnload") then passengers = true end
+					if util.field(t, "cargoLoad") or util.field(t, "cargoUnload") then cargo = true end
+				end
+			end
+			for _, group in ipairs(groups) do
+				local okC, res = pcall(function() return api.engine.system.stationGroupSystem.getCarriers(group, -1, -1) end)
+				if okC and res then
+					for _, c in ipairs(util.list(util.field(res, 1))) do
+						local name = util.enumName("Carrier", c, util.CARRIERS)
+						if name and not carrierSet[name] then carrierSet[name] = true; carriers[#carriers + 1] = name end
+					end
+				end
+			end
+
+			local kind = stationKind(carriers, file)
+			local industry = stationIndustry(constrId, constr)
+			if kind or industry then -- stacja przemysłu zostaje, nawet bez rozpoznanego rodzaju
+				for _, st in ipairs(stations) do kindOf[st] = kind end
+				out[#out + 1] = {
+					id = constrId,
+					kind = kind or "OTHER",
+					industry = industry, -- id zakładu (industries[].id), gdy stacja do niego należy
+					carriers = carriers, -- nośniki całej grupy stacji
+					name = (groups[1] and util.name(groups[1])) or util.name(constrId),
+					file = file,
+					pos = util.center(constrId) or util.center(stations[1]),
+					owner = util.owner(constrId) or util.owner(stations[1]),
+					passengers = passengers,
+					cargo = cargo,
+					groups = groups,
+					stations = stations,
+				}
+			end
+		end
+	end
+	return out, kindOf
+end
+
 ---------------------------------------------------------------- linie i pojazdy
 function C.vehicles()
 	local out = {}
@@ -152,7 +273,8 @@ function C.vehicles()
 	return out
 end
 
-function C.lines(vehicles)
+-- stationKinds: encja stacji -> rodzaj (z C.stations); nośnik linii bez pojazdów.
+function C.lines(vehicles, stationKinds)
 	-- liczba pojazdów i nośnik linii z już zebranej listy pojazdów (bez drugiego przejścia)
 	local perLine, carrier = {}, {}
 	for _, v in ipairs(vehicles or {}) do
@@ -183,12 +305,19 @@ function C.lines(vehicles)
 	-- Pozycja przystanku: stop.station to indeks (od 0) w STATION_GROUP.stations.
 	-- Encja stacji zwykle nie ma BOUNDING_VOLUME, więc sięgamy do jej konstrukcji;
 	-- w ostateczności środek grupy stacji. Cache na jeden eksport (stacje się powtarzają).
-	local stopPos = {}
+	local stopPos, stopStation = {}, {}
+	local function stationOf(group, index)
+		local key = tostring(group) .. ":" .. tostring(index)
+		if stopStation[key] == nil then
+			local sg = util.comp(group, ct.STATION_GROUP)
+			stopStation[key] = (sg and util.list(sg.stations)[(index or 0) + 1]) or false
+		end
+		return stopStation[key] or nil
+	end
 	local function stationPos(group, index)
 		local key = tostring(group) .. ":" .. tostring(index)
 		if stopPos[key] == nil then
-			local sg = util.comp(group, ct.STATION_GROUP)
-			local station = sg and util.list(sg.stations)[(index or 0) + 1]
+			local station = stationOf(group, index)
 			local pos = station and util.center(station)
 			if not pos and station then
 				local ok, constr = pcall(function()
@@ -206,11 +335,17 @@ function C.lines(vehicles)
 		local l = util.comp(id, ct.LINE)
 		if l then
 			local stops = {}
+			local lineCarrier = carrier[id]
 			for i, s in ipairs(util.list(l.stops)) do
+				if not lineCarrier and stationKinds then
+					local st = stationOf(s.stationGroup, s.station)
+					lineCarrier = st and stationKinds[st]
+				end
 				stops[i] = {
 					group = s.stationGroup,
 					station = s.station,
 					terminal = s.terminal,
+					entity = stationOf(s.stationGroup, s.station), -- encja stacji, por. stations[].stations
 					pos = stationPos(s.stationGroup, s.station),
 					name = util.name(s.stationGroup),
 				}
@@ -221,7 +356,7 @@ function C.lines(vehicles)
 				name = util.name(id),
 				color = color and util.vec3(color.color),
 				owner = util.owner(id),
-				carrier = carrier[id],
+				carrier = lineCarrier, -- z pojazdów, a bez pojazdów z rodzaju stacji (nil = przystanki przy ulicy)
 				stops = stops,
 				vehicleCount = perLine[id] or 0,
 			}

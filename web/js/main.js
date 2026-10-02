@@ -2,7 +2,9 @@
 
 import { config } from "../config.js";
 import { DataFeed } from "./api.js";
-import { CARRIER_ICON, cargoName, escapeHtml as esc, fmtDate, fmtInt, fmtMoney, townSize } from "./format.js";
+import {
+  CARRIER_ICON, STATION_PL, cargoName, escapeHtml as esc, fmtDate, fmtInt, fmtMoney, linesByIndustry, linesByStation, stationUse, townSize,
+} from "./format.js";
 import { MapView } from "./map.js";
 import { Sidebar } from "./sidebar.js";
 
@@ -41,6 +43,12 @@ $("#fit").addEventListener("click", () => map.fit());
 $("#terrain").addEventListener("click", (e) => {
   e.currentTarget.setAttribute("aria-pressed", String(map.toggleTerrain()));
 });
+$("#stations").addEventListener("click", (e) => {
+  e.currentTarget.setAttribute("aria-pressed", String(map.toggleStations()));
+});
+
+let stationLines = new Map();  // id stacji -> linie (do tooltipa)
+let industryLines = new Map(); // id zakładu -> linie jego stacji
 
 // Podgląd stanu z konsoli przeglądarki (debug).
 window.tf3 = { map, sidebar };
@@ -52,7 +60,16 @@ function tooltipHtml(item) {
     return `<strong>${esc(d.name)}</strong><span>Miasto · pojemność ${fmtInt(townSize(d))}</span>`
       + (needs.length ? `<span>Potrzebuje: ${esc(needs.join(", "))}</span>` : "");
   }
-  return `<strong>${esc(d.name)}</strong><span>Poziom ${d.level ?? "–"} · produktywność ${Math.round((d.productivity ?? 0) * 100)}%</span>`;
+  if (item.kind === "station") {
+    const use = stationUse(d);
+    const n = stationLines.get(d.id)?.length ?? 0;
+    return `<strong>${CARRIER_ICON[d.kind] ?? ""} ${esc(d.name ?? STATION_PL[d.kind])}</strong>`
+      + `<span>${esc(STATION_PL[d.kind] ?? "Stacja")}${use ? ` · ${esc(use)}` : ""}</span>`
+      + `<span>Linie: ${fmtInt(n)}</span>`;
+  }
+  const n = industryLines.get(d.id)?.length ?? 0;
+  return `<strong>${esc(d.name)}</strong><span>Poziom ${d.level ?? "–"} · produktywność ${Math.round((d.productivity ?? 0) * 100)}%</span>`
+    + (n ? `<span>Linie: ${fmtInt(n)}</span>` : "");
 }
 
 function renderHeader(dynamic) {
@@ -93,6 +110,8 @@ new DataFeed({
     $("#edges").textContent = fmtInt(network.edges.length);
   },
   onDynamic(dynamic) {
+    stationLines = linesByStation(dynamic);
+    industryLines = linesByIndustry(dynamic, stationLines);
     map.setDynamic(dynamic);
     sidebar.setDynamic(dynamic);
     renderHeader(dynamic);
