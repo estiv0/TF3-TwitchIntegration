@@ -34,7 +34,7 @@ dotnet test
 | Klucz | Domyślnie | Opis |
 |---|---|---|
 | `InputDir` | `...\3493540\local\tf3export` | folder, do którego pisze mod |
-| `OutputDir` | `output` (względem katalogu uruchomienia) | gdzie publikować `latest/*.json` |
+| `OutputDir` | `output` (względem katalogu uruchomienia). W Development (`appsettings.Development.json`): `../../../web/data`, czyli tam, skąd czyta lokalna strona | gdzie publikować `latest/*.json` |
 | `PollIntervalMs` | 500 | co ile sprawdzać folder |
 | `IncompleteFileTimeoutSec` | 30 | plik, którego po tym czasie nadal nie da się odczytać, trafia do `InputDir\failed` |
 | `KeepProcessedFiles` | false | zamiast kasować, przenosi pliki do `InputDir\processed` (debug) |
@@ -88,4 +88,4 @@ middle_app/
 ## Następne kroki
 
 - `AzureBlobPublisher`: gzip, `Content-Encoding`, `Cache-Control`, token SAS (patrz [../docs/architecture.md](../docs/architecture.md)).
-- Lokalny podgląd dla strony: prosty serwer statyczny na `output/` z CORS.
+- Strona jest osobnym projektem w [../web/](../web/README.md). Lokalnie czyta to, co Tf3Bridge publikuje do `web/data/latest/`.

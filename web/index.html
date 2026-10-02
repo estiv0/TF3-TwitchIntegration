@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TF3 Live</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <h1 id="company">–</h1>
+        <p class="brand-sub">Transport Fever 3 · na żywo</p>
+      </div>
+    </div>
+    <dl class="kpis">
+      <div><dt>Data</dt><dd id="date">–</dd></div>
+      <div><dt>Saldo</dt><dd id="balance">–</dd></div>
+      <div><dt>Flota</dt><dd id="fleet" class="fleet">–</dd></div>
+      <div><dt>Odcinki sieci</dt><dd id="edges">–</dd></div>
+    </dl>
+    <span id="status" class="status" data-state="waiting">Czekam na dane…</span>
+  </header>
+
+  <main class="layout">
+    <section class="map-wrap" aria-label="Mapa">
+      <canvas id="map"></canvas>
+      <div id="tooltip" class="tooltip" hidden></div>
+      <div class="map-tools">
+        <button id="fit" type="button" title="Pokaż całą mapę">⤢</button>
+      </div>
+      <ul class="legend" aria-label="Legenda">
+        <li><span class="lg-line lg-track"></span>Tory</li>
+        <li><span class="lg-line lg-street"></span>Drogi</li>
+        <li><span class="dot dot-town"></span>Miasto</li>
+        <li><span class="dot dot-raw"></span>Surowce</li>
+        <li><span class="dot dot-processing"></span>Przetwórstwo</li>
+      </ul>
+    </section>
+
+    <aside id="sidebar" class="sidebar">
+      <div class="tabs" role="tablist">
+        <button role="tab" data-tab="towns" aria-selected="true">Miasta <span data-count="towns">0</span></button>
+        <button role="tab" data-tab="industries" aria-selected="false">Przemysł <span data-count="industries">0</span></button>
+        <button role="tab" data-tab="lines" aria-selected="false">Linie <span data-count="lines">0</span></button>
+      </div>
+      <input class="search" data-search type="search" placeholder="Szukaj…" aria-label="Szukaj">
+      <section class="detail" data-detail hidden></section>
+      <ul class="list" data-list></ul>
+    </aside>
+  </main>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

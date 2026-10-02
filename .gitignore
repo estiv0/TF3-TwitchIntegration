@@ -9,8 +9,9 @@ TestResults/
 .vs/
 .vscode/
 
-# Lokalne wyniki middle app
+# Lokalne wyniki middle app (Development publikuje do web/data)
 middle_app/src/Tf3Bridge/output/
+web/data/
 
 # Web
 node_modules/

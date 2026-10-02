@@ -8,7 +8,10 @@
 | [export-format-performance.md](export-format-performance.md) | Format eksportu a wydajność: gdzie jest koszt, propozycje (tabele Lua zamiast JSON, format kolumnowy, mniejsza precyzja) i pomiar `bench.lua`. |
 | [architecture.md](architecture.md) | Architektura całości: mod → middle app → Azure → strona, plus koszty i opcje rozszerzenia Twitcha. |
 
-Kod: [../lua_mod/](../lua_mod/README.md) (mod) i [../middle_app/](../middle_app/README.md) (Tf3Bridge, .NET 9).
+Kod:
+- [../lua_mod/](../lua_mod/README.md): mod do gry;
+- [../middle_app/](../middle_app/README.md): Tf3Bridge, .NET 9, działa lokalnie obok gry;
+- [../web/](../web/README.md): strona, statyczna, docelowo na Azure Static Web Apps.
 
 Źródła:
 - Dokumentacja API: https://wiki.transportfever3.com/script-doc/api/cmd.html (oraz `engine`, `engine/util`, `engine/system`, `type`)
