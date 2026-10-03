@@ -50,7 +50,8 @@ internal static class Program
         var options = host.Services.GetRequiredService<IOptions<BridgeOptions>>().Value;
         var mirror = host.Services.GetRequiredService<AzureMirror>();
         mirror.Configure(AzureSettingsStore.Load());
+        var mod = ModInstaller.Sync(options.InputDir, host.Services.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(ModInstaller)));
 
-        Application.Run(new MainForm(runner, mirror, options, uiLog));
+        Application.Run(new MainForm(runner, mirror, options, mod, uiLog));
     }
 }

@@ -35,7 +35,7 @@ public sealed class MainForm : Form
     private readonly List<string> _lines = [];
     private bool _closing;
 
-    public MainForm(BridgeRunner runner, AzureMirror mirror, BridgeOptions options, UiLogProvider log)
+    public MainForm(BridgeRunner runner, AzureMirror mirror, BridgeOptions options, ModInstallResult mod, UiLogProvider log)
     {
         _runner = runner;
         _mirror = mirror;
@@ -63,6 +63,7 @@ public sealed class MainForm : Form
             ? _options.InputDir
             : "(nie znaleziono folderu TF3 w Steam – ustaw --Bridge:InputDir=…)");
         AddPathRow(paths, "Wyjście (strona):", _options.OutputDir);
+        AddPathRow(paths, "Mod w grze:", ModText(mod));
 
         var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12), RowCount = 3, ColumnCount = 1 };
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -230,6 +231,16 @@ public sealed class MainForm : Form
         table.Controls.Add(new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 6, 8, 0) });
         table.Controls.Add(new TextBox { Text = path, ReadOnly = true, Dock = DockStyle.Fill, BorderStyle = BorderStyle.FixedSingle });
     }
+
+    private static string ModText(ModInstallResult mod) => mod.Status switch
+    {
+        ModInstallStatus.Installed => $"{mod.ModDir}  (zainstalowany – włącz go przy tworzeniu/wczytywaniu gry)",
+        ModInstallStatus.Updated => $"{mod.ModDir}  (zaktualizowany)",
+        ModInstallStatus.UpToDate => $"{mod.ModDir}  (aktualny)",
+        ModInstallStatus.DevCopy => $"{mod.ModDir}  (kopia deweloperska – nie ruszam)",
+        ModInstallStatus.NoSteam => "(nie zainstalowano – brak folderu TF3 w Steam, uruchom grę raz)",
+        _ => "(błąd instalacji – szczegóły w logu)",
+    };
 
     private static void OpenFolder(string path)
     {

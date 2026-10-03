@@ -27,6 +27,17 @@
     <None Update="appsettings*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- Mod wbudowany w exe: ModInstaller instaluje/aktualizuje go w Steam\userdata\<konto>\3493540\local\mods.
+       Nazwa zasobu = "mod/" + ścieżka względem lua_mod\ (jak w zipie z pack.ps1). -->
+  <PropertyGroup>
+    <LuaModDir>$(MSBuildThisFileDirectory)..\..\..\lua_mod\</LuaModDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="$(LuaModDir)mod.json;$(LuaModDir)_content.json" LogicalName="mod/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="$(LuaModDir)_metadata\**\*" LogicalName="mod/_metadata/%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="$(LuaModDir)content\**\*" LogicalName="mod/content/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="Tf3Bridge.Tests" />
   </ItemGroup>

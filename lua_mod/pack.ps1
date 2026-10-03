@@ -1,4 +1,4 @@
-# Pakuje mod do lua_mod\dist\estiv0_tf3export.zip (do rozpakowania w ...\3493540\local\mods\).
+# Pakuje mod do lua_mod\dist\estiv0_tf3export.zip (do rozpakowania w ...\3493540\local\staging_area\).
 # Najpierw generuje _content.json z plików w content\, żeby lista nie rozjechała się z kodem.
 #   -ContentOnly  tylko odśwież _content.json, bez zipa
 param([switch]$ContentOnly)

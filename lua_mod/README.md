@@ -46,7 +46,9 @@ Mod trzeba włączyć przy tworzeniu lub wczytywaniu gry.
 lua_mod\pack.ps1
 ```
 
-Skrypt generuje `_content.json` z plików `.lua` w `content\` (po dodaniu nowego modułu wystarczy go uruchomić; `-ContentOnly` tylko odświeża listę) i buduje `lua_mod\dist\estiv0_tf3export.zip`. Zip zawiera folder `estiv0_tf3export` z `mod.json`, `_content.json`, `_metadata` i `content`. Rozpakowuje się go do `Steam\userdata\<konto>\3493540\local\mods\` i włącza mod w grze.
+Skrypt generuje `_content.json` z plików `.lua` w `content\` (po dodaniu nowego modułu wystarczy go uruchomić; `-ContentOnly` tylko odświeża listę) i buduje `lua_mod\dist\estiv0_tf3export.zip`. Zip zawiera folder `estiv0_tf3export` z `mod.json`, `_content.json`, `_metadata` i `content`. Rozpakowuje się go do `Steam\userdata\<konto>\3493540\local\staging_area\` i włącza mod w grze (w `mods\` gra go nie pokaże, stamtąd bierze tylko mody z Workshopu).
+
+Zipa potrzeba tylko bez Tf3Bridge: Bridge ma moda wbudowanego i sam instaluje go w `staging_area\` przy starcie (patrz `middle_app/README.md`).
 
 ## Pliki wyjściowe
 

@@ -32,6 +32,8 @@ Skrypt buduje `middle_app\dist\Tf3Bridge.exe` (folder `dist\` jest w `.gitignore
 
 Exe jest self-contained single-file (win-x64, ok. 55 MB): nie wymaga zainstalowanego .NET, a obok leży tylko `appsettings.json`. Dla kogoś innego wystarczy przekazać `Tf3Bridge.exe` + `appsettings.json`. Folder moda Bridge znajdzie sam (patrz `InputDir`), a poza repozytorium publikuje do `output\` obok exe.
 
+Mod jest wbudowany w exe (`lua_mod\` z chwili budowania, `ModInstaller`). Przy starcie Bridge instaluje go albo aktualizuje w `Steam\userdata\<konto>\3493540\local\staging_area\estiv0_tf3export` (nie `mods\`: stamtąd gra pokazuje tylko mody z Workshopu): zapisuje nowe i zmienione pliki, a usuwa tylko te `.lua` w `content\`, których mod już nie ma. Nowy exe aktualizuje więc też moda. Jeśli gra jest uruchomiona, nowa wersja działa dopiero po ponownym wczytaniu zapisu. Kopii deweloperskiej (junction `staging_area\estiv0_tf3export` → repozytorium) Bridge nie rusza. Test `Embedded_mod_is_complete` pilnuje, żeby `_content.json` zgadzał się z plikami `.lua` (odśwież go przez `lua_mod\pack.ps1 -ContentOnly`).
+
 Z kodu: `dotnet run` w `middle_app/src/Tf3Bridge` albo `Tf3Bridge.sln` w Riderze. SDK leży w `C:\Users\kinek\.dotnet`. Jeśli `dotnet` nie jest w `PATH`, użyj `C:\Users\kinek\.dotnet\dotnet.exe`.
 
 Testy:
