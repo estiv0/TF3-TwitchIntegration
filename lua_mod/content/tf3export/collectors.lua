@@ -292,6 +292,25 @@ function C.vehicles()
 	return out
 end
 
+-- Dopisuje do pojazdu (wpis z C.vehicles) pos (m, do 1 m) i speed (m/s) z api.engine.util.vehicle.
+-- Bez nich strona zgaduje położenie z numeru przystanku, a ten na długim odcinku (pociąg, statek)
+-- nie zmienia się przez minuty. Pojazdy w zajezdni pomijamy. false = API niedostępne.
+function C.vehiclePosition(v)
+	local vu = api.engine.util.vehicle
+	if not vu then return false end
+	if v.state == "IN_DEPOT" then return true end
+	local okP, p = pcall(vu.getPosition, v.id)
+	if okP and p then
+		local x, y = util.field(p, "x"), util.field(p, "y")
+		if type(x) == "number" and type(y) == "number" then
+			v.pos = { util.round(x, 0), util.round(y, 0), util.round(util.field(p, "z") or 0, 0) }
+		end
+	end
+	local okS, s = pcall(vu.getSpeed, v.id)
+	if okS then v.speed = util.round(s, 1) end
+	return true
+end
+
 -- Statystyki linii jak w oknie linii i statystykach gry (gui/line_vehicle_mgmt/line_react_util.tl,
 -- gui/statistics/statistic_lines.tl). prevYear = { year, from, to } albo nil.
 -- Każde pole osobno w pcall: błąd jednego API nie kasuje reszty.

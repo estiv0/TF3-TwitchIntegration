@@ -9,7 +9,7 @@
 -- Podział pracy:
 --   * handleEvent (symulacja): po każdej budowie/wyburzeniu (onPostBuildProposal) podbija
 --     licznik netVersion we wspólnym stanie.
---   * guiUpdate (GUI): eksport dynamiczny w jednej klatce; sieć przebudowywana porcjami
+--   * guiUpdate (GUI): eksport dynamiczny porcjami (dynamicBudgetMs na klatkę); sieć przebudowywana porcjami
 --     po zmianie netVersion (z debounce) i zapisywana jako pełny zrzut (raz na sesję)
 --     albo różnica względem poprzedniej wersji; teren (terrain.lua) porcjami po sieci
 --     i ponownie po zmianie rewizji kafli terenu.
@@ -24,10 +24,15 @@ local terrain = ug_require "terrain.lua"
 local cfg = {
 	dynamicEveryDays = 2,          -- eksport miast, przemysłu, stacji, linii i pojazdów (czas gry)...
 	minDynamicWallSec = 10,        -- ...ale nie częściej niż co tyle sekund czasu rzeczywistego
+	dynamicBudgetMs = 3,           -- czas pracy nad eksportem dynamicznym na klatkę (pojedynczy kolektor,
+	                               -- np. miasta, nie jest dzielony - czasy kroków są w logu "dynamic #N")
 	networkDebounceSec = 2,        -- po zdarzeniu budowy czekamy, aż gracz skończy klikać
 	networkSafetyEveryWallSec = 300, -- pełne porównanie sieci także bez zdarzeń (zabezpieczenie)
 	networkBudgetMs = 2,           -- czas pracy nad siecią na klatkę
 	formatVersion = 5,
+	vehiclePositions = true,       -- pozycja i prędkość pojazdów (płynny ruch na stronie); false = wyłączone
+	vehiclePositionsMaxMs = 30,    -- pozycje liczone porcjami w budżecie klatki; jeśli łącznie trwają dłużej
+	                               -- (średnio z 3 eksportów), wyłączamy je do końca sesji (log: "vehicle positions")
 	benchmark = false,             -- jednorazowy pomiar formatu zapisu (bench.lua), wyniki w docs
 	terrainStepM = 20,             -- odstęp próbek heightmapy (m)
 	terrainMaxSide = 2048,         -- najwyżej tyle próbek na bok (większa mapa -> większy krok);
@@ -58,6 +63,9 @@ local S = {
 	lineStats = {},          -- id linii -> statystyki (collectors.lineStats), odświeżane co miesiąc gry
 	lineStatsKey = nil,      -- miesiąc kalendarza, z którego pochodzi cache
 	prevYear = nil,          -- { year, from, to } poprzedniego roku kalendarzowego albo nil
+	vehiclePos = true,       -- pozycje pojazdów w tej sesji (wyłączane po przekroczeniu budżetu)
+	vehiclePosMs = {},       -- czasy zbierania pozycji z ostatnich eksportów (ms)
+	dyn = nil,               -- bieżące zadanie eksportu dynamicznego
 }
 local terrainBenchDone = false -- raz na uruchomienie gry, nie na sesję
 
@@ -73,13 +81,14 @@ local function newSession(now)
 	S.rows, S.net, S.netDirtyWall, S.lastNetworkWall = nil, nil, nil, nil
 	S.seqTerrain, S.terrain, S.terrainSig, S.lastTerrainCheckWall = 0, nil, nil, nil
 	S.lineStats, S.lineStatsKey, S.prevYear = {}, nil, nil
+	S.vehiclePos, S.vehiclePosMs, S.dyn = cfg.vehiclePositions, {}, nil
 	util.log(string.format("new session %s (writer mode '%s')", S.session, writer.mode()))
 end
 
 ---------------------------------------------------------------- statystyki linii
 -- Finanse i przewozy zmieniają się wolno, więc liczymy je raz na miesiąc kalendarza gry
 -- (nowa linia dostaje statystyki od razu), a w pozostałych eksportach wysyłamy cache.
-local function attachLineStats(lines, now)
+local function lineStatsMonth(now)
 	local d = util.date(now)
 	local key = d and d.year and d.month and (d.year * 12 + d.month)
 		or math.floor(now / (30 * util.dayLength())) -- bez kalendarza: co ~30 dni
@@ -91,57 +100,181 @@ local function attachLineStats(lines, now)
 			if okP and ps then S.prevYear = { year = d.year - 1, from = ps, to = ys } end
 		end
 	end
-	local t0, n = util.clock(), 0
-	for _, l in ipairs(lines) do
-		if S.lineStats[l.id] == nil then
-			local ok, st = pcall(collectors.lineStats, l.id, now, S.prevYear)
-			S.lineStats[l.id] = ok and st or false
-			if not ok then util.log("lineStats failed for " .. tostring(l.id) .. ": " .. tostring(st)) end
-			n = n + 1
-		end
-		l.stats = S.lineStats[l.id] or nil
+end
+
+-- Statystyki jednej linii (z cache albo policzone); true = liczone teraz.
+local function attachLineStats(l, now)
+	local fresh = S.lineStats[l.id] == nil
+	if fresh then
+		local ok, st = pcall(collectors.lineStats, l.id, now, S.prevYear)
+		S.lineStats[l.id] = ok and st or false
+		if not ok then util.log("lineStats failed for " .. tostring(l.id) .. ": " .. tostring(st)) end
 	end
-	if n > 0 then
-		util.log(string.format("line stats: %d lines in %.1f ms", n, (util.clock() - t0) * 1000))
+	l.stats = S.lineStats[l.id] or nil
+	return fresh
+end
+
+---------------------------------------------------------------- pozycje pojazdów
+-- Średnio z 3 ostatnich eksportów dłużej niż vehiclePositionsMaxMs -> wyłączamy je do końca sesji
+-- (strona wraca do zgadywania z przystanków).
+local function trackVehiclePositions(count, ms)
+	local h = S.vehiclePosMs
+	h[#h + 1] = ms
+	if #h > 3 then table.remove(h, 1) end
+	if #h < 3 then return end
+	local avg = (h[1] + h[2] + h[3]) / 3
+	if avg > cfg.vehiclePositionsMaxMs then
+		S.vehiclePos = false
+		util.log(string.format("vehicle positions: %.1f ms for %d vehicles (max %d ms) - disabled for this session",
+			avg, count, cfg.vehiclePositionsMaxMs))
 	end
 end
 
 ---------------------------------------------------------------- eksport dynamiczny
--- Miasta, przemysł, stacje, linie i pojazdy w JEDNEJ klatce, żeby snapshot był spójny.
-local function exportDynamic(now)
-	local t0 = util.clock()
+-- Rozłożony na klatki tak jak sieć: zadanie S.dyn przechodzi po kolei kroki z DYN_STEPS, najwyżej
+-- dynamicBudgetMs pracy na klatkę. Pętle (pozycje pojazdów, statystyki linii, kodowanie JSON
+-- element po elemencie) przerywamy w połowie; pojedynczy kolektor (np. miasta) idzie w całości.
+-- Snapshot powstaje przez kilka-kilkanaście klatek (ułamek sekundy czasu gry) - dla strony bez znaczenia.
+-- Krok: function(job, deadline) -> true, gdy skończony; job.i to licznik pętli kroku (od 1 w każdym kroku).
+
+local DYN_ARRAYS = { "towns", "industries", "stations", "lines", "vehicles" }
+local CHECK_EVERY = 20 -- co tyle elementów pętli sprawdzamy zegar
+
+-- Następny element pętli; true = koniec budżetu na tę klatkę.
+local function nextItem(job, deadline)
+	job.i = job.i + 1
+	return job.i % CHECK_EVERY == 0 and util.clock() >= deadline
+end
+
+local DYN_STEPS = {
+	{ "vehicles", function(job)
+		job.snap.vehicles = collectors.vehicles()
+		return true
+	end },
+	{ "positions", function(job, deadline)
+		local vs = job.snap.vehicles
+		if not S.vehiclePos then return true end
+		while job.i <= #vs do
+			if not collectors.vehiclePosition(vs[job.i]) then
+				S.vehiclePos = false
+				util.log("vehicle positions: api.engine.util.vehicle unavailable, disabled for this session")
+				return true
+			end
+			if nextItem(job, deadline) then return false end
+		end
+		return true
+	end },
+	{ "stations", function(job)
+		-- stacje to nowe, niesprawdzone API: błąd nie może zablokować reszty eksportu
+		local ok, stations, kinds = pcall(collectors.stations)
+		if not ok then
+			util.log("stations failed: " .. tostring(stations))
+			stations, kinds = {}, {}
+		end
+		job.snap.stations, job.stationKinds = stations, kinds
+		return true
+	end },
+	{ "lines", function(job)
+		job.snap.lines = collectors.lines(job.snap.vehicles, job.stationKinds)
+		lineStatsMonth(job.now)
+		return true
+	end },
+	{ "lineStats", function(job, deadline)
+		local lines = job.snap.lines
+		while job.i <= #lines do
+			-- nowe API: błąd nie blokuje eksportu
+			local ok, fresh = pcall(attachLineStats, lines[job.i], job.now)
+			job.i = job.i + 1
+			if ok and fresh then
+				job.statsCount = job.statsCount + 1
+				if util.clock() >= deadline then return false end -- liczenie jest drogie, cache nie
+			end
+		end
+		return true
+	end },
+	{ "towns", function(job)
+		job.snap.towns = collectors.towns()
+		return true
+	end },
+	{ "industries", function(job)
+		job.snap.industries = collectors.industries()
+		return true
+	end },
+	{ "player", function(job)
+		job.snap.player = collectors.player()
+		return true
+	end },
+	{ "encode", function(job, deadline)
+		while job.k <= #DYN_ARRAYS do
+			local key = DYN_ARRAYS[job.k]
+			local list, parts = job.snap[key] or {}, job.parts[key]
+			while job.i <= #list do
+				parts[job.i] = json.encode(list[job.i])
+				if nextItem(job, deadline) then return false end
+			end
+			job.k, job.i = job.k + 1, 1
+		end
+		return true
+	end },
+	{ "write", function(job)
+		local head = json.encode({
+			v = cfg.formatVersion,
+			kind = "dynamic",
+			session = S.session,
+			seq = job.seq,
+			gameTime = job.now,
+			date = util.date(job.now),
+			player = job.snap.player,
+		}):sub(1, -2) -- bez zamykającej klamry
+		local out = { head }
+		for _, key in ipairs(DYN_ARRAYS) do
+			out[#out + 1] = ',"' .. key .. '":[' .. table.concat(job.parts[key], ",") .. "]"
+		end
+		out[#out + 1] = "}"
+		job.content = table.concat(out)
+		writer.write("dynamic", S.session, job.seq, job.content)
+		return true
+	end },
+}
+
+local function startDynamic(now)
 	S.seqDynamic = S.seqDynamic + 1
-	local vehicles = collectors.vehicles()
-	-- stacje to nowe, niesprawdzone API: błąd nie może zablokować reszty eksportu
-	local okSt, stations, stationKinds = pcall(collectors.stations)
-	if not okSt then
-		util.log("stations failed: " .. tostring(stations))
-		stations, stationKinds = {}, {}
+	local parts = {}
+	for _, key in ipairs(DYN_ARRAYS) do parts[key] = {} end
+	S.dyn = { now = now, seq = S.seqDynamic, step = 1, i = 1, k = 1, snap = {}, parts = parts,
+		stationKinds = {}, statsCount = 0, times = {}, work = 0, frames = 0, maxFrame = 0, t0 = util.clock() }
+end
+
+local function finishDynamic(job)
+	local ms = function(name) return (job.times[name] or 0) * 1000 end
+	local nVehicles = #(job.snap.vehicles or {})
+	if S.vehiclePos then trackVehiclePositions(nVehicles, ms("positions")) end
+	util.log(string.format("dynamic #%d: work %.0f ms in %d frames (max %.0f ms/frame), %.2f s wall; "
+		.. "vehicles %.0f, positions %.0f (%d vehicles), stations %.0f, lines %.0f, line stats %.0f (%d lines), "
+		.. "towns %.0f, industries %.0f, player %.0f, encode %.0f, write %.0f ms; %d B",
+		job.seq, job.work * 1000, job.frames, job.maxFrame * 1000, util.clock() - job.t0,
+		ms("vehicles"), ms("positions"), nVehicles, ms("stations"), ms("lines"), ms("lineStats"), job.statsCount,
+		ms("towns"), ms("industries"), ms("player"), ms("encode"), ms("write"), #(job.content or "")))
+end
+
+local function stepDynamic()
+	local job = S.dyn
+	local start = util.clock()
+	local deadline = start + cfg.dynamicBudgetMs / 1000
+	repeat -- co najmniej jeden krok na klatkę
+		local name, fn = DYN_STEPS[job.step][1], DYN_STEPS[job.step][2]
+		local s = util.clock()
+		local done = fn(job, deadline)
+		job.times[name] = (job.times[name] or 0) + (util.clock() - s)
+		if done then job.step, job.i = job.step + 1, 1 end
+	until job.step > #DYN_STEPS or util.clock() >= deadline
+	local frame = util.clock() - start
+	job.work, job.frames = job.work + frame, job.frames + 1
+	if frame > job.maxFrame then job.maxFrame = frame end
+	if job.step > #DYN_STEPS then
+		S.dyn = nil
+		finishDynamic(job)
 	end
-	local lines = collectors.lines(vehicles, stationKinds)
-	local okLS, errLS = pcall(attachLineStats, lines, now) -- nowe API: błąd nie blokuje eksportu
-	if not okLS then util.log("line stats failed: " .. tostring(errLS)) end
-	local snapshot = {
-		v = cfg.formatVersion,
-		kind = "dynamic",
-		session = S.session,
-		seq = S.seqDynamic,
-		gameTime = now,
-		date = util.date(now),
-		player = collectors.player(),
-		towns = collectors.towns(),
-		industries = collectors.industries(),
-		stations = stations,
-		lines = lines,
-		vehicles = vehicles,
-	}
-	local t1 = util.clock()
-	local content = json.encode(snapshot)
-	local t2 = util.clock()
-	writer.write("dynamic", S.session, snapshot.seq, content)
-	local t3 = util.clock()
-	util.log(string.format("dynamic #%d: collect %.1f ms, encode %.1f ms, write %.1f ms, %d B",
-		snapshot.seq, (t1 - t0) * 1000, (t2 - t1) * 1000, (t3 - t2) * 1000, #content))
 end
 
 ---------------------------------------------------------------- eksport sieci
@@ -392,11 +525,14 @@ local script = {
 			util.log("terrain export failed, disabled for this session: " .. tostring(errTerrain))
 		end
 
-		if not paused and due(S.lastDynamicTime, now, cfg.dynamicEveryDays, util.dayLength())
+		if S.dyn then
+			stepDynamic()
+		elseif not paused and due(S.lastDynamicTime, now, cfg.dynamicEveryDays, util.dayLength())
 			and (S.lastDynamicWall == nil or wall - S.lastDynamicWall >= cfg.minDynamicWallSec) then
 			S.lastDynamicTime = now
 			S.lastDynamicWall = wall
-			exportDynamic(now)
+			startDynamic(now)
+			stepDynamic()
 		end
 	end,
 }

@@ -1,7 +1,7 @@
 # TF3 Data Export (`estiv0_tf3export`)
 
 Mod do Transport Fever 3, który eksportuje dane gry jako JSON:
-- **dane dynamiczne** (miasta, przemysł, linie, pojazdy, gracz, data): co 2 dni gry, ale najwyżej raz na 10 s czasu rzeczywistego;
+- **dane dynamiczne** (miasta, przemysł, linie, pojazdy z pozycjami, gracz, data): co 2 dni gry, ale najwyżej raz na 10 s czasu rzeczywistego. Zbieranie i kodowanie są rozłożone na klatki, najwyżej `cfg.dynamicBudgetMs` (3 ms) pracy na klatkę;
 - **sieć dróg i torów**: pełny zrzut raz na sesję, a potem tylko **różnice** (`networkDelta`) po każdej budowie lub wyburzeniu, zarówno gracza, jak i miasta. Mod nasłuchuje zdarzeń `onPreBuildProposal`/`onPostBuildProposal`, ale reaguje tylko na te, które dotykają dróg, torów albo stacji z krawędziami. Czeka 2 s na koniec serii klików i przebudowuje sieć porcjami po 2 ms na klatkę. Dodatkowo co 5 min robi pełne porównanie na wypadek zmian bez zdarzenia.
 
 Na pauzie mod nic nie eksportuje. Szczegóły API i ustalenia z gry opisuje [../docs/tf3-api-findings.md](../docs/tf3-api-findings.md).
@@ -108,7 +108,8 @@ Gdy `app.saveUserdata` jest niedostępne, `writer.lua` pisze do `...\3493540\loc
 
 W logu gry (`crash_dump\stdout.txt`) szukaj linii `[tf3export]`:
 - `new session … (writer mode 'userdata'|'log')`: początek sesji;
-- `dynamic #N: collect … ms, encode … ms, write … ms, … B`;
+- `dynamic #N: work … ms in … frames (max … ms/frame), … s wall; vehicles …, positions … (… vehicles), stations …, lines …, line stats … (… lines), towns …, industries …, player …, encode …, write … ms; … B`: czas pracy łącznie i w najgorszej klatce oraz czasy kroków. Krok, który sam przekracza budżet (np. `towns`), to kandydat do podziału na porcje;
+- `vehicle positions: … ms for … vehicles (max … ms) - disabled for this session`: pozycje pojazdów wyłączone automatycznie, bo łącznie trwały za długo;
 - `network #N (full): … edges (initial, …)` oraz `networkDelta #N: … changed, … removed (build event, …)`;
 - `network: no change (periodic|build event, …)`: przebudowa nie znalazła zmian;
 - `saveUserdata failed: …`: błąd zapisu, po którym mod przełącza się na log.
@@ -116,5 +117,5 @@ W logu gry (`crash_dump\stdout.txt`) szukaj linii `[tf3export]`:
 ## Znane ograniczenia
 
 - Snapshot sieci nie jest atomowy. Budowa w trakcie zbierania może dać mieszany stan.
-- Eksport dynamiczny trwa ok. 12 ms w jednej klatce GUI. To jedna zgubiona klatka co 10 s.
-- Nie ma eksportu pozycji pojazdów na żywo. To osobny, szybszy strumień do zrobienia później.
+- Eksport dynamiczny jest rozłożony na klatki (budżet `cfg.dynamicBudgetMs`), więc snapshot powstaje przez kilka–kilkanaście klatek, a nie w jednej. Pętle (pozycje pojazdów, statystyki linii, kodowanie JSON) są dzielone w dowolnym miejscu. Pojedynczy kolektor (pojazdy, stacje, linie, miasta, przemysł) idzie w całości, więc najdłuższy z nich wyznacza najgorszą klatkę. Przed tą zmianą cały eksport zajmował 30–45 ms w jednej klatce.
+- Pozycje pojazdów (`api.engine.util.vehicle.getPosition` / `getSpeed`) są w każdym eksporcie dynamicznym, nie na żywo. Wyłącznik: `cfg.vehiclePositions = false` w `tf3export.script.lua`. Mod sam je wyłącza do końca sesji, gdy średnio z 3 eksportów trwają łącznie dłużej niż `cfg.vehiclePositionsMaxMs` (30 ms). Strona wtedy zgaduje położenie z numeru przystanku.
