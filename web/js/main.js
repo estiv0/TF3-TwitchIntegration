@@ -4,13 +4,14 @@ import { config } from "../config.js";
 import { DataFeed } from "./api.js";
 import {
   carrierIcon, carrierName, cargoLabel, escapeHtml as esc, fmtDate, fmtInt, fmtMoney, fmtPercent,
-  iconHtml, linesByIndustry, linesByStation, rgb, stationImg, stationName, stationUse, townSize,
+  fmtSignedPercent, iconHtml, linesByIndustry, linesByStation, rgb, stationImg, stationName, stationUse, townGrowth, townSize,
 } from "./format.js";
+import { balanceSparkline } from "./company.js";
 import { readSelection, writeSelection } from "./hash.js";
 import { LANGS, applyStatic, lang, locale, onLangChange, setLang, t } from "./i18n.js";
 import { MapView } from "./map.js";
 import { PinController, readPinHash } from "./pin.js";
-import { Sidebar } from "./sidebar.js";
+import { Sidebar, townSupply } from "./sidebar.js";
 
 const $ = (sel) => document.querySelector(sel);
 const tooltip = $("#tooltip");
@@ -72,6 +73,14 @@ const sidebar = new Sidebar($("#sidebar"), {
 });
 
 $("#fit").addEventListener("click", () => map.fit());
+// Saldo w górnym pasku (ze sparkline) otwiera zakładkę Firma.
+$("#balance").addEventListener("click", () => sidebar.showTab("company"));
+$("#balance").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    sidebar.showTab("company");
+  }
+});
 $("#terrain").addEventListener("click", (e) => {
   e.currentTarget.setAttribute("aria-pressed", String(map.toggleTerrain()));
 });
@@ -143,7 +152,11 @@ function tooltipHtml(item) {
   if (item.kind === "town") {
     const needs = (d.cargoNeeds ?? []).flatMap((g) => Object.keys(g ?? {}));
     const profit = sidebar.earnings.towns.get(d.id)?.profit12m;
+    const growth = townGrowth(d);
+    const coverage = townSupply(d)?.coverage;
     return `<strong>${esc(d.name)}</strong><span>${esc(t("town.capacity", { n: fmtInt(townSize(d)) }))}</span>`
+      + (growth != null ? `<span>${esc(t("town.growthTip", { p: fmtSignedPercent(growth) }))}</span>` : "")
+      + (coverage != null ? `<span>${esc(t("town.supply"))}: ${esc(fmtPercent(coverage))}</span>` : "")
       + (profit != null ? `<span>${esc(t("town.profitTip", { v: fmtMoney(Math.round(profit)) }))}</span>` : "")
       + (needs.length ? `<span class="tip-cargo">${esc(t("needs", { list: "" }))}${needs.map(cargoLabel).join(" ")}</span>` : "");
   }
@@ -161,11 +174,18 @@ function tooltipHtml(item) {
 
 function renderHeader(dynamic) {
   const p = dynamic.player ?? {};
-  $("#balance").textContent = fmtMoney(p.balance);
+  $("#balance").innerHTML = `<span>${esc(fmtMoney(p.balance))}</span>${balanceSparkline(dynamic.company)}`;
+  $("#balance").title = t("kpi.balanceOpen");
   $("#date").textContent = fmtDate(dynamic.date);
 
+  // bez klucza vehicles mod ma wyłączone pojazdy (ustawienia w Tf3Bridge): "–" i bez przycisku na mapie
+  $("#vehicles").hidden = !dynamic.vehicles;
+  if (!dynamic.vehicles) {
+    $("#fleet").textContent = "–";
+    return;
+  }
   const byCarrier = {};
-  for (const v of dynamic.vehicles ?? []) byCarrier[v.carrier] = (byCarrier[v.carrier] ?? 0) + 1;
+  for (const v of dynamic.vehicles) byCarrier[v.carrier] = (byCarrier[v.carrier] ?? 0) + 1;
   $("#fleet").innerHTML = Object.entries(byCarrier).sort((a, b) => b[1] - a[1])
     .map(([c, n]) => `<span title="${esc(carrierName(c) ?? c)}">${carrierIcon(c) || "•"} ${fmtInt(n)}</span>`).join("");
 }

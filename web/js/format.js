@@ -7,7 +7,9 @@ const formatters = new Map();
 function nf(kind) {
   const key = `${locale()}|${kind}`;
   if (!formatters.has(key)) {
-    formatters.set(key, new Intl.NumberFormat(locale(), kind === "dec" ? { maximumFractionDigits: 1 } : {}));
+    const opts = kind === "dec" ? { maximumFractionDigits: 1 }
+      : kind === "compact" ? { notation: "compact", maximumFractionDigits: 1 } : {};
+    formatters.set(key, new Intl.NumberFormat(locale(), opts));
   }
   return formatters.get(key);
 }
@@ -15,7 +17,11 @@ function nf(kind) {
 export const fmtInt = (n) => (n == null ? "–" : nf("int").format(Math.round(n)));
 export const fmtDec = (n) => (n == null ? "–" : nf("dec").format(n));
 export const fmtMoney = (n) => (n == null ? "∞" : `$ ${nf("int").format(n)}`);
+/** Kwota skrócona ("$ 1,5 mln" / "$ 1.5M") - do tabel i osi wykresów. */
+export const fmtMoneyShort = (n) => (n == null ? "–" : `$ ${nf("compact").format(n)}`);
+export const fmtShort = (n) => (n == null ? "–" : nf("compact").format(n));
 export const fmtPercent = (n) => (n == null ? "–" : `${Math.round(n * 100)}%`);
+export const fmtSignedPercent = (n) => (n == null ? "–" : `${n > 0 ? "+" : ""}${Math.round(n * 100)}%`);
 export const fmtDate = (d) => (d ? `${d.day} ${dict().months[d.month - 1] ?? d.month} ${d.year}` : "–");
 
 const cargoKey = (res) => String(res ?? "").split("/").pop().replace(/\.cargo$/, "");
@@ -127,6 +133,12 @@ export function linesByIndustry(dynamic, stationLines = linesByStation(dynamic),
 export const landUseName = (i) => dict().landUse[i];
 
 export const townSize = (t) => (t.capacities ?? []).reduce((a, b) => a + b, 0);
+
+/** Wzrost miasta od startu gry (obecna pojemność / initialCapacities - 1) albo null. */
+export function townGrowth(t) {
+  const start = (t.initialCapacities ?? []).reduce((a, b) => a + b, 0);
+  return start > 0 ? townSize(t) / start - 1 : null;
+}
 
 /** Kolor linii z gry (0..1) -> CSS */
 export function rgb(color, fallback = "#8a94a6") {

@@ -83,6 +83,7 @@ export class MapView {
     this.routeCache = new Map(); // id linii -> { key, route }
     this.linesView = null;      // { match(linia) } - zakładka Linie: rysuj wszystkie linie na ekranie
     this.visibleKey = null;     // ostatnio zgłoszony zestaw linii na ekranie (żeby nie zgłaszać co klatkę)
+    this.visibleIds = new Set(); // linie narysowane przez drawVisibleLines w ostatniej klatce
     this.listHover = null;      // { kind, id } obiektu wskazanego myszą na liście w panelu
     this.terrain = null;        // { image, x, y, w, h } - tło z heightmapy, prostokąt w układzie ścieżki
     this.showTerrain = true;
@@ -202,6 +203,7 @@ export class MapView {
   // Zakładka Linie z włączonym "okiem": { match(linia) -> bool } (filtry panelu) albo null - wyłączone.
   setLinesView(view) {
     this.linesView = view;
+    if (!view) this.visibleIds = new Set();
     if (!view && this.listHover?.kind === "line") this.listHover = null;
     this.visibleKey = null; // po zmianie filtrów zgłoś zestaw linii na nowo
     this.requestDraw();
@@ -325,18 +327,20 @@ export class MapView {
     }
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    // Punkt wskazany na liście albo linia wskazana w panelu (wtedy razem z zaznaczonym obiektem, np. miastem):
-    // reszta półprzezroczysta, wskazane na końcu, w pełnym kolorze.
+    // Punkt wskazany na liście albo linia wskazana w panelu lub przez pojazd na mapie (wtedy razem
+    // z zaznaczonym obiektem, np. miastem): reszta półprzezroczysta, wskazane na końcu, w pełnym kolorze.
     // Pojazdy linii wskazanej albo zaznaczonej rysujemy na końcu, pozostałe przygaszone.
-    const spotLine = this.spotLine();
+    const hotLine = this.hotLine();
+    const spotLine = this.spotLine(hotLine);
     const spot = this.spotItem(spotLine === null ? this.listHover : this.selected);
-    const focusLine = spotLine ?? (this.selected?.kind === "line" ? this.selected.id : null);
+    const focusLine = hotLine ?? (this.selected?.kind === "line" ? this.selected.id : null);
     ctx.globalAlpha = spot || spotLine !== null ? DIM : 1;
-    if (this.linesView) this.drawVisibleLines();
+    if (this.linesView) this.drawVisibleLines(hotLine);
     else if (this.selected?.kind === "line") this.drawLine(this.selected.id);
     this.drawIndustries(spot);
     if (this.showStations) this.drawStations(spot);
-    if (this.showVehicles) this.drawVehicles((v) => v.line !== focusLine, focusLine === null ? 1 : DIM);
+    // pojazdy innych linii przygaszone raz (gdy reszta mapy już jest przygaszona - bez dodatkowego DIM)
+    if (this.showVehicles) this.drawVehicles((v) => v.line !== focusLine, focusLine === null || ctx.globalAlpha < 1 ? 1 : DIM);
     this.drawTowns(spot);
     ctx.globalAlpha = 1;
     if (spotLine !== null) this.drawLine(spotLine);
@@ -354,12 +358,17 @@ export class MapView {
     }
   }
 
-  // Linia wskazana w panelu, której nie podświetla już drawVisibleLines (ta robi to tylko na zakładce
-  // Linie z okiem, bez zaznaczonej linii); inaczej null.
-  spotLine() {
-    const h = this.listHover;
-    if (h?.kind !== "line" || !this.lines.has(h.id)) return null;
-    return this.linesView && this.selected?.kind !== "line" ? null : h.id;
+  // Linia wskazana: na liście w panelu albo przez pojazd pod kursorem na mapie; inaczej null.
+  hotLine() {
+    const h = this.listHover?.kind === "line" ? this.listHover.id : this.hovered?.kind === "vehicle" ? this.hovered.line : null;
+    return h != null && this.lines.has(h) ? h : null;
+  }
+
+  // Wskazana linia, której nie podświetla już drawVisibleLines (ta robi to na zakładce Linie z okiem,
+  // bez zaznaczonej linii, o ile linia jest wśród narysowanych); inaczej null.
+  spotLine(hot) {
+    if (hot === null) return null;
+    return this.linesView && this.selected?.kind !== "line" && this.visibleIds.has(hot) ? null : hot;
   }
 
   // Miasto / zakład / stacja ({ kind, id }), o ile jest na ekranie; inaczej null.
@@ -454,7 +463,8 @@ export class MapView {
 
   // Wszystkie linie przecinające ekran (i pasujące do filtrów panelu); zaznaczona linia - tylko ona.
   // Zestaw linii na ekranie zgłaszamy panelowi (lista linii), gdy się zmieni.
-  drawVisibleLines() {
+  // hotLine: linia wskazana (na liście albo przez pojazd) - na wierzchu, szersza, reszta przygaszona.
+  drawVisibleLines(hotLine) {
     const [minX, minY] = this.toWorld(0, 0);
     const [maxX, maxY] = this.toWorld(this.w, this.h);
     const rect = { minX, minY, maxX, maxY };
@@ -462,9 +472,9 @@ export class MapView {
       .filter((l) => this.linesView.match(l) && routeInRect(this.lineRoute(l.id), rect))
       .sort((a, b) => (a.vehicleCount ?? 0) - (b.vehicleCount ?? 0)); // najbardziej obłożone na wierzchu
 
-    // Linia wskazana na liście: pozostałe półprzezroczyste, ona na wierzchu i 50% szersza.
-    const h = this.listHover;
-    const hot = h?.kind === "line" && visible.some((l) => l.id === h.id) ? h.id : null;
+    // Linia wskazana: pozostałe półprzezroczyste, ona na wierzchu i 50% szersza.
+    this.visibleIds = new Set(visible.map((l) => l.id));
+    const hot = hotLine !== null && this.visibleIds.has(hotLine) ? hotLine : null;
     if (this.selected?.kind === "line") this.drawLine(this.selected.id);
     else {
       const alpha = this.ctx.globalAlpha; // już przygaszone, gdy wskazano miasto / zakład / stację
@@ -477,7 +487,7 @@ export class MapView {
     const key = visible.map((l) => l.id).sort((a, b) => a - b).join(",");
     if (key !== this.visibleKey) {
       this.visibleKey = key;
-      this.onVisibleLines?.(new Set(visible.map((l) => l.id)));
+      this.onVisibleLines?.(new Set(this.visibleIds));
     }
   }
 
@@ -938,7 +948,7 @@ export class MapView {
       if (pinch) return; // po szczypaniu został jeden palec - bez hovera, aż go podniesie
       const hit = this.hitTest(sx, sy);
       const changed = (hit?.id ?? null) !== (this.hovered?.id ?? null);
-      this.hovered = hit ? { kind: hit.kind, id: hit.id } : null;
+      this.hovered = hit ? { kind: hit.kind, id: hit.id, line: hit.line } : null; // line: tylko pojazd
       c.style.cursor = this.pinMode ? "crosshair" : hit ? "pointer" : "grab";
       this.onHover?.(hit, sx, sy);
       if (changed) this.requestDraw();

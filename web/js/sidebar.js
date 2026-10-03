@@ -2,8 +2,10 @@
 
 import {
   STATION_ORDER, carrierIcon, carrierName, cargoLabel, escapeHtml as esc, iconHtml, landUseName, stationName,
-  fmtDec, fmtInt, fmtMoney, fmtPercent, industryOfStation, linesByIndustry, linesByStation, rgb, stationImg, stationUse, townSize,
+  fmtDec, fmtInt, fmtMoney, fmtPercent, fmtSignedPercent, industryOfStation, linesByIndustry, linesByStation, rgb, stationImg,
+  stationUse, townGrowth, townSize,
 } from "./format.js";
+import { companyHtml } from "./company.js";
 import { townEarnings } from "./earnings.js";
 import { locale, t } from "./i18n.js";
 import { industryKind, industryOutputs } from "./map.js";
@@ -23,26 +25,21 @@ export class Sidebar {
     this.focusedStop = null;    // indeks przystanku zaznaczonej linii, na który przeniesiono mapę
 
     this.list = root.querySelector("[data-list]");
+    this.company = root.querySelector("[data-company]");
+    this.searchRow = root.querySelector(".search-row");
     this.detail = root.querySelector("[data-detail]");
     this.search = root.querySelector("[data-search]");
     this.carriers = root.querySelector("[data-carriers]");
     this.viewportBtn = root.querySelector("[data-viewport]");
     this.typeFilter = { lines: "", stations: "" }; // filtr nośnika / rodzaju stacji, "" = wszystkie
-    this.townSort = "size";                        // lista miast: "size" (wielkość) albo "profit" (zarobek linii)
+    this.townSort = "size";                        // lista miast: "size" (wielkość), "profit" (zarobek linii), "growth" (wzrost)
     this.earnings = { towns: new Map(), outside: null }; // townEarnings()
     this.stationLines = new Map();                 // id stacji -> linie
     this.industryLines = new Map();                // id zakładu -> linie jego stacji
     this.stationIndustry = new Map();              // id stacji -> id zakładu (stacje przemysłu)
 
     root.querySelectorAll("[data-tab]").forEach((btn) =>
-      btn.addEventListener("click", () => {
-        this.tab = btn.dataset.tab;
-        root.querySelectorAll("[data-tab]").forEach((b) => b.setAttribute("aria-selected", String(b === btn)));
-        this.renderSearch();
-        this.renderCarriers();
-        this.emitLinesView();
-        this.renderList();
-      }));
+      btn.addEventListener("click", () => this.showTab(btn.dataset.tab)));
 
     this.carriers.addEventListener("click", (e) => {
       const sort = e.target.closest("[data-sort]");
@@ -113,6 +110,16 @@ export class Sidebar {
     this.renderSearch();
   }
 
+  // Przełącza zakładkę (też z zewnątrz: klik w saldo w górnym pasku otwiera Firmę).
+  showTab(tab) {
+    this.tab = tab;
+    this.root.querySelectorAll("[data-tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
+    this.renderSearch();
+    this.renderCarriers();
+    this.emitLinesView();
+    this.renderList();
+  }
+
   setDynamic(dynamic) {
     this.dynamic = dynamic;
     this.stationLines = linesByStation(dynamic);
@@ -165,6 +172,7 @@ export class Sidebar {
   }
 
   renderSearch() {
+    this.searchRow.hidden = this.tab === "company";
     this.search.placeholder = t(this.tab === "lines" ? "search.lines" : "search");
     this.viewportBtn.hidden = this.tab !== "lines";
     this.viewportBtn.setAttribute("aria-pressed", String(this.viewportOnly));
@@ -184,19 +192,31 @@ export class Sidebar {
     const isSel = (kind, id) => this.selected?.kind === kind && this.selected?.id === id;
     let html = "";
 
+    // Firma: zamiast listy osobna sekcja (tabela finansów, wykresy).
+    const company = this.tab === "company";
+    this.list.hidden = company;
+    this.company.hidden = !company;
+    if (company) {
+      this.company.innerHTML = companyHtml(d.company);
+      return;
+    }
+
     if (this.tab === "towns") {
       // Sortowanie po zarobku: miasta bez linii na końcu, a pod listą linie poza miastami.
-      const byProfit = this.townSort === "profit";
+      const byProfit = this.townSort === "profit", byGrowth = this.townSort === "growth";
       const profit = (x) => this.earnings.towns.get(x.id)?.profit12m ?? null;
       const order = byProfit
         ? (a, b) => (profit(b) ?? -Infinity) - (profit(a) ?? -Infinity) || townSize(b) - townSize(a)
-        : (a, b) => townSize(b) - townSize(a);
+        : byGrowth
+          ? (a, b) => (townGrowth(b) ?? -Infinity) - (townGrowth(a) ?? -Infinity) || townSize(b) - townSize(a)
+          : (a, b) => townSize(b) - townSize(a);
+      const value = (x) => (byProfit ? money(profit(x)) : byGrowth ? growthHtml(townGrowth(x)) : fmtInt(townSize(x)));
       html = [...d.towns].filter((x) => match(x.name)).sort(order)
         .map((x) => `
           <li class="row" data-kind="town" data-id="${x.id}" aria-current="${isSel("town", x.id)}">
             <span class="dot dot-town"></span>
             <span class="row-name">${esc(x.name)}</span>
-            <span class="row-value">${byProfit ? money(profit(x)) : fmtInt(townSize(x))}</span>
+            <span class="row-value">${value(x)}</span>
           </li>`).join("");
       const outside = this.earnings.outside;
       if (byProfit && !this.filter && outside?.lines.length) {
@@ -261,7 +281,7 @@ export class Sidebar {
     if (this.tab === "towns") {
       const btn = (key) =>
         `<button type="button" data-sort="${key}" aria-pressed="${this.townSort === key}">${esc(t(`town.sort.${key}`))}</button>`;
-      this.carriers.innerHTML = btn("size") + btn("profit");
+      this.carriers.innerHTML = btn("size") + btn("profit") + btn("growth");
       return;
     }
     if (!(this.tab in this.typeFilter)) return;
@@ -321,7 +341,7 @@ function stationDetail(s, lines) {
     <p class="detail-sub">${esc(stationName(s.kind) ?? t("station"))}${use ? ` · ${esc(use)}` : ""}</p>
     <dl class="stats">
       ${stat(t("lines"), fmtInt(lines.length))}
-      ${stat(t("station.vehicles"), fmtInt(lines.reduce((n, l) => n + (l.vehicleCount ?? 0), 0)))}
+      ${stat(t("station.vehicles"), fmtInt(lines.some((l) => l.vehicleCount == null) ? null : lines.reduce((n, l) => n + l.vehicleCount, 0)))}
     </dl>
     ${lineLinks(lines)}`;
 }
@@ -344,27 +364,83 @@ function townEarningsHtml(e) {
     <ul class="line-links">${rows}</ul>`;
 }
 
+// Wzrost ze znakiem, w kolorze ("+12%" zielony, "-3%" czerwony); brak danych -> "–".
+const growthHtml = (g) => (g == null ? "–" : `<span class="${g < 0 ? "neg" : g > 0 ? "pos" : ""}">${esc(fmtSignedPercent(g))}</span>`);
+
+// Zaspokojenie potrzeb (town.supply z moda, jak statystyki miast w grze): ładunki z limitem > 0
+// albo bez limitu (-1), ale dostarczane; coverage = suma min(dostawa, limit) / suma limitów.
+export function townSupply(town) {
+  const list = (town.supply ?? []).filter((s) => s.demand > 0 || (s.demand === -1 && s.supply > 0));
+  if (!list.length) return null;
+  let supplied = 0, demand = 0;
+  for (const s of list) {
+    if (s.demand > 0) {
+      supplied += Math.min(s.supply, s.demand);
+      demand += s.demand;
+    }
+  }
+  return { list, coverage: demand ? supplied / demand : null };
+}
+
 function townDetail(town, earnings) {
   const caps = (town.capacities ?? [])
     .map((c, i) => stat(landUseName(i) ?? t("town.zone", { n: i + 1 }), fmtInt(c))).join("");
-  const needs = (town.cargoNeeds ?? []).flatMap((group) => Object.entries(group ?? {}))
-    .map(([cargo, v]) => `<li>${cargoLabel(cargo)}<span>${fmtDec(v)}</span></li>`).join("");
+  const supply = townSupply(town);
+  let needs;
+  if (supply) {
+    needs = `<h3 title="${esc(t("town.supplyHint"))}">${esc(t("town.supply"))}</h3><ul class="chips">${supply.list.map((s) => {
+      const v = s.demand > 0
+        ? `${fmtInt(Math.min(s.supply, s.demand))} / ${fmtInt(s.demand)} · ${fmtPercent(Math.min(s.supply, s.demand) / s.demand)}`
+        : fmtInt(s.supply);
+      return `<li>${cargoLabel(s.cargo)}<span>${esc(v)}</span></li>`;
+    }).join("")}</ul>`;
+  } else {
+    const chips = (town.cargoNeeds ?? []).flatMap((group) => Object.entries(group ?? {}))
+      .map(([cargo, v]) => `<li>${cargoLabel(cargo)}<span>${fmtDec(v)}</span></li>`).join("");
+    needs = chips ? `<h3>${esc(t("town.demand"))}</h3><ul class="chips">${chips}</ul>` : "";
+  }
   return `
     <h2>${esc(town.name)}</h2>
     <p class="detail-sub">${esc(t("town"))} · ${esc(t(town.growing ? "town.growing" : "town.stopped"))}</p>
     <dl class="stats">
       ${caps}
+      ${stat(t("town.growth"), growthHtml(townGrowth(town)))}
+      ${supply?.coverage != null ? stat(t("town.supply"), fmtPercent(supply.coverage)) : ""}
       ${stat(t("town.noise"), fmtDec(town.noise))}
       ${stat(t("town.pollution"), fmtInt(town.pollution))}
     </dl>
-    ${needs ? `<h3>${esc(t("town.demand"))}</h3><ul class="chips">${needs}</ul>` : ""}
+    ${needs}
     ${townEarningsHtml(earnings)}`;
 }
 
+// Zakład: zapotrzebowanie i produkcja (na rok, gdy mod je podaje - stocks[].consumedYear,
+// producedYear), stan magazynów (stocks[].amount) i liczniki z ostatniego roku (year).
 function industryDetail(i, lines) {
   const outputs = industryOutputs(i);
   const produced = new Set(outputs.keys());
-  const inputs = (i.stocks ?? []).filter((s) => !produced.has(s.cargo));
+  const stocks = i.stocks ?? [];
+  const isInput = (s) => s.input ?? !produced.has(s.cargo); // starszy eksport: bez flagi input
+  const inputs = stocks.filter(isInput);
+  const perYear = (n) => (n == null ? "" : `<span>${esc(t("industry.perYear", { n: fmtInt(n) }))}</span>`);
+  const yearOut = i.producedYear ?? {};
+  const hasYear = Object.keys(yearOut).length > 0;
+
+  const storage = stocks.some((s) => s.amount != null)
+    ? `<h3>${esc(t("industry.stock"))}</h3><ul class="stock">${stocks.map((s) => {
+      const fill = s.capacity ? Math.min(1, (s.amount ?? 0) / s.capacity) : 0;
+      return `<li><span class="stock-name">${cargoLabel(s.cargo)}</span><em>${esc(t(isInput(s) ? "industry.input" : "industry.output"))}</em>`
+        + `<span>${fmtInt(s.amount)} / ${fmtInt(s.capacity)}</span>`
+        + `<i class="stock-bar"><b style="width:${(fill * 100).toFixed(0)}%"></b></i></li>`;
+    }).join("")}</ul>`
+    : "";
+  const y = i.year ?? {};
+  const year = y.produced != null || y.consumed != null || y.destroyed != null
+    ? `<h3>${esc(t("industry.year"))}</h3><dl class="stats">
+      ${y.consumed != null ? stat(t("industry.consumed"), fmtInt(y.consumed)) : ""}
+      ${y.produced != null ? stat(t("industry.produced"), fmtInt(y.produced)) : ""}
+      ${y.destroyed != null ? stat(t("industry.destroyed"), `<span class="${y.destroyed > 0 ? "neg" : ""}">${fmtInt(y.destroyed)}</span>`) : ""}
+    </dl>`
+    : "";
 
   return `
     <h2>${esc(i.name)}</h2>
@@ -374,8 +450,11 @@ function industryDetail(i, lines) {
       ${stat(t("industry.productivity"), fmtPercent(i.productivity))}
       ${stat(t("industry.upgrade"), fmtPercent(i.upgrade))}
     </dl>
-    ${inputs.length ? `<h3>${esc(t("industry.needs"))}</h3><ul class="chips">${inputs.map((s) => `<li>${cargoLabel(s.cargo)}</li>`).join("")}</ul>` : ""}
-    ${outputs.size ? `<h3>${esc(t("industry.produces"))}</h3><ul class="chips">${[...outputs].map(([c, a]) => `<li>${cargoLabel(c)}<span>${fmtInt(a)}</span></li>`).join("")}</ul>` : ""}
+    ${inputs.length ? `<h3>${esc(t("industry.needs"))}</h3><ul class="chips">${inputs.map((s) => `<li>${cargoLabel(s.cargo)}${perYear(s.consumedYear)}</li>`).join("")}</ul>` : ""}
+    ${outputs.size ? `<h3>${esc(t("industry.produces"))}</h3><ul class="chips">${[...outputs].map(([c, a]) =>
+      `<li>${cargoLabel(c)}${hasYear ? perYear(yearOut[c] ?? 0) : `<span>${fmtInt(a)}</span>`}</li>`).join("")}</ul>` : ""}
+    ${storage}
+    ${year}
     ${lineLinks(lines)}`;
 }
 

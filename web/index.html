@@ -21,7 +21,7 @@
     </div>
     <dl class="kpis">
       <div><dt data-i18n="kpi.date">Data</dt><dd id="date">–</dd></div>
-      <div><dt data-i18n="kpi.balance">Saldo</dt><dd id="balance">–</dd></div>
+      <div><dt data-i18n="kpi.balance">Saldo</dt><dd id="balance" class="kpi-link" role="button" tabindex="0">–</dd></div>
       <div><dt data-i18n="kpi.fleet">Flota</dt><dd id="fleet" class="fleet">–</dd></div>
       <div><dt data-i18n="kpi.edges">Odcinki sieci</dt><dd id="edges">–</dd></div>
     </dl>
@@ -72,6 +72,7 @@
         <button role="tab" data-tab="industries" aria-selected="false"><span data-i18n="tab.industries">Przemysł</span> <span data-count="industries">0</span></button>
         <button role="tab" data-tab="stations" aria-selected="false"><span data-i18n="tab.stations">Stacje</span> <span data-count="stations">0</span></button>
         <button role="tab" data-tab="lines" aria-selected="false"><span data-i18n="tab.lines">Linie</span> <span data-count="lines">0</span></button>
+        <button role="tab" data-tab="company" aria-selected="false"><span data-i18n="tab.company">Firma</span></button>
       </div>
       <div class="search-row">
         <input class="search" data-search type="search" placeholder="Szukaj…" aria-label="Szukaj" data-i18n-aria="search">
@@ -85,6 +86,7 @@
       <div class="filters" data-carriers role="group" aria-label="Filtr typu" data-i18n-aria="filter.label" hidden></div>
       <section class="detail" data-detail hidden></section>
       <ul class="list" data-list></ul>
+      <section class="company" data-company hidden></section>
     </aside>
   </main>
 

@@ -35,6 +35,7 @@ web/
   js/api.js         DataFeed: polling meta.json, pobieranie dynamic/network przy zmianie seq
   js/map.js         MapView: canvas, sieć jako krzywe Béziera (z tangensów TF), pan/zoom/hover/wybór
   js/sidebar.js     listy miast, przemysłu i linii, szczegóły zaznaczenia
+  js/company.js     zakładka Firma (finanse wg lat, wykresy historii) i sparkline salda w górnym pasku
   js/format.js      formatowanie liczb i dat, polskie nazwy ładunków i środków transportu
 ```
 
