@@ -49,7 +49,7 @@ function readTheme() {
 }
 
 export class MapView {
-  constructor(canvas, { onHover, onSelect, onPlace, onPinMode, onVisibleLines, focusAnchorY } = {}) {
+  constructor(canvas, { onHover, onSelect, onPlace, onPinMode, onVisibleLines, onLayers, focusAnchorY } = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
     this.onHover = onHover;
@@ -57,6 +57,7 @@ export class MapView {
     this.onPlace = onPlace;     // kliknięcie w trybie pinezki / prawy przycisk -> { x, y, sx, sy }
     this.onPinMode = onPinMode;
     this.onVisibleLines = onVisibleLines; // Set id linii na ekranie (tylko przy włączonym linesView)
+    this.onLayers = onLayers;   // warstwa (stacje, zakłady) włączona sama przez focus() - zsynchronizuj przyciski
     // Wysokość (ułamek mapy), na której focus() stawia obiekt; domyślnie środek. Na telefonie wyżej,
     // bo dół mapy zasłania okienko szczegółów.
     this.focusAnchorY = focusAnchorY ?? (() => 0.5);
@@ -68,6 +69,7 @@ export class MapView {
     this.bbox = null;           // zakres sieci w układzie ścieżki
     this.towns = [];
     this.industries = [];
+    this.showIndustries = true;
     this.stations = [];         // dworce, porty, lotniska (bez przystanków)
     this.showStations = true;
     this.vehicleData = [];      // dynamic.vehicles
@@ -189,6 +191,12 @@ export class MapView {
     return this.showStations;
   }
 
+  toggleIndustries() {
+    this.showIndustries = !this.showIndustries;
+    this.requestDraw();
+    return this.showIndustries;
+  }
+
   toggleVehicles() {
     this.showVehicles = !this.showVehicles;
     this.requestDraw();
@@ -248,7 +256,14 @@ export class MapView {
     const items = { town: this.towns, industry: this.industries, station: this.stations }[kind] ?? [];
     const item = items.find((x) => x.id === id);
     if (!item) return;
-    if (kind === "station" && !this.showStations) this.showStations = true;
+    if (kind === "station" && !this.showStations) {
+      this.showStations = true;
+      this.onLayers?.();
+    }
+    if (kind === "industry" && !this.showIndustries) {
+      this.showIndustries = true;
+      this.onLayers?.();
+    }
     this.selected = { kind, id };
     this.view.scale = Math.max(this.view.scale, 0.25);
     this.centerOn(item.px, item.py);
@@ -343,7 +358,7 @@ export class MapView {
     ctx.globalAlpha = spot || spotLine !== null ? DIM : 1;
     if (this.linesView) this.drawVisibleLines(hotLine);
     else if (this.selected?.kind === "line") this.drawLine(this.selected.id);
-    this.drawIndustries(spot);
+    if (this.showIndustries) this.drawIndustries(spot);
     if (this.showStations) this.drawStations(spot);
     // pojazdy innych linii przygaszone raz (gdy reszta mapy już jest przygaszona - bez dodatkowego DIM)
     if (this.showVehicles) this.drawVehicles((v) => v.line !== focusLine, focusLine === null || ctx.globalAlpha < 1 ? 1 : DIM);
@@ -864,7 +879,7 @@ export class MapView {
       if (d <= radius && d < bestD) { best = item; bestD = d; }
     };
     for (const t of this.towns) consider(t, t.r + 4);
-    for (const i of this.industries) consider(i, 8);
+    if (this.showIndustries) for (const i of this.industries) consider(i, 8);
     if (this.showStations) {
       const r = this.view.scale >= STATION_ICON_SCALE ? 11 : 6;
       for (const s of this.stations) consider(s, r);

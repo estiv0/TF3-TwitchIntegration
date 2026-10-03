@@ -28,6 +28,10 @@ let pendingSelection = readSelection(); // zaznaczenie z linku - zastosujemy, gd
 applyStatic();
 
 const map = new MapView($("#map"), {
+  onLayers() {
+    $("#stations").setAttribute("aria-pressed", String(map.showStations));
+    $("#industries").setAttribute("aria-pressed", String(map.showIndustries));
+  },
   onHover(item, x, y) {
     if (!item) {
       tooltip.hidden = true;
@@ -103,6 +107,9 @@ $("#terrain").addEventListener("click", (e) => {
 });
 $("#stations").addEventListener("click", (e) => {
   e.currentTarget.setAttribute("aria-pressed", String(map.toggleStations()));
+});
+$("#industries").addEventListener("click", (e) => {
+  e.currentTarget.setAttribute("aria-pressed", String(map.toggleIndustries()));
 });
 $("#vehicles").addEventListener("click", (e) => {
   e.currentTarget.setAttribute("aria-pressed", String(map.toggleVehicles()));
