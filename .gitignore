@@ -26,3 +26,6 @@ Thumbs.db
 
 # Źródłowe ikonki z gry (TGA) - na stronie są ich wersje PNG w web/img/
 web/img_res/
+
+# Sekrety (token SAS do Azure Blob)
+docs/blob_sas
