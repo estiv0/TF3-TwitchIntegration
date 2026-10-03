@@ -8,7 +8,7 @@ import { locale, t } from "./i18n.js";
 import { industryKind, industryOutputs } from "./map.js";
 
 export class Sidebar {
-  constructor(root, { onPick, onStop, onLinesView, onHoverLine }) {
+  constructor(root, { onPick, onStop, onLinesView, onHoverItem }) {
     this.root = root;
     this.onPick = onPick;
     this.onStop = onStop;
@@ -70,12 +70,12 @@ export class Sidebar {
       if (row) this.onPick(row.dataset.kind, Number(row.dataset.id));
     });
 
-    // Najechanie na linię na liście podświetla ją na mapie.
+    // Najechanie na pozycję listy (miasto, zakład, stacja, linia) podświetla ją na mapie.
     this.list.addEventListener("mouseover", (e) => {
-      const row = e.target.closest('[data-kind="line"]');
-      onHoverLine?.(row ? Number(row.dataset.id) : null);
+      const row = e.target.closest("[data-kind]");
+      onHoverItem?.(row?.dataset.kind ?? null, row ? Number(row.dataset.id) : null);
     });
-    this.list.addEventListener("mouseleave", () => onHoverLine?.(null));
+    this.list.addEventListener("mouseleave", () => onHoverItem?.(null));
 
     this.detail.addEventListener("click", (e) => {
       const line = e.target.closest("[data-line]");

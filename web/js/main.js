@@ -58,8 +58,8 @@ const sidebar = new Sidebar($("#sidebar"), {
   onLinesView(view) {
     map.setLinesView(view);
   },
-  onHoverLine(id) {
-    map.hoverLine(id);
+  onHoverItem(kind, id) {
+    map.hoverItem(kind, id);
   },
 });
 
@@ -78,7 +78,7 @@ document.addEventListener("keydown", (e) => {
   if (!sidebar.selected) return;
   map.select(null);
   sidebar.setSelected(null);
-  map.hoverLine(null);
+  map.hoverItem(null);
 });
 
 let stationLines = new Map();  // id stacji -> linie (do tooltipa)

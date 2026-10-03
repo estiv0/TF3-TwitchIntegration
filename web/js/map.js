@@ -34,6 +34,7 @@ const STATION_ICON_SCALE = 0.05;
 const STATION_ICON_PX = 24;
 const OUTPUT_ICON_PX = 30; // ikonki produkcji nad zakładem
 const PIN_HEAD_Y = 22;      // główka pinezki tyle px nad wskazanym punktem
+const DIM = 0.3;            // krycie reszty mapy, gdy na liście w panelu wskazano jeden obiekt
 
 // Kolory z CSS (motyw) odczytywane raz na klatkę, nie dla każdego obiektu.
 function readTheme() {
@@ -67,7 +68,7 @@ export class MapView {
     this.routeCache = new Map(); // id linii -> { key, route }
     this.linesView = null;      // { match(linia) } - zakładka Linie: rysuj wszystkie linie na ekranie
     this.visibleKey = null;     // ostatnio zgłoszony zestaw linii na ekranie (żeby nie zgłaszać co klatkę)
-    this.hoveredLine = null;    // id linii wskazanej myszą na liście w panelu
+    this.listHover = null;      // { kind, id } obiektu wskazanego myszą na liście w panelu
     this.terrain = null;        // { image, x, y, w, h } - tło z heightmapy, prostokąt w układzie ścieżki
     this.showTerrain = true;
     this.selected = null;       // { kind, id }
@@ -161,17 +162,18 @@ export class MapView {
     return this.showStations;
   }
 
-  // Linia wskazana myszą na liście (id albo null) - podświetlana wśród linii z ekranu.
-  hoverLine(id) {
-    if (id === this.hoveredLine) return;
-    this.hoveredLine = id;
-    if (this.linesView) this.requestDraw();
+  // Obiekt wskazany myszą na liście (kind = null - żaden): podświetlony na mapie, reszta przygaszona.
+  // Linia - tylko wśród linii z ekranu (linesView); miasto, zakład, stacja - gdy jest na ekranie.
+  hoverItem(kind, id) {
+    if (kind === (this.listHover?.kind ?? null) && id === this.listHover?.id) return;
+    this.listHover = kind ? { kind, id } : null;
+    this.requestDraw();
   }
 
   // Zakładka Linie z włączonym "okiem": { match(linia) -> bool } (filtry panelu) albo null - wyłączone.
   setLinesView(view) {
     this.linesView = view;
-    if (!view) this.hoveredLine = null;
+    if (!view && this.listHover?.kind === "line") this.listHover = null;
     this.visibleKey = null; // po zmianie filtrów zgłoś zestaw linii na nowo
     this.requestDraw();
   }
@@ -292,12 +294,29 @@ export class MapView {
     }
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.drawIndustries();
-    if (this.showStations) this.drawStations();
+    // Punkt wskazany na liście: reszta półprzezroczysta, on na końcu, w pełnym kolorze.
+    const spot = this.spotItem();
+    ctx.globalAlpha = spot ? DIM : 1;
+    this.drawIndustries(spot);
+    if (this.showStations) this.drawStations(spot);
     if (this.linesView) this.drawVisibleLines();
     else if (this.selected?.kind === "line") this.drawLine(this.selected.id);
-    this.drawTowns();
+    this.drawTowns(spot);
+    ctx.globalAlpha = 1;
+    if (spot?.kind === "industry") this.drawIndustry(spot);
+    else if (spot?.kind === "station") this.drawStation(spot);
+    else if (spot?.kind === "town") this.drawTown(spot, null);
     this.drawPin();
+  }
+
+  // Miasto / zakład / stacja wskazane na liście, o ile jest na ekranie; inaczej null.
+  spotItem() {
+    const h = this.listHover;
+    const items = { town: this.towns, industry: this.industries, station: this.stations }[h?.kind];
+    const item = items?.find((x) => x.id === h.id);
+    if (!item) return null;
+    const [x, y] = this.toScreen(item.px, item.py);
+    return x >= 0 && y >= 0 && x <= this.w && y <= this.h ? item : null;
   }
 
   // ---------------------------------------------------------------- pinezka (link do miejsca)
@@ -392,12 +411,14 @@ export class MapView {
       .sort((a, b) => (a.vehicleCount ?? 0) - (b.vehicleCount ?? 0)); // najbardziej obłożone na wierzchu
 
     // Linia wskazana na liście: pozostałe półprzezroczyste, ona na wierzchu i 50% szersza.
-    const hot = visible.some((l) => l.id === this.hoveredLine) ? this.hoveredLine : null;
+    const h = this.listHover;
+    const hot = h?.kind === "line" && visible.some((l) => l.id === h.id) ? h.id : null;
     if (this.selected?.kind === "line") this.drawLine(this.selected.id);
     else {
-      this.ctx.globalAlpha = hot === null ? 1 : 0.3;
+      const alpha = this.ctx.globalAlpha; // już przygaszone, gdy wskazano miasto / zakład / stację
+      this.ctx.globalAlpha = hot === null ? alpha : DIM;
       for (const l of visible) if (l.id !== hot) this.drawLine(l.id, true);
-      this.ctx.globalAlpha = 1;
+      this.ctx.globalAlpha = alpha;
       if (hot !== null) this.drawLine(hot, true, 1.5);
     }
 
@@ -449,25 +470,27 @@ export class MapView {
     }
   }
 
-  drawIndustries() {
+  // skip: obiekt rysowany osobno (wskazany na liście) - pomijany tutaj.
+  drawIndustries(skip) {
+    for (const ind of this.industries) if (ind !== skip) this.drawIndustry(ind);
+  }
+
+  drawIndustry(ind) {
     const css = (name) => this.theme[name];
     const { ctx } = this;
     const size = this.view.scale > 0.08 ? 20 : 10;
-    const colors = { raw: css("--industry-raw"), processing: css("--industry-processing") };
-    const outputs = this.view.scale >= STATION_ICON_SCALE; // jak ikony stacji: tylko po przybliżeniu
-    for (const ind of this.industries) {
-      const [x, y] = this.toScreen(ind.px, ind.py);
-      if (x < -30 || y < -30 || x > this.w + 30 || y > this.h + 30) continue;
-      ctx.fillStyle = colors[ind.type];
-      ctx.strokeStyle = css("--map-bg");
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.rect(x - size / 2, y - size / 2, size, size);
-      ctx.fill();
-      ctx.stroke();
-      if (this.isMarked(ind)) this.ring(x, y, size);
-      if (outputs) this.drawOutputs(ind.outputs, x, y - size / 2 - 3);
-    }
+    const [x, y] = this.toScreen(ind.px, ind.py);
+    if (x < -30 || y < -30 || x > this.w + 30 || y > this.h + 30) return;
+    ctx.fillStyle = css(ind.type === "raw" ? "--industry-raw" : "--industry-processing");
+    ctx.strokeStyle = css("--map-bg");
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.rect(x - size / 2, y - size / 2, size, size);
+    ctx.fill();
+    ctx.stroke();
+    if (this.isMarked(ind)) this.ring(x, y, size);
+    // jak ikony stacji: tylko po przybliżeniu
+    if (this.view.scale >= STATION_ICON_SCALE) this.drawOutputs(ind.outputs, x, y - size / 2 - 3);
   }
 
   // Ikonki produkowanych ładunków w rzędzie, wyśrodkowane nad kwadratem zakładu (bottomY = dół rzędu).
@@ -482,41 +505,43 @@ export class MapView {
   }
 
   // Przybliżone: ciemne kółko z obwódką w kolorze rodzaju i ikoną; oddalone: sama kropka.
-  drawStations() {
+  drawStations(skip) {
+    for (const st of this.stations) if (st !== skip) this.drawStation(st);
+  }
+
+  drawStation(st) {
     const css = (name) => this.theme[name];
     const { ctx } = this;
     const icons = this.view.scale >= STATION_ICON_SCALE;
     const r = icons ? 16 : 8;
-    for (const st of this.stations) {
-      const [x, y] = this.toScreen(st.px, st.py);
-      if (x < -20 || y < -20 || x > this.w + 20 || y > this.h + 20) continue;
-      const color = css(`--station-${String(st.type).toLowerCase()}`) || css("--accent");
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      if (icons) {
-        ctx.fillStyle = css("--panel");
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2;
-        ctx.fill();
-        ctx.stroke();
-        const icon = this.tintedIcon(stationImg(st.data), color, STATION_ICON_PX);
-        if (icon) {
-          ctx.drawImage(icon, x - STATION_ICON_PX / 2, y - STATION_ICON_PX / 2, STATION_ICON_PX, STATION_ICON_PX);
-        } else { // obrazek jeszcze się ładuje albo go nie ma
-          ctx.fillStyle = color;
-          ctx.beginPath();
-          ctx.arc(x, y, 4, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      } else {
+    const [x, y] = this.toScreen(st.px, st.py);
+    if (x < -20 || y < -20 || x > this.w + 20 || y > this.h + 20) return;
+    const color = css(`--station-${String(st.type).toLowerCase()}`) || css("--accent");
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    if (icons) {
+      ctx.fillStyle = css("--panel");
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.fill();
+      ctx.stroke();
+      const icon = this.tintedIcon(stationImg(st.data), color, STATION_ICON_PX);
+      if (icon) {
+        ctx.drawImage(icon, x - STATION_ICON_PX / 2, y - STATION_ICON_PX / 2, STATION_ICON_PX, STATION_ICON_PX);
+      } else { // obrazek jeszcze się ładuje albo go nie ma
         ctx.fillStyle = color;
-        ctx.strokeStyle = css("--map-bg");
-        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, Math.PI * 2);
         ctx.fill();
-        ctx.stroke();
       }
-      if (this.isMarked(st)) this.ring(x, y, r * 2);
+    } else {
+      ctx.fillStyle = color;
+      ctx.strokeStyle = css("--map-bg");
+      ctx.lineWidth = 1.5;
+      ctx.fill();
+      ctx.stroke();
     }
+    if (this.isMarked(st)) this.ring(x, y, r * 2);
   }
 
   // Obrazek z cache; ładowany przy pierwszym użyciu (po wczytaniu przerysowujemy). null, dopóki
@@ -555,44 +580,43 @@ export class MapView {
     return canvas;
   }
 
-  drawTowns() {
+  drawTowns(skip) {
+    const labels = []; // etykiety: od największych miast, bez nakładania się
+    for (const t of this.towns) if (t !== skip) this.drawTown(t, labels);
+  }
+
+  // labels: ramki już narysowanych etykiet (null - etykieta zawsze, np. miasto wskazane na liście).
+  drawTown(t, labels) {
     const css = (name) => this.theme[name];
     const { ctx } = this;
-    const labels = [];
+    const [x, y] = this.toScreen(t.px, t.py);
+    if (x < -50 || y < -50 || x > this.w + 50 || y > this.h + 50) return;
+    ctx.fillStyle = css("--town");
+    ctx.strokeStyle = css("--map-bg");
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, t.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    const marked = !labels || this.isMarked(t);
+    if (marked) this.ring(x, y, t.r * 2);
+
     ctx.font = `600 12px ${css("--font")}`;
     ctx.textBaseline = "middle";
-
-    for (const t of this.towns) {
-      const [x, y] = this.toScreen(t.px, t.py);
-      if (x < -50 || y < -50 || x > this.w + 50 || y > this.h + 50) continue;
-      ctx.fillStyle = css("--town");
-      ctx.strokeStyle = css("--map-bg");
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(x, y, t.r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      if (this.isMarked(t)) this.ring(x, y, t.r * 2);
-
-      // etykiety: od największych miast, bez nakładania się
-      const text = t.data.name ?? "";
-      const tw = ctx.measureText(text).width;
-      const box = { x: x + t.r + 4, y: y - 8, w: tw + 6, h: 16 };
-      const marked = this.isMarked(t);
-      if (marked || !labels.some((b) => overlaps(b, box))) {
-        labels.push(box);
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = css("--map-bg");
-        ctx.strokeText(text, box.x, y);
-        ctx.fillStyle = marked ? css("--accent") : css("--town-label");
-        ctx.fillText(text, box.x, y);
-      }
-    }
+    const text = t.data.name ?? "";
+    const box = { x: x + t.r + 4, y: y - 8, w: ctx.measureText(text).width + 6, h: 16 };
+    if (labels && !marked && labels.some((b) => overlaps(b, box))) return;
+    labels?.push(box);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = css("--map-bg");
+    ctx.strokeText(text, box.x, y);
+    ctx.fillStyle = marked ? css("--accent") : css("--town-label");
+    ctx.fillText(text, box.x, y);
   }
 
   isMarked(item) {
     const m = (s) => s && s.kind === item.kind && s.id === item.id;
-    return m(this.selected) || m(this.hovered);
+    return m(this.selected) || m(this.hovered) || m(this.listHover);
   }
 
   ring(x, y, size) {
