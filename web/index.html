@@ -33,6 +33,8 @@
     <section class="map-wrap" aria-label="Mapa" data-i18n-aria="map.label">
       <canvas id="map"></canvas>
       <div id="tooltip" class="tooltip" hidden></div>
+      <!-- Szczegóły zaznaczonego obiektu: pływające okienko nad mapą (js/float.js), treść z js/sidebar.js. -->
+      <section id="detail" class="detail" data-detail hidden></section>
       <div class="map-tools">
         <button id="fit" type="button" title="Pokaż całą mapę" data-i18n-title="map.fit">⤢</button>
         <button id="terrain" type="button" title="Teren (rzeźba)" data-i18n-title="map.terrain" aria-pressed="true">⛰</button>
@@ -87,7 +89,6 @@
         </button>
       </div>
       <div class="filters" data-carriers role="group" aria-label="Filtr typu" data-i18n-aria="filter.label" hidden></div>
-      <section class="detail" data-detail hidden></section>
       <ul class="list" data-list></ul>
       <section class="company" data-company hidden></section>
     </aside>

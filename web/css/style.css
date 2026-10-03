@@ -238,14 +238,22 @@ button { font: inherit; color: inherit; }
 .row-hint { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-hint mark { background: none; color: var(--accent); }
 
+/* Szczegóły: pływające okienko nad mapą (js/float.js ustawia left/top/max-height), przewijane w środku. */
 .detail {
-  position: relative; margin: 0 10px 10px; padding: 14px; border-radius: var(--radius);
+  position: absolute; top: 12px; left: 12px; z-index: 2;
+  width: min(360px, calc(100% - 24px)); overflow-y: auto; overscroll-behavior: contain;
+  padding: 14px; border-radius: var(--radius);
   background: var(--panel-2); border: 1px solid var(--border);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .45);
 }
+.detail h2, .detail .detail-sub { cursor: move; user-select: none; }
+.detail.dragging { opacity: .92; }
 .detail h2 { font-size: 16px; padding-right: 24px; }
+/* × zostaje w rogu przy przewijaniu treści */
 .detail-close {
-  position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; padding: 0;
-  border: 0; border-radius: 6px; background: none; cursor: pointer;
+  position: sticky; top: 0; float: right; z-index: 1; margin: -6px -6px 0 0;
+  width: 24px; height: 24px; padding: 0;
+  border: 0; border-radius: 6px; background: var(--panel-2); cursor: pointer;
   color: var(--muted); font-size: 18px; line-height: 1;
 }
 .detail-close:hover { color: var(--text); background: var(--bg); }
@@ -296,6 +304,9 @@ button { font: inherit; color: inherit; }
   .sidebar { border-left: 0; border-top: 1px solid var(--border); max-height: none; }
   .sidebar-resize { display: none; }
   .list { max-height: 60vh; }
+  /* okienko szczegółów na dole mapy, bez przesuwania (!important: wygrywa z left/top z js/float.js) */
+  .detail { top: auto !important; left: 8px !important; right: 8px; bottom: 8px; width: auto; max-height: 70% !important; }
+  .detail h2, .detail .detail-sub { cursor: auto; }
 }
 .chips li { align-items: center; }
 

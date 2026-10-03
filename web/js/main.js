@@ -11,6 +11,7 @@ import { readSelection, writeSelection } from "./hash.js";
 import { LANGS, applyStatic, lang, locale, onLangChange, setLang, t } from "./i18n.js";
 import { MapView } from "./map.js";
 import { PinController, readPinHash } from "./pin.js";
+import { initFloatingPanel } from "./float.js";
 import { initSidebarResize } from "./resize.js";
 import { Sidebar, townSupply } from "./sidebar.js";
 
@@ -53,7 +54,7 @@ const map = new MapView($("#map"), {
 
 const pins = new PinController(map, { form: $("#pin-form"), button: $("#pin"), wrap: $(".map-wrap") });
 
-const sidebar = new Sidebar($("#sidebar"), {
+const sidebar = new Sidebar($("#sidebar"), $("#detail"), {
   onPick(kind, id) {
     map.focus(kind, id);
     sidebar.setSelected(kind, id);
@@ -74,6 +75,7 @@ const sidebar = new Sidebar($("#sidebar"), {
 });
 
 initSidebarResize($(".layout"), $(".sidebar-resize"));
+initFloatingPanel($("#detail"), $(".map-wrap"));
 $("#fit").addEventListener("click", () => map.fit());
 // Saldo w górnym pasku (ze sparkline) otwiera zakładkę Firma.
 $("#balance").addEventListener("click", () => sidebar.showTab("company"));
@@ -100,7 +102,7 @@ document.addEventListener("keydown", (e) => {
   if (sidebar.selected) clearSelection();
 });
 
-// Odznaczenie obiektu: Esc albo × w panelu szczegółów.
+// Odznaczenie obiektu: Esc albo × w okienku szczegółów.
 function clearSelection() {
   map.select(null);
   sidebar.setSelected(null);

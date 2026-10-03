@@ -1,4 +1,5 @@
-// Panel boczny: listy (miasta, przemysł, stacje, linie) i szczegóły zaznaczonego obiektu.
+// Panel boczny: listy (miasta, przemysł, stacje, linie) i szczegóły zaznaczonego obiektu
+// (szczegóły w osobnym, pływającym okienku nad mapą - element detail, js/float.js).
 
 import {
   STATION_ORDER, carrierIcon, carrierName, cargoImg, cargoLabel, cargoName, escapeHtml as esc, iconHtml, landUseName, stationName,
@@ -11,7 +12,7 @@ import { locale, t } from "./i18n.js";
 import { industryKind, industryOutputs } from "./map.js";
 
 export class Sidebar {
-  constructor(root, { onPick, onStop, onClose, onLinesView, onHoverItem }) {
+  constructor(root, detail, { onPick, onStop, onClose, onLinesView, onHoverItem }) {
     this.root = root;
     this.onPick = onPick;
     this.onStop = onStop;
@@ -27,7 +28,7 @@ export class Sidebar {
     this.list = root.querySelector("[data-list]");
     this.company = root.querySelector("[data-company]");
     this.searchRow = root.querySelector(".search-row");
-    this.detail = root.querySelector("[data-detail]");
+    this.detail = detail;
     this.search = root.querySelector("[data-search]");
     this.carriers = root.querySelector("[data-carriers]");
     this.viewportBtn = root.querySelector("[data-viewport]");
@@ -168,10 +169,12 @@ export class Sidebar {
   }
 
   setSelected(kind, id) {
+    const changed = this.selected?.kind !== kind || this.selected?.id !== id;
     this.selected = kind ? { kind, id } : null;
     this.focusedStop = null;
     this.renderList();
     this.renderDetail();
+    if (changed) this.detail.scrollTop = 0; // nowy obiekt - okienko od góry
   }
 
   // Wszystko, co zależy od danych albo języka (po zmianie języka wołane z main.js).
