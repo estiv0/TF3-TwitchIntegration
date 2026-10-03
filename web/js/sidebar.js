@@ -159,11 +159,12 @@ export class Sidebar {
     this.onLinesView?.(active ? { match: (l) => this.matchLine(l) !== null } : null);
   }
 
-  // Linia przechodzi filtry typu i szukania -> nazwy trafionych stacji (puste, gdy trafiła nazwa linii); inaczej null.
+  // Linia przechodzi filtry typu i szukania -> nazwy trafionych stacji (puste, gdy trafiła nazwa albo właściciel linii); inaczej null.
   matchLine(l) {
     const carrier = this.typeFilter.lines;
     if (carrier && carrierKey(l) !== carrier) return null;
-    if (!this.filter || String(l.name ?? "").toLowerCase().includes(this.filter)) return [];
+    const has = (text) => String(text ?? "").toLowerCase().includes(this.filter);
+    if (!this.filter || has(l.name) || (l.owner && has(l.owner))) return [];
     const stations = matchingStations(l, this.filter);
     return stations.length ? stations : null;
   }
@@ -203,6 +204,7 @@ export class Sidebar {
     const d = this.dynamic;
     if (!d) return;
     const match = (name) => !this.filter || String(name ?? "").toLowerCase().includes(this.filter);
+    const matchItem = (x) => match(x.name) || (x.owner && match(x.owner));
     const isSel = (kind, id) => this.selected?.kind === kind && this.selected?.id === id;
     let html = "";
 
@@ -225,7 +227,7 @@ export class Sidebar {
           ? (a, b) => (townGrowth(b) ?? -Infinity) - (townGrowth(a) ?? -Infinity) || townSize(b) - townSize(a)
           : (a, b) => townSize(b) - townSize(a);
       const value = (x) => (byProfit ? money(profit(x)) : byGrowth ? growthHtml(townGrowth(x)) : fmtInt(townSize(x)));
-      html = [...d.towns].filter((x) => match(x.name) || (x.owner && match(x.owner))).sort(order)
+      html = [...d.towns].filter(matchItem).sort(order)
         .map((x) => `
           <li class="row" data-kind="town" data-id="${x.id}" aria-current="${isSel("town", x.id)}">
             <span class="dot dot-town"></span>
@@ -244,7 +246,7 @@ export class Sidebar {
     } else if (this.tab === "industries") {
       const { mode, cargo } = this.industryFilter;
       const hasCargo = (i) => !cargo || industryCargos(i, mode).has(cargo);
-      html = [...d.industries].filter((i) => hasCargo(i) && match(i.name)).sort((a, b) => (b.level ?? 0) - (a.level ?? 0))
+      html = [...d.industries].filter((i) => hasCargo(i) && matchItem(i)).sort((a, b) => (b.level ?? 0) - (a.level ?? 0))
         .map((i) => `
           <li class="row" data-kind="industry" data-id="${i.id}" aria-current="${isSel("industry", i.id)}">
             ${industryBadge(i)}
@@ -255,7 +257,7 @@ export class Sidebar {
       const kind = this.typeFilter.stations;
       const nLines = (s) => this.stationLines.get(s.id)?.length ?? 0;
       const industries = new Map(d.industries.map((i) => [i.id, i]));
-      html = (d.stations ?? []).filter((s) => (!kind || this.stationKey(s) === kind) && match(s.name))
+      html = (d.stations ?? []).filter((s) => (!kind || this.stationKey(s) === kind) && matchItem(s))
         .sort((a, b) => nLines(b) - nLines(a) || String(a.name).localeCompare(String(b.name), locale()))
         .map((s) => {
           // Stacja zakładu: ikonka zakładu, a kliknięcie otwiera zakład (tam są też jego linie).
@@ -366,6 +368,11 @@ export class Sidebar {
   }
 }
 
+// Właściciel z nazwy w grze ("Nazwa | Właściciel", splitAllOwners).
+function ownerHtml(x) {
+  return `<p class="detail-owner">${x.owner ? `${esc(t("owner"))}: <strong>${esc(x.owner)}</strong>` : esc(t("owner.none"))}</p>`;
+}
+
 // Linie są klikalne (data-line) - przełączają wybór na linię.
 function lineLinks(lines) {
   const rows = [...lines].sort((a, b) => (b.vehicleCount ?? 0) - (a.vehicleCount ?? 0)).map((l) => `
@@ -380,6 +387,7 @@ function stationDetail(s, lines) {
   return `
     <h2>${iconHtml(stationImg(s), s.kind)} ${esc(s.name ?? stationName(s.kind))}</h2>
     <p class="detail-sub">${esc(stationName(s.kind) ?? t("station"))}${use ? ` · ${esc(use)}` : ""}</p>
+    ${ownerHtml(s)}
     <dl class="stats">
       ${stat(t("lines"), fmtInt(lines.length))}
       ${stat(t("station.vehicles"), fmtInt(lines.some((l) => l.vehicleCount == null) ? null : lines.reduce((n, l) => n + l.vehicleCount, 0)))}
@@ -443,7 +451,7 @@ function townDetail(town, earnings) {
   return `
     <h2>${esc(town.name)}</h2>
     <p class="detail-sub">${esc(t("town"))} · ${esc(t(town.growing ? "town.growing" : "town.stopped"))}</p>
-    <p class="detail-owner">${town.owner ? `${esc(t("town.owner"))}: <strong>${esc(town.owner)}</strong>` : esc(t("town.ownerless"))}</p>
+    ${ownerHtml(town)}
     <dl class="stats">
       ${caps}
       ${stat(t("town.growth"), growthHtml(townGrowth(town)))}
@@ -487,6 +495,7 @@ function industryDetail(i, lines) {
   return `
     <h2>${esc(i.name)}</h2>
     <p class="detail-sub">${esc(t(industryKind(i) === "raw" ? "industry.raw" : "industry.processing"))}</p>
+    ${ownerHtml(i)}
     <dl class="stats">
       ${stat(t("industry.level"), `${i.level ?? "–"} / ${i.maxLevel || "–"}`)}
       ${stat(t("industry.productivity"), fmtPercent(i.productivity))}
@@ -560,6 +569,7 @@ function lineDetail(l, focusedStop) {
   return `
     <h2><span class="swatch" style="background:${rgb(l.color)}"></span> ${esc(l.name)}</h2>
     <p class="detail-sub">${carrierIcon(l.carrier, l.carrier)} ${esc(carrierName(l.carrier) ?? t("line"))}</p>
+    ${ownerHtml(l)}
     <dl class="stats">
       ${stat(t("line.vehicles"), fmtInt(l.vehicleCount))}
       ${stat(t("line.stops"), fmtInt(l.stops?.length ?? 0))}

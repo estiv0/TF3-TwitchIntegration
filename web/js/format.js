@@ -133,20 +133,24 @@ export function linesByIndustry(dynamic, stationLines = linesByStation(dynamic),
 export const landUseName = (i) => dict().landUse[i];
 
 /**
- * Miasta mają w grze nazwy "Nazwa | Właściciel" (bez "| ..." - bezpańskie). Rozdziela je w miejscu:
- * name = sama nazwa (mapa, lista), owner = właściciel albo null.
+ * Obiekty mają w grze nazwy "Nazwa | Właściciel" (bez "| ..." - bez właściciela). Rozdziela je w miejscu:
+ * name = sama nazwa (mapa, listy), owner = właściciel albo null.
  */
-export function splitTownOwners(towns) {
-  for (const t of towns ?? []) {
-    const name = String(t.name ?? "");
-    const i = name.lastIndexOf("|");
-    if (i < 0) {
-      t.owner = null;
-      continue;
-    }
-    t.name = name.slice(0, i).trim() || name;
-    t.owner = name.slice(i + 1).trim() || null;
+function splitOwners(items) {
+  for (const x of items ?? []) {
+    x.owner = null;
+    if (typeof x.name !== "string") continue;
+    const i = x.name.lastIndexOf("|");
+    if (i < 0) continue;
+    x.owner = x.name.slice(i + 1).trim() || null;
+    x.name = x.name.slice(0, i).trim() || x.name;
   }
+}
+
+/** Miasta, zakłady, stacje i linie (z przystankami) z dynamic.json. */
+export function splitAllOwners(dynamic) {
+  for (const key of ["towns", "industries", "stations", "lines"]) splitOwners(dynamic[key]);
+  for (const l of dynamic.lines ?? []) splitOwners(l.stops);
 }
 
 export const townSize = (t) => (t.capacities ?? []).reduce((a, b) => a + b, 0);
