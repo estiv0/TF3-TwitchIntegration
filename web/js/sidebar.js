@@ -225,7 +225,7 @@ export class Sidebar {
           ? (a, b) => (townGrowth(b) ?? -Infinity) - (townGrowth(a) ?? -Infinity) || townSize(b) - townSize(a)
           : (a, b) => townSize(b) - townSize(a);
       const value = (x) => (byProfit ? money(profit(x)) : byGrowth ? growthHtml(townGrowth(x)) : fmtInt(townSize(x)));
-      html = [...d.towns].filter((x) => match(x.name)).sort(order)
+      html = [...d.towns].filter((x) => match(x.name) || (x.owner && match(x.owner))).sort(order)
         .map((x) => `
           <li class="row" data-kind="town" data-id="${x.id}" aria-current="${isSel("town", x.id)}">
             <span class="dot dot-town"></span>
@@ -443,6 +443,7 @@ function townDetail(town, earnings) {
   return `
     <h2>${esc(town.name)}</h2>
     <p class="detail-sub">${esc(t("town"))} · ${esc(t(town.growing ? "town.growing" : "town.stopped"))}</p>
+    <p class="detail-owner">${town.owner ? `${esc(t("town.owner"))}: <strong>${esc(town.owner)}</strong>` : esc(t("town.ownerless"))}</p>
     <dl class="stats">
       ${caps}
       ${stat(t("town.growth"), growthHtml(townGrowth(town)))}

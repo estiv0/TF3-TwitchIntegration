@@ -132,6 +132,23 @@ export function linesByIndustry(dynamic, stationLines = linesByStation(dynamic),
 // TF: initialLandUseCapacities = [mieszkalne, usługowe, przemysłowe]
 export const landUseName = (i) => dict().landUse[i];
 
+/**
+ * Miasta mają w grze nazwy "Nazwa | Właściciel" (bez "| ..." - bezpańskie). Rozdziela je w miejscu:
+ * name = sama nazwa (mapa, lista), owner = właściciel albo null.
+ */
+export function splitTownOwners(towns) {
+  for (const t of towns ?? []) {
+    const name = String(t.name ?? "");
+    const i = name.lastIndexOf("|");
+    if (i < 0) {
+      t.owner = null;
+      continue;
+    }
+    t.name = name.slice(0, i).trim() || name;
+    t.owner = name.slice(i + 1).trim() || null;
+  }
+}
+
 export const townSize = (t) => (t.capacities ?? []).reduce((a, b) => a + b, 0);
 
 /** Wzrost miasta od startu gry (obecna pojemność / initialCapacities - 1) albo null. */

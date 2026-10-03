@@ -259,6 +259,8 @@ button { font: inherit; color: inherit; }
 .detail-close:hover { color: var(--text); background: var(--bg); }
 .detail h3 { margin: 12px 0 6px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .detail-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.detail-owner { font-size: 12px; margin-top: 4px; color: var(--muted); }
+.detail-owner strong { color: var(--accent); }
 
 .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 12px; margin: 12px 0 0; }
 .stats dt { color: var(--muted); font-size: 11px; }
