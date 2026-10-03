@@ -49,7 +49,7 @@ function readTheme() {
 }
 
 export class MapView {
-  constructor(canvas, { onHover, onSelect, onPlace, onPinMode, onVisibleLines } = {}) {
+  constructor(canvas, { onHover, onSelect, onPlace, onPinMode, onVisibleLines, focusAnchorY } = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
     this.onHover = onHover;
@@ -57,6 +57,9 @@ export class MapView {
     this.onPlace = onPlace;     // kliknięcie w trybie pinezki / prawy przycisk -> { x, y, sx, sy }
     this.onPinMode = onPinMode;
     this.onVisibleLines = onVisibleLines; // Set id linii na ekranie (tylko przy włączonym linesView)
+    // Wysokość (ułamek mapy), na której focus() stawia obiekt; domyślnie środek. Na telefonie wyżej,
+    // bo dół mapy zasłania okienko szczegółów.
+    this.focusAnchorY = focusAnchorY ?? (() => 0.5);
     this.pin = null;            // { x, y, note } - pinezka z linku albo właśnie stawiana
     this.pinMode = false;
 
@@ -247,9 +250,14 @@ export class MapView {
     if (!item) return;
     if (kind === "station" && !this.showStations) this.showStations = true;
     this.selected = { kind, id };
-    this.view.x = item.px;
-    this.view.y = item.py;
     this.view.scale = Math.max(this.view.scale, 0.25);
+    this.centerOn(item.px, item.py);
+  }
+
+  // Punkt świata na środku mapy w poziomie i na wysokości focusAnchorY w pionie.
+  centerOn(x, y) {
+    this.view.x = x;
+    this.view.y = y + (0.5 - this.focusAnchorY()) * this.h / this.view.scale;
     this.requestDraw();
   }
 
@@ -259,10 +267,8 @@ export class MapView {
     if (!pos) return;
     this.selected = { kind: "line", id: lineId };
     this.focusedStop = { x: pos[0], y: -pos[1] };
-    this.view.x = this.focusedStop.x;
-    this.view.y = this.focusedStop.y;
     this.view.scale = Math.max(this.view.scale, 0.5);
-    this.requestDraw();
+    this.centerOn(this.focusedStop.x, this.focusedStop.y);
   }
 
   select(kind, id) {

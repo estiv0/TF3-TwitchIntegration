@@ -8,7 +8,7 @@ const DICT = {
   pl: {
     locale: "pl-PL",
     ui: {
-      "brand.sub": "Transport Fever 3 · na żywo",
+      "brand.sub": "Transport Fever 3",
       "kpi.date": "Data",
       "kpi.balance": "Saldo",
       "kpi.fleet": "Flota",
@@ -54,6 +54,8 @@ const DICT = {
       "tab.company": "Firma",
       "sidebar.resize": "Przeciągnij, żeby zmienić szerokość panelu (dwuklik: domyślna)",
       "sidebar.resizeLabel": "Szerokość panelu",
+      "sheet.open": "Listy",
+      "sheet.close": "Mapa",
       "kpi.balanceOpen": "Saldo – kliknij, żeby otworzyć zakładkę Firma",
       "company.noData": "Brak danych firmy. Zaktualizuj moda tf3export i poczekaj na pierwszy eksport.",
       "company.history": "Historia",
@@ -171,7 +173,7 @@ const DICT = {
   en: {
     locale: "en-GB",
     ui: {
-      "brand.sub": "Transport Fever 3 · live",
+      "brand.sub": "Transport Fever 3",
       "kpi.date": "Date",
       "kpi.balance": "Balance",
       "kpi.fleet": "Fleet",
@@ -217,6 +219,8 @@ const DICT = {
       "tab.company": "Company",
       "sidebar.resize": "Drag to change the panel width (double-click: default)",
       "sidebar.resizeLabel": "Panel width",
+      "sheet.open": "Lists",
+      "sheet.close": "Map",
       "kpi.balanceOpen": "Balance – click to open the Company tab",
       "company.noData": "No company data. Update the tf3export mod and wait for the first export.",
       "company.history": "History",

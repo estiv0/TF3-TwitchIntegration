@@ -16,14 +16,14 @@
       <img class="brand-logo" src="img/logo_gn.png" alt="" width="82" height="34">
       <div>
         <h1>Gwizdkoniutolandia</h1>
-        <p class="brand-sub" data-i18n="brand.sub">Transport Fever 3 · na żywo</p>
+        <p class="brand-sub" data-i18n="brand.sub">Transport Fever 3</p>
       </div>
     </div>
     <dl class="kpis">
       <div><dt data-i18n="kpi.date">Data</dt><dd id="date">–</dd></div>
       <div><dt data-i18n="kpi.balance">Saldo</dt><dd id="balance" class="kpi-link" role="button" tabindex="0">–</dd></div>
       <div><dt data-i18n="kpi.fleet">Flota</dt><dd id="fleet" class="fleet">–</dd></div>
-      <div><dt data-i18n="kpi.edges">Odcinki sieci</dt><dd id="edges">–</dd></div>
+      <div class="kpi-edges"><dt data-i18n="kpi.edges">Odcinki sieci</dt><dd id="edges">–</dd></div>
     </dl>
     <span id="status" class="status" data-state="waiting">Czekam na dane…</span>
     <div id="lang" class="lang-switch" role="group" aria-label="Język" data-i18n-aria="lang.label"></div>
@@ -92,6 +92,8 @@
       <ul class="list" data-list></ul>
       <section class="company" data-company hidden></section>
     </aside>
+    <!-- Telefon: lista jako arkusz zasłaniający mapę, otwierany tym przyciskiem (na szerokim ekranie ukryty). -->
+    <button id="sheet-toggle" class="sheet-toggle" type="button" aria-controls="sidebar" aria-expanded="false"></button>
   </main>
 
   <script type="module" src="js/main.js"></script>

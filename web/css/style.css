@@ -294,18 +294,47 @@ button { font: inherit; color: inherit; }
 .empty { padding: 16px; color: var(--muted); text-align: center; }
 
 /* ---------------------------------------------------------------- wąskie ekrany */
+.sheet-toggle { display: none; }
+
 @media (max-width: 900px) {
-  body { overflow: auto; grid-template-rows: auto auto; }
-  .topbar { flex-wrap: wrap; gap: 12px 16px; padding: 12px 16px; }
-  .kpis { order: 3; width: 100%; margin: 0; gap: 16px; flex-wrap: wrap; }
-  .status { margin-left: auto; }
-  .layout { grid-template-columns: 1fr; }
-  .map-wrap { height: 60vh; }
-  .sidebar { border-left: 0; border-top: 1px solid var(--border); max-height: none; }
+  /* Górny pasek w dwóch niskich wierszach: logo + nazwa, status i język; pod nimi wskaźniki w jednej linii. */
+  .topbar { flex-wrap: wrap; gap: 8px 10px; padding: 8px 12px; }
+  .brand { flex: 1; gap: 8px; }
+  .brand-logo { height: 24px; }
+  .brand h1 { font-size: 15px; }
+  .brand-sub { display: none; }
+  /* sam kolorowy punkt; opis stanu i czas aktualizacji w podpowiedzi (title) */
+  .status { font-size: 0; gap: 0; padding: 7px; }
+  .lang-switch button { padding: 3px 8px; font-size: 11px; }
+  .kpis {
+    order: 3; width: 100%; margin: 0; gap: 14px;
+    overflow-x: auto; scrollbar-width: none; /* na bardzo wąskich ekranach przewijane w bok */
+  }
+  .kpis dt { font-size: 9px; }
+  .kpis dd { font-size: 13px; }
+  .fleet { gap: 6px; }
+  .kpi-edges, .kpi-link .spark { display: none; }
+  /* Mapa na całą resztę ekranu; panel z listami to arkusz wysuwany z dołu na mapę (#sheet-toggle). */
+  .layout { grid-template-columns: 1fr; position: relative; }
+  .sidebar {
+    position: absolute; inset: 0; z-index: 4; border-left: 0;
+    padding-bottom: 64px; /* miejsce na przycisk */
+    transform: translateY(100%); visibility: hidden;
+    transition: transform .2s ease, visibility 0s .2s;
+  }
+  .layout.sheet-open .sidebar { transform: none; visibility: visible; transition: transform .2s ease; }
   .sidebar-resize { display: none; }
-  .list { max-height: 60vh; }
-  /* okienko szczegółów na dole mapy, bez przesuwania (!important: wygrywa z left/top z js/float.js) */
-  .detail { top: auto !important; left: 8px !important; right: 8px; bottom: 8px; width: auto; max-height: 70% !important; }
+  .sheet-toggle {
+    display: block; position: absolute; z-index: 5; left: 50%; bottom: 12px; transform: translateX(-50%);
+    padding: 9px 18px; border-radius: 999px; cursor: pointer; font-weight: 600;
+    background: var(--accent); border: 0; color: #1a1405;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
+  }
+  /* legenda zabiera telefonowi za dużo mapy */
+  .legend { display: none; }
+  /* okienko szczegółów na dole mapy nad przyciskiem, na pół mapy (zaznaczony obiekt zostaje widoczny nad nim),
+     bez przesuwania (!important: wygrywa z left/top/max-height z js/float.js) */
+  .detail { top: auto !important; left: 8px !important; right: 8px; bottom: 60px; width: auto; max-height: 45% !important; }
   .detail h2, .detail .detail-sub { cursor: auto; }
 }
 .chips li { align-items: center; }

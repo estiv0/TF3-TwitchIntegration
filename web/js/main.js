@@ -50,12 +50,15 @@ const map = new MapView($("#map"), {
   onVisibleLines(ids) {
     sidebar.setVisibleLines(ids);
   },
+  // telefon (jak @media w CSS): obiekt w górnej części mapy, nad okienkiem szczegółów
+  focusAnchorY: () => (window.innerWidth <= 900 ? 0.3 : 0.5),
 });
 
 const pins = new PinController(map, { form: $("#pin-form"), button: $("#pin"), wrap: $(".map-wrap") });
 
 const sidebar = new Sidebar($("#sidebar"), $("#detail"), {
   onPick(kind, id) {
+    setSheet(false); // telefon: wybór z listy pokazuje obiekt na mapie
     map.focus(kind, id);
     sidebar.setSelected(kind, id);
     writeSelection({ kind, id });
@@ -76,6 +79,16 @@ const sidebar = new Sidebar($("#sidebar"), $("#detail"), {
 
 initSidebarResize($(".layout"), $(".sidebar-resize"));
 initFloatingPanel($("#detail"), $(".map-wrap"));
+
+// Telefon: przycisk na dole ekranu wysuwa panel z listami na mapę i chowa go z powrotem.
+const sheetToggle = $("#sheet-toggle");
+function setSheet(open) {
+  $(".layout").classList.toggle("sheet-open", open);
+  sheetToggle.setAttribute("aria-expanded", String(open));
+  sheetToggle.innerHTML = open ? `✕ ${esc(t("sheet.close"))}` : `☰ ${esc(t("sheet.open"))}`;
+}
+sheetToggle.addEventListener("click", () => setSheet(sheetToggle.getAttribute("aria-expanded") !== "true"));
+setSheet(false);
 $("#fit").addEventListener("click", () => map.fit());
 // Saldo w górnym pasku (ze sparkline) otwiera zakładkę Firma.
 $("#balance").addEventListener("click", () => sidebar.showTab("company"));
@@ -99,7 +112,8 @@ $("#vehicles").addEventListener("click", (e) => {
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || e.defaultPrevented) return;
   if (e.target.closest?.("input, textarea, select, [contenteditable]")) return;
-  if (sidebar.selected) clearSelection();
+  if (sheetToggle.getAttribute("aria-expanded") === "true") setSheet(false);
+  else if (sidebar.selected) clearSelection();
 });
 
 // Odznaczenie obiektu: Esc albo × w okienku szczegółów.
@@ -228,6 +242,7 @@ langSwitch.addEventListener("click", (e) => {
 onLangChange(() => {
   renderLangSwitch();
   renderStatus();
+  setSheet(sheetToggle.getAttribute("aria-expanded") === "true");
   if (lastDynamic) renderHeader(lastDynamic);
   sidebar.render();
   tooltip.hidden = true;

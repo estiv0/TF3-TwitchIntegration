@@ -20,13 +20,18 @@ export function readPinHash(hash = location.hash) {
   };
 }
 
-/** Pełny adres strony z pinezką w hashu (zaznaczony obiekt, np. &line=..., zostaje w linku). */
-export function pinUrl({ x, y, note }, scale) {
+/** Części hasha pinezki ("pin=...", "note=..."). */
+function pinParts({ x, y, note }, scale) {
   // Ręcznie zamiast URLSearchParams.toString(), żeby link był czytelny (przecinki, %20 zamiast "+").
   const pin = [`pin=${Math.round(x)},${Math.round(y)},${Number(scale.toPrecision(3))}`];
   if (note) pin.push(`note=${encodeURIComponent(note.slice(0, NOTE_MAX))}`);
+  return pin;
+}
+
+/** Link do udostępnienia: adres strony z samą pinezką w hashu (bez zaznaczonego obiektu, np. &line=...). */
+export function pinUrl(pin, scale) {
   const url = new URL(location.href);
-  url.hash = hashWith(["pin", "note"], pin);
+  url.hash = pinParts(pin, scale).join("&");
   return url.href;
 }
 
@@ -102,8 +107,9 @@ export class PinController {
   createLink() {
     if (!this.draft) return;
     const url = pinUrl(this.draft, this.map.view.scale);
-    // Adres w pasku też wskazuje pinezkę (bez hashchange, więc widok się nie przestawia).
-    history.replaceState(null, "", url);
+    // Adres w pasku też wskazuje pinezkę, ale zachowuje zaznaczenie z ekranu
+    // (bez hashchange, więc widok się nie przestawia).
+    history.replaceState(null, "", `#${hashWith(["pin", "note"], pinParts(this.draft, this.map.view.scale))}`);
     this.saved = { ...this.draft };
     this.urlInput.value = url;
     this.showLink(true);
