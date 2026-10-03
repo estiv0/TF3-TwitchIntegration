@@ -11,6 +11,7 @@ import { readSelection, writeSelection } from "./hash.js";
 import { LANGS, applyStatic, lang, locale, onLangChange, setLang, t } from "./i18n.js";
 import { MapView } from "./map.js";
 import { PinController, readPinHash } from "./pin.js";
+import { initSidebarResize } from "./resize.js";
 import { Sidebar, townSupply } from "./sidebar.js";
 
 const $ = (sel) => document.querySelector(sel);
@@ -72,6 +73,7 @@ const sidebar = new Sidebar($("#sidebar"), {
   },
 });
 
+initSidebarResize($(".layout"), $(".sidebar-resize"));
 $("#fit").addEventListener("click", () => map.fit());
 // Saldo w górnym pasku (ze sparkline) otwiera zakładkę Firma.
 $("#balance").addEventListener("click", () => sidebar.showTab("company"));

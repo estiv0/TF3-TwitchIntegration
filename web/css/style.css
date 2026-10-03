@@ -89,7 +89,7 @@ button { font: inherit; color: inherit; }
 /* ---------------------------------------------------------------- układ */
 .layout {
   display: grid;
-  grid-template-columns: 1fr 360px;
+  grid-template-columns: 1fr var(--sidebar-w, 360px); /* --sidebar-w: uchwyt panelu (js/resize.js) */
   min-height: 0;
 }
 
@@ -182,6 +182,7 @@ button { font: inherit; color: inherit; }
 
 /* ---------------------------------------------------------------- panel */
 .sidebar {
+  position: relative;
   display: flex; flex-direction: column; min-height: 0;
   background: var(--panel); border-left: 1px solid var(--border);
 }
@@ -281,9 +282,23 @@ button { font: inherit; color: inherit; }
   .layout { grid-template-columns: 1fr; }
   .map-wrap { height: 60vh; }
   .sidebar { border-left: 0; border-top: 1px solid var(--border); max-height: none; }
+  .sidebar-resize { display: none; }
   .list { max-height: 60vh; }
 }
 .chips li { align-items: center; }
+
+/* uchwyt szerokości panelu: pasek na lewej krawędzi, podświetlany przy najechaniu i przeciąganiu */
+.sidebar-resize {
+  position: absolute; top: 0; bottom: 0; left: -4px; width: 8px; z-index: 5;
+  cursor: col-resize; touch-action: none;
+}
+.sidebar-resize::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px;
+  background: transparent; transition: background .15s;
+}
+.sidebar-resize:hover::after, .sidebar-resize:focus-visible::after, .sidebar-resize.dragging::after { background: var(--accent); }
+.sidebar-resize:focus-visible { outline: none; }
+body.resizing { cursor: col-resize; user-select: none; }
 
 /* saldo w górnym pasku: klikalne, ze sparkline */
 .kpi-link { display: flex; align-items: center; gap: 8px; cursor: pointer; border-radius: 6px; }
