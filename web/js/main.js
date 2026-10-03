@@ -102,7 +102,9 @@ function tooltipHtml(item) {
   const lines = (n) => `<span>${esc(t("lines.n", { n: fmtInt(n) }))}</span>`;
   if (item.kind === "town") {
     const needs = (d.cargoNeeds ?? []).flatMap((g) => Object.keys(g ?? {}));
+    const profit = sidebar.earnings.towns.get(d.id)?.profit12m;
     return `<strong>${esc(d.name)}</strong><span>${esc(t("town.capacity", { n: fmtInt(townSize(d)) }))}</span>`
+      + (profit != null ? `<span>${esc(t("town.profitTip", { v: fmtMoney(Math.round(profit)) }))}</span>` : "")
       + (needs.length ? `<span class="tip-cargo">${esc(t("needs", { list: "" }))}${needs.map(cargoLabel).join(" ")}</span>` : "");
   }
   if (item.kind === "station") {

@@ -176,6 +176,8 @@ button { font: inherit; color: inherit; }
   border: 0; background: none; cursor: pointer; text-align: left; font: inherit; color: var(--text);
 }
 .line-links button:hover { color: var(--accent); }
+.line-links .link-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.line-links .link-value { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* ---------------------------------------------------------------- panel */
 .sidebar {
@@ -239,8 +241,8 @@ button { font: inherit; color: inherit; }
 .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 12px; margin: 12px 0 0; }
 .stats dt { color: var(--muted); font-size: 11px; }
 .stats dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
-.stats .pos { color: var(--live); }
-.stats .neg { color: var(--error); }
+.pos { color: var(--live); }
+.neg { color: var(--error); }
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .chips li {
