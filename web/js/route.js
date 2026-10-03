@@ -104,11 +104,20 @@ export class RouteGraph {
   }
 
   // Path2D trasy linii (zamknięta pętla, jak w grze) + bbox + łamana po kolei (do sprawdzania,
-  // czy linia jest na ekranie). Przystanki bez pozycji pomijamy.
+  // czy linia jest na ekranie) + legs: indeks przystanku na linii -> łamana dojazdu do niego od
+  // poprzedniego przystanku (do stawiania pojazdów w drodze). Przystanki bez pozycji pomijamy.
   routeLine(line) {
-    const stops = (line.stops ?? []).filter((s) => s.pos).map((s) => ({ x: s.pos[0], y: -s.pos[1] }));
+    const all = line.stops ?? [];
+    const index = [];  // indeks w stops (po odfiltrowaniu) -> indeks przystanku na linii
+    const stops = [];
+    all.forEach((s, i) => {
+      if (!s.pos) return;
+      index.push(i);
+      stops.push({ x: s.pos[0], y: -s.pos[1] });
+    });
     const path = new Path2D();
-    if (stops.length < 2) return { path, stops, bbox: bboxOf(stops), poly: stops };
+    const legs = new Map();
+    if (stops.length < 2) return { path, stops, bbox: bboxOf(stops), poly: stops, legs };
 
     const road = ROAD_FOR_CARRIER[line.carrier] ?? (line.carrier ? null : this.guessRoad(stops[0]));
     const snapped = stops.map((s) => (road ? this.nearestNode(s.x, s.y, road) : null));
@@ -119,23 +128,24 @@ export class RouteGraph {
       const a = stops[i], b = stops[j];
       const na = snapped[i], nb = snapped[j];
       const steps = na && nb ? this.path(na, nb, road) : null;
+      const leg = [a];
       path.moveTo(a.x, a.y);
-      poly.push(a);
-      if (!steps) {
-        path.lineTo(b.x, b.y);
-        continue;
-      }
-      path.lineTo(na.x, na.y);
-      poly.push(na);
-      for (const { edge: e, forward } of steps) {
-        if (forward) path.bezierCurveTo(e.c0x, e.c0y, e.c1x, e.c1y, e.x1, e.y1);
-        else path.bezierCurveTo(e.c1x, e.c1y, e.c0x, e.c0y, e.x0, e.y0);
-        poly.push(forward ? { x: e.x1, y: e.y1 } : { x: e.x0, y: e.y0 });
+      if (steps) {
+        path.lineTo(na.x, na.y);
+        leg.push(na);
+        for (const { edge: e, forward } of steps) {
+          if (forward) path.bezierCurveTo(e.c0x, e.c0y, e.c1x, e.c1y, e.x1, e.y1);
+          else path.bezierCurveTo(e.c1x, e.c1y, e.c0x, e.c0y, e.x0, e.y0);
+          leg.push(forward ? { x: e.x1, y: e.y1 } : { x: e.x0, y: e.y0 });
+        }
       }
       path.lineTo(b.x, b.y);
+      poly.push(...leg);
+      leg.push(b);
+      legs.set(index[j], leg);
     }
     poly.push(stops[0]);
-    return { path, stops, bbox: bboxOf(poly), poly };
+    return { path, stops, bbox: bboxOf(poly), poly, legs };
   }
 
   // Linia bez pojazdów nie ma znanego nośnika - wybierz typ sieci bliższy pierwszemu przystankowi.
@@ -145,6 +155,20 @@ export class RouteGraph {
     if (!s) return "TRACK";
     return Math.hypot(t.x - p.x, t.y - p.y) <= Math.hypot(s.x - p.x, s.y - p.y) ? "TRACK" : "STREET";
   }
+}
+
+/** Punkt w ułamku f (0..1) długości łamanej. */
+export function pointAlong(pts, f) {
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) total += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+  let left = total * f;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i];
+    const d = Math.hypot(b.x - a.x, b.y - a.y);
+    if (left <= d && d > 0) return { x: a.x + (b.x - a.x) * left / d, y: a.y + (b.y - a.y) * left / d };
+    left -= d;
+  }
+  return pts[pts.length - 1];
 }
 
 /** Czy trasa (wynik routeLine) przecina prostokąt { minX, minY, maxX, maxY } w układzie ścieżki. */

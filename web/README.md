@@ -8,7 +8,7 @@ Statyczna strona (HTML, CSS i moduły JS, bez kroku budowania), która pokazuje 
 - **lokalnie:** `data/latest/`. Tf3Bridge w trybie Development publikuje do `web/data/latest/` (folder w `.gitignore`);
 - **na Azure:** URL kontenera Blob, np. `https://<konto>.blob.core.windows.net/live/latest/`.
 
-Strona co `pollMs` (5 s) pobiera `meta.json`. `dynamic.json` i `network.json` pobiera tylko wtedy, gdy zmieni się ich `seq`.
+Strona co `pollMs` (5 s) pobiera `meta.json` (w ukrytej karcie nie odpytuje). `dynamic.json` i `network.json` pobiera tylko wtedy, gdy zmieni się ich `seq`.
 
 ## Uruchomienie lokalnie
 
@@ -44,6 +44,9 @@ web/
 - Sieć jest budowana raz do `Path2D` w układzie świata. Pan i zoom zmieniają tylko transformację, więc ok. 9 tys. odcinków rysuje się płynnie.
 - Oś y w grze rośnie na północ, a na ekranie w dół, dlatego mapa używa `(x, -y)`.
 - Linii nie da się jeszcze narysować, bo mod nie eksportuje pozycji stacji (patrz `docs/reactive-dynamic-export.md`, sekcja „stacje”).
+- Pojazdy: gra nie podaje ich pozycji, tylko numer przystanku i stan. Pojazd `AT_TERMINAL` stoi na przystanku, a `EN_ROUTE` leży na trasie od poprzedniego przystanku do tego, do którego jedzie; kilka pojazdów na jednym odcinku rozkłada się po nim równo.
+- Zaznaczenie jest w adresie (`#line=<id>`, `#town=`, `#industry=`, `#station=`), obok pinezki: `#pin=...&note=...&line=<id>`.
+- Na dotyku: przesuwanie jednym palcem, przybliżanie szczypaniem.
 
 ## Wdrożenie na Azure
 

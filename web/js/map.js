@@ -2,7 +2,7 @@
 // Układ "ścieżki" = (x, -y) ze świata gry, bo w grze oś y rośnie na północ, a na ekranie w dół.
 
 import { cargoImg, industryOfStation, rgb, stationImg, townSize } from "./format.js";
-import { RouteGraph, routeInRect } from "./route.js";
+import { RouteGraph, pointAlong, routeInRect } from "./route.js";
 
 const RAW_INDUSTRIES = new Set([
   "coal_mine", "iron_ore_mine", "quarry", "forest", "farm", "oil_well",
@@ -35,6 +35,7 @@ const STATION_ICON_PX = 24;
 const OUTPUT_ICON_PX = 30; // ikonki produkcji nad zakładem
 const PIN_HEAD_Y = 22;      // główka pinezki tyle px nad wskazanym punktem
 const DIM = 0.3;            // krycie reszty mapy, gdy na liście w panelu wskazano jeden obiekt
+const MIN_SCALE = 0.005, MAX_SCALE = 20;
 
 // Kolory z CSS (motyw) odczytywane raz na klatkę, nie dla każdego obiektu.
 function readTheme() {
@@ -61,6 +62,9 @@ export class MapView {
     this.industries = [];
     this.stations = [];         // dworce, porty, lotniska (bez przystanków)
     this.showStations = true;
+    this.vehicleData = [];      // dynamic.vehicles
+    this.vehicles = null;       // pojazdy z pozycją na mapie, liczone leniwie (vehicleItems)
+    this.showVehicles = true;
     this.iconImages = new Map(); // url -> Image (ikony z gry: maski stacji, ładunki)
     this.iconCache = new Map();  // url|kolor|px -> canvas z zabarwioną ikoną
     this.lines = new Map();     // id -> linia z dynamic.json
@@ -108,6 +112,7 @@ export class MapView {
     this.paths = paths;
     this.graph = new RouteGraph(network);
     this.routeCache.clear();
+    this.vehicles = null;
     if (network.edges.length) this.bbox = { minX, minY, maxX, maxY };
     if (!this.fitted) this.fit();
     this.requestDraw();
@@ -120,6 +125,8 @@ export class MapView {
     })).sort((a, b) => b.r - a.r);
 
     this.lines = new Map((dynamic.lines ?? []).map((l) => [l.id, l]));
+    this.vehicleData = dynamic.vehicles ?? [];
+    this.vehicles = null;
 
     this.industries = (dynamic.industries ?? []).filter((i) => i.pos).map((i) => ({
       kind: "industry", id: i.id, data: i, px: i.pos[0], py: -i.pos[1], type: industryKind(i),
@@ -160,6 +167,12 @@ export class MapView {
     this.showStations = !this.showStations;
     this.requestDraw();
     return this.showStations;
+  }
+
+  toggleVehicles() {
+    this.showVehicles = !this.showVehicles;
+    this.requestDraw();
+    return this.showVehicles;
   }
 
   // Obiekt wskazany myszą na liście (kind = null - żaden): podświetlony na mapie, reszta przygaszona.
@@ -296,16 +309,20 @@ export class MapView {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     // Punkt wskazany na liście albo linia wskazana w panelu (wtedy razem z zaznaczonym obiektem, np. miastem):
     // reszta półprzezroczysta, wskazane na końcu, w pełnym kolorze.
+    // Pojazdy linii wskazanej albo zaznaczonej rysujemy na końcu, pozostałe przygaszone.
     const spotLine = this.spotLine();
     const spot = this.spotItem(spotLine === null ? this.listHover : this.selected);
+    const focusLine = spotLine ?? (this.selected?.kind === "line" ? this.selected.id : null);
     ctx.globalAlpha = spot || spotLine !== null ? DIM : 1;
     if (this.linesView) this.drawVisibleLines();
     else if (this.selected?.kind === "line") this.drawLine(this.selected.id);
     this.drawIndustries(spot);
     if (this.showStations) this.drawStations(spot);
+    if (this.showVehicles) this.drawVehicles((v) => v.line !== focusLine, focusLine === null ? 1 : DIM);
     this.drawTowns(spot);
     ctx.globalAlpha = 1;
     if (spotLine !== null) this.drawLine(spotLine);
+    if (this.showVehicles && focusLine !== null) this.drawVehicles((v) => v.line === focusLine);
     if (spot?.kind === "industry") this.drawIndustry(spot);
     else if (spot?.kind === "station") this.drawStation(spot);
     else if (spot?.kind === "town") this.drawTown(spot, null);
@@ -554,6 +571,68 @@ export class MapView {
     if (this.isMarked(st)) this.ring(x, y, r * 2);
   }
 
+  // ---------------------------------------------------------------- pojazdy
+  // Gra nie eksportuje pozycji pojazdów, tylko numer przystanku (stop) i stan. AT_TERMINAL - pojazd
+  // stoi na przystanku stop; EN_ROUTE - jedzie do niego, więc kładziemy go na trasie od poprzedniego
+  // przystanku, a kilka pojazdów na tym samym odcinku rozkładamy po nim równo. W zajezdni - pomijamy.
+  vehicleItems() {
+    if (this.vehicles) return this.vehicles;
+    const groups = new Map(); // linia|przystanek|stan -> pojazdy
+    for (const v of this.vehicleData) {
+      if (!this.lines.has(v.line) || (v.state !== "EN_ROUTE" && v.state !== "AT_TERMINAL")) continue;
+      const key = `${v.line}|${v.stop}|${v.state}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(v);
+    }
+
+    const out = [];
+    for (const vs of groups.values()) {
+      const { line: lineId, stop, state } = vs[0];
+      const line = this.lines.get(lineId);
+      const pos = line.stops?.[stop]?.pos;
+      let leg = null;
+      if (state === "EN_ROUTE") {
+        leg = this.lineRoute(lineId)?.legs.get(stop) ?? null;
+        if (!leg && pos) { // bez trasy: prosta od poprzedniego przystanku z pozycją
+          const stops = line.stops;
+          for (let k = 1; k < stops.length && !leg; k++) {
+            const prev = stops[(stop - k + stops.length) % stops.length]?.pos;
+            if (prev) leg = [{ x: prev[0], y: -prev[1] }, { x: pos[0], y: -pos[1] }];
+          }
+        }
+      }
+      vs.forEach((v, k) => {
+        const p = leg ? pointAlong(leg, (k + 1) / (vs.length + 1)) : pos ? { x: pos[0], y: -pos[1] } : null;
+        if (p) out.push({ kind: "vehicle", id: v.id, data: v, line: lineId, px: p.x, py: p.y });
+      });
+    }
+    this.vehicles = out;
+    return out;
+  }
+
+  // filter: które pojazdy rysować; alpha: dodatkowe przygaszenie (pojazdy innych linii niż wskazana).
+  drawVehicles(filter, alpha = 1) {
+    const css = (name) => this.theme[name];
+    const { ctx } = this;
+    const base = ctx.globalAlpha;
+    const r = this.view.scale >= STATION_ICON_SCALE ? 5.5 : 3.5;
+    ctx.globalAlpha = base * alpha;
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = css("--map-bg");
+    for (const v of this.vehicleItems()) {
+      if (!filter(v)) continue;
+      const [x, y] = this.toScreen(v.px, v.py);
+      if (x < -10 || y < -10 || x > this.w + 10 || y > this.h + 10) continue;
+      ctx.fillStyle = rgb(this.lines.get(v.line).color, css("--accent"));
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      if (this.isMarked(v)) this.ring(x, y, r * 2);
+    }
+    ctx.globalAlpha = base;
+  }
+
   // Obrazek z cache; ładowany przy pierwszym użyciu (po wczytaniu przerysowujemy). null, dopóki
   // się nie wczyta - albo na stałe, gdy pliku nie ma.
   image(src) {
@@ -653,6 +732,7 @@ export class MapView {
       const r = this.view.scale >= STATION_ICON_SCALE ? 11 : 6;
       for (const s of this.stations) consider(s, r);
     }
+    if (this.showVehicles) for (const v of this.vehicleItems()) consider(v, 6);
     // pinezka na wierzchu: łapiemy jej główkę (PIN_HEAD_Y px nad wskazanym punktem)
     if (this.pin) {
       const [x, y] = this.toScreen(this.pin.x, -this.pin.y);
@@ -670,21 +750,36 @@ export class MapView {
     this.onPlace?.({ x: Math.round(px), y: Math.round(-py), sx, sy });
   }
 
+  // Przybliżenie do scale z punktem świata (wx, wy) pod punktem ekranu (sx, sy).
+  zoomAt(wx, wy, sx, sy, scale) {
+    this.view.scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale));
+    this.view.x = wx - (sx - this.w / 2) / this.view.scale;
+    this.view.y = wy - (sy - this.h / 2) / this.view.scale;
+    this.requestDraw();
+  }
+
   bindEvents() {
     const c = this.canvas;
+    const local = (e) => {
+      const rect = c.getBoundingClientRect();
+      return [e.clientX - rect.left, e.clientY - rect.top];
+    };
     let drag = null;
+    const pointers = new Map(); // pointerId -> [sx, sy] (dotyk: szczypanie dwoma palcami)
+    let pinch = null;           // { dist, wx, wy, scale } z chwili położenia drugiego palca
+
+    const startPinch = () => {
+      const [[ax, ay], [bx, by]] = [...pointers.values()];
+      const [wx, wy] = this.toWorld((ax + bx) / 2, (ay + by) / 2);
+      pinch = { dist: Math.hypot(bx - ax, by - ay) || 1, wx, wy, scale: this.view.scale };
+      drag = null;
+    };
 
     c.addEventListener("wheel", (e) => {
       e.preventDefault();
-      const rect = c.getBoundingClientRect();
-      const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+      const [sx, sy] = local(e);
       const [wx, wy] = this.toWorld(sx, sy);
-      const factor = Math.exp(-e.deltaY * 0.0015);
-      this.view.scale = Math.max(0.005, Math.min(20, this.view.scale * factor));
-      // punkt pod kursorem zostaje w miejscu
-      this.view.x = wx - (sx - this.w / 2) / this.view.scale;
-      this.view.y = wy - (sy - this.h / 2) / this.view.scale;
-      this.requestDraw();
+      this.zoomAt(wx, wy, sx, sy, this.view.scale * Math.exp(-e.deltaY * 0.0015)); // punkt pod kursorem zostaje
     }, { passive: false });
 
     // Prawy przycisk stawia pinezkę (zamiast menu przeglądarki).
@@ -695,12 +790,22 @@ export class MapView {
 
     c.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) return;
-      drag = { x: e.clientX, y: e.clientY, vx: this.view.x, vy: this.view.y, moved: false };
-      c.setPointerCapture(e.pointerId);
+      pointers.set(e.pointerId, local(e));
+      if (pointers.size === 2) startPinch();
+      else if (pointers.size === 1) drag = { x: e.clientX, y: e.clientY, vx: this.view.x, vy: this.view.y, moved: false };
+      try { c.setPointerCapture(e.pointerId); } catch { /* wskaźnik już nieaktywny */ }
     });
 
     c.addEventListener("pointermove", (e) => {
-      const rect = c.getBoundingClientRect();
+      const [sx, sy] = local(e);
+      if (pointers.has(e.pointerId)) pointers.set(e.pointerId, [sx, sy]);
+      if (pinch && pointers.size >= 2) {
+        // punkt świata spod środka palców idzie za środkiem palców: zoom i przesuwanie naraz
+        const [[ax, ay], [bx, by]] = [...pointers.values()];
+        const dist = Math.hypot(bx - ax, by - ay);
+        this.zoomAt(pinch.wx, pinch.wy, (ax + bx) / 2, (ay + by) / 2, pinch.scale * dist / pinch.dist);
+        return;
+      }
       if (drag) {
         const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
         if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
@@ -709,27 +814,39 @@ export class MapView {
         this.requestDraw();
         return;
       }
-      const hit = this.hitTest(e.clientX - rect.left, e.clientY - rect.top);
+      if (pinch) return; // po szczypaniu został jeden palec - bez hovera, aż go podniesie
+      const hit = this.hitTest(sx, sy);
       const changed = (hit?.id ?? null) !== (this.hovered?.id ?? null);
       this.hovered = hit ? { kind: hit.kind, id: hit.id } : null;
       c.style.cursor = this.pinMode ? "crosshair" : hit ? "pointer" : "grab";
-      this.onHover?.(hit, e.clientX - rect.left, e.clientY - rect.top);
+      this.onHover?.(hit, sx, sy);
       if (changed) this.requestDraw();
     });
 
+    const release = (e) => {
+      pointers.delete(e.pointerId);
+      if (pinch && !pointers.size) pinch = null;
+    };
+    c.addEventListener("pointercancel", (e) => {
+      release(e);
+      drag = null;
+    });
+
     c.addEventListener("pointerup", (e) => {
-      const wasClick = drag && !drag.moved;
+      const wasClick = drag && !drag.moved && !pinch;
+      release(e);
       drag = null;
       if (!wasClick) return;
       if (this.pinMode) {
         this.place(e);
         return;
       }
-      const rect = c.getBoundingClientRect();
-      const hit = this.hitTest(e.clientX - rect.left, e.clientY - rect.top);
+      const hit = this.hitTest(...local(e));
       if (hit?.kind === "pin") return; // pinezka ma tylko tooltip
-      this.select(hit?.kind, hit?.id);
-      this.onSelect?.(hit);
+      // pojazd: zaznaczamy jego linię
+      const sel = hit?.kind === "vehicle" ? { kind: "line", id: hit.line, data: this.lines.get(hit.line) } : hit;
+      this.select(sel?.kind, sel?.id);
+      this.onSelect?.(sel);
     });
 
     c.addEventListener("pointerleave", () => {

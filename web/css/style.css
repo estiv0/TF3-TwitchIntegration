@@ -153,6 +153,7 @@ button { font: inherit; color: inherit; }
 .dot-town { border-radius: 50%; background: var(--town); }
 .dot-raw { background: var(--industry-raw); }
 .dot-processing { background: var(--industry-processing); }
+.dot-vehicle { border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 1.5px var(--map-bg); }
 .swatch { width: 10px; height: 10px; flex: none; border-radius: 3px; }
 
 /* Ikonki z gry: białe maski barwione kolorem tekstu (format.js: iconHtml), kolorowe ładunki jako <img>. */

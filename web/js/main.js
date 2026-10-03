@@ -4,11 +4,12 @@ import { config } from "../config.js";
 import { DataFeed } from "./api.js";
 import {
   carrierIcon, carrierName, cargoLabel, escapeHtml as esc, fmtDate, fmtInt, fmtMoney, fmtPercent,
-  iconHtml, linesByIndustry, linesByStation, stationImg, stationName, stationUse, townSize,
+  iconHtml, linesByIndustry, linesByStation, rgb, stationImg, stationName, stationUse, townSize,
 } from "./format.js";
+import { readSelection, writeSelection } from "./hash.js";
 import { LANGS, applyStatic, lang, locale, onLangChange, setLang, t } from "./i18n.js";
 import { MapView } from "./map.js";
-import { PinController } from "./pin.js";
+import { PinController, readPinHash } from "./pin.js";
 import { Sidebar } from "./sidebar.js";
 
 const $ = (sel) => document.querySelector(sel);
@@ -18,6 +19,8 @@ const status = $("#status");
 let lastMeta = null;
 let lastDynamic = null;
 let loadError = false;
+let pollError = null;                   // błąd pobierania któregoś pliku przy działającym meta.json
+let pendingSelection = readSelection(); // zaznaczenie z linku - zastosujemy, gdy przyjdą dane
 
 applyStatic();
 
@@ -33,6 +36,7 @@ const map = new MapView($("#map"), {
   },
   onSelect(item) {
     sidebar.setSelected(item?.kind, item?.id);
+    writeSelection(item);
   },
   onPlace(place) {
     pins.place(place);
@@ -51,6 +55,7 @@ const sidebar = new Sidebar($("#sidebar"), {
   onPick(kind, id) {
     map.focus(kind, id);
     sidebar.setSelected(kind, id);
+    writeSelection({ kind, id });
   },
   onStop(lineId, index) {
     map.focusStop(lineId, index);
@@ -73,6 +78,9 @@ $("#terrain").addEventListener("click", (e) => {
 $("#stations").addEventListener("click", (e) => {
   e.currentTarget.setAttribute("aria-pressed", String(map.toggleStations()));
 });
+$("#vehicles").addEventListener("click", (e) => {
+  e.currentTarget.setAttribute("aria-pressed", String(map.toggleVehicles()));
+});
 
 // Esc odznacza wybrany obiekt (linię, stację...), chyba że zamknął już pinezkę albo trwa pisanie w polu.
 document.addEventListener("keydown", (e) => {
@@ -86,10 +94,33 @@ function clearSelection() {
   map.select(null);
   sidebar.setSelected(null);
   map.hoverItem(null);
+  writeSelection(null);
 }
+
+// Zaznaczenie z adresu (#line=123, #town=...): po wczytaniu danych i po wklejeniu nowego linku.
+// Z pinezką w linku widok zostaje na pinezce, a obiekt jest tylko zaznaczony.
+function applyPendingSelection() {
+  const sel = pendingSelection;
+  if (!sel || !lastDynamic) return;
+  pendingSelection = null;
+  const d = lastDynamic;
+  const list = { town: d.towns, industry: d.industries, station: d.stations, line: d.lines }[sel.kind];
+  if (!list?.some((x) => x.id === sel.id)) {
+    writeSelection(sidebar.selected); // obiektu już nie ma (np. usunięta linia)
+    return;
+  }
+  if (readPinHash()) map.select(sel.kind, sel.id);
+  else map.focus(sel.kind, sel.id);
+  sidebar.setSelected(sel.kind, sel.id);
+}
+window.addEventListener("hashchange", () => {
+  pendingSelection = readSelection();
+  applyPendingSelection();
+});
 
 let stationLines = new Map();  // id stacji -> linie (do tooltipa)
 let industryLines = new Map(); // id zakładu -> linie jego stacji
+let linesById = new Map();     // id linii -> linia (tooltip pojazdu)
 
 // Podgląd stanu z konsoli przeglądarki (debug).
 window.tf3 = { map, sidebar, pins };
@@ -100,6 +131,15 @@ function tooltipHtml(item) {
     return `<strong>📍 ${esc(t("pin.title"))}</strong>${d.note ? `<span class="tip-note">${esc(d.note)}</span>` : ""}`;
   }
   const lines = (n) => `<span>${esc(t("lines.n", { n: fmtInt(n) }))}</span>`;
+  if (item.kind === "vehicle") {
+    const line = linesById.get(d.line);
+    const stop = line?.stops?.[d.stop];
+    const where = t(d.state === "AT_TERMINAL" ? "vehicle.atStop" : "vehicle.enRoute",
+      { stop: stop?.name ?? t("line.stop", { n: d.stop + 1 }) });
+    return `<strong><span class="swatch" style="background:${rgb(line?.color)}"></span> ${carrierIcon(d.carrier)} ${esc(line?.name ?? t("line"))}</strong>`
+      + `<span>${esc(where)}</span>`
+      + (d.stopped ? `<span class="neg">${esc(t("vehicle.stopped"))}</span>` : "");
+  }
   if (item.kind === "town") {
     const needs = (d.cargoNeeds ?? []).flatMap((g) => Object.keys(g ?? {}));
     const profit = sidebar.earnings.towns.get(d.id)?.profit12m;
@@ -131,6 +171,12 @@ function renderHeader(dynamic) {
 }
 
 function renderStatus() {
+  if (lastMeta && pollError) {
+    status.dataset.state = "error";
+    status.textContent = t("status.partial");
+    status.title = String(pollError.message ?? pollError);
+    return;
+  }
   if (!lastMeta) {
     status.dataset.state = loadError ? "error" : "waiting";
     status.textContent = t(loadError ? "status.error" : "status.waiting");
@@ -179,18 +225,19 @@ new DataFeed({
   },
   onDynamic(dynamic) {
     stationLines = linesByStation(dynamic);
+    linesById = new Map((dynamic.lines ?? []).map((l) => [l.id, l]));
     industryLines = linesByIndustry(dynamic, stationLines);
     map.setDynamic(dynamic);
     sidebar.setDynamic(dynamic);
     lastDynamic = dynamic;
     renderHeader(dynamic);
+    applyPendingSelection();
   },
-  onError(err) {
-    console.warn(err);
-    if (!lastMeta) {
-      loadError = true;
-      renderStatus();
-    }
+  onPoll(err) {
+    if (err) console.warn(err);
+    if (lastMeta) pollError = err;
+    else loadError = !!err;
+    renderStatus();
   },
 }).start();
 

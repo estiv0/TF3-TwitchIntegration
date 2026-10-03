@@ -2,6 +2,7 @@
 // Format: #pin=<x>,<y>,<skala>&note=<opis> - x, y we współrzędnych gry (m, y na północ),
 // skala = przybliżenie widoku w chwili tworzenia linku.
 
+import { hashWith } from "./hash.js";
 import { t } from "./i18n.js";
 
 const NOTE_MAX = 200;
@@ -19,13 +20,13 @@ export function readPinHash(hash = location.hash) {
   };
 }
 
-/** Pełny adres strony z pinezką w hashu. */
+/** Pełny adres strony z pinezką w hashu (zaznaczony obiekt, np. &line=..., zostaje w linku). */
 export function pinUrl({ x, y, note }, scale) {
   // Ręcznie zamiast URLSearchParams.toString(), żeby link był czytelny (przecinki, %20 zamiast "+").
-  let hash = `pin=${Math.round(x)},${Math.round(y)},${Number(scale.toPrecision(3))}`;
-  if (note) hash += `&note=${encodeURIComponent(note.slice(0, NOTE_MAX))}`;
+  const pin = [`pin=${Math.round(x)},${Math.round(y)},${Number(scale.toPrecision(3))}`];
+  if (note) pin.push(`note=${encodeURIComponent(note.slice(0, NOTE_MAX))}`);
   const url = new URL(location.href);
-  url.hash = hash;
+  url.hash = hashWith(["pin", "note"], pin);
   return url.href;
 }
 
