@@ -292,7 +292,7 @@ local DYN_STEPS = {
 			local ok, fin = pcall(collectors.financeTable, cfg.financeYears)
 			if ok then company.finance = fin else util.log("finance table failed: " .. tostring(fin)) end
 			local okH, hist = pcall(collectors.worldHistory,
-				{ "companyBalance", "companyTotalValue", "townResidentialCount" }, cfg.historyMaxPoints)
+				{ "companyBalance", "companyTotalValue", "townResidentialCount", "townCommercialCount", "townIndustrialCount" }, cfg.historyMaxPoints)
 			if okH then company.history = hist else util.log("world history failed: " .. tostring(hist)) end
 			S.company = company
 			job.companyFresh = true

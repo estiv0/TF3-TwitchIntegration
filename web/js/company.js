@@ -1,5 +1,5 @@
 // Zakładka Firma: finanse wg lat (tabela z okna Finanse w grze) i historia z logbooka świata
-// (stan konta, wartość firmy, mieszkańcy). Dane: dynamic.company (lua_mod: collectors.financeTable /
+// (stan konta, wartość firmy, dzielnice miast). Dane: dynamic.company (lua_mod: collectors.financeTable /
 // worldHistory), odświeżane przez moda raz na miesiąc gry.
 
 import { carrierIcon, carrierName, escapeHtml as esc, fmtInt, fmtMoney, fmtMoneyShort, fmtShort } from "./format.js";
@@ -41,52 +41,71 @@ function historyHtml(h) {
     { key: "company.balance", points: h.companyBalance, color: "var(--accent)" },
     { key: "company.value", points: h.companyTotalValue, color: "var(--industry-raw)" },
   ].filter((s) => s.points?.length);
-  const residents = h.townResidentialCount?.length
-    ? [{ key: "company.residents", points: h.townResidentialCount, color: "var(--town)" }] : [];
-  if (!money.length && !residents.length) return "";
+  // jak wykres "Miasta" w grze: pojemność dzielnic wszystkich miast
+  const towns = [
+    { key: "company.residential", points: h.townResidentialCount, color: "var(--live)" },
+    { key: "company.commercial", points: h.townCommercialCount, color: "var(--industry-raw)" },
+    { key: "company.industrial", points: h.townIndustrialCount, color: "var(--stale)" },
+  ].filter((s) => s.points?.length);
+  if (!money.length && !towns.length) return "";
   return `<h3>${esc(t("company.history"))}</h3>`
-    + (money.length ? chartBlock(money, fmtMoneyShort, (v) => fmtMoney(Math.round(v))) : "")
-    + (residents.length ? chartBlock(residents, fmtShort, fmtInt) : "");
+    + (money.length ? chartBlock("company.chartBalance", money, fmtMoneyShort, (v) => fmtMoney(Math.round(v))) : "")
+    + (towns.length ? chartBlock("company.chartTowns", towns, fmtShort, fmtInt) : "");
 }
 
 // axisFmt: etykiety osi (skrócone), fmt: ostatnia wartość w legendzie (pełna).
-function chartBlock(series, axisFmt, fmt) {
+function chartBlock(titleKey, series, axisFmt, fmt) {
   const legend = series.map((s) => {
     const last = s.points[s.points.length - 1][1];
     return `<li><span class="lg-line" style="background:${s.color}"></span>${esc(t(s.key))}<b>${esc(fmt(last))}</b></li>`;
   }).join("");
-  return `<figure class="chart">${lineChart(series, axisFmt)}<ul class="chart-legend">${legend}</ul></figure>`;
+  return `<figure class="chart"><figcaption>${esc(t(titleKey))}</figcaption>`
+    + `${lineChart(series, axisFmt)}<ul class="chart-legend">${legend}</ul></figure>`;
 }
 
-// Wykres liniowy SVG: oś x = lata (punkty [rok z ułamkiem, wartość]), oś y od min do max wszystkich serii
-// (z zerem, jeśli wartości mają różne znaki). Skaluje się do szerokości panelu (viewBox).
-function lineChart(series, fmt, W = 320, H = 130) {
-  const pad = { l: 4, r: 4, t: 8, b: 18 };
+// Krok podziałki osi y: 1, 2, 2.5 albo 5 razy potęga 10, tak żeby wyszło ok. count przedziałów.
+function niceStep(range, count) {
+  const raw = range / count, p = 10 ** Math.floor(Math.log10(raw));
+  return ([1, 2, 2.5, 5, 10].find((m) => m * p >= raw) ?? 10) * p;
+}
+
+// Wykres liniowy SVG: oś x = lata (punkty [rok z ułamkiem, wartość]), oś y na okrągłych wartościach
+// od min do max wszystkich serii (z zerem, jeśli wartości mają różne znaki). Etykiety osi y po lewej,
+// poza obszarem wykresu, lata pod nim. Skaluje się do szerokości panelu (viewBox).
+function lineChart(series, fmt, W = 320, H = 150) {
   const all = series.flatMap((s) => s.points);
   let x0 = Math.min(...all.map((p) => p[0])), x1 = Math.max(...all.map((p) => p[0]));
   let y0 = Math.min(...all.map((p) => p[1])), y1 = Math.max(...all.map((p) => p[1]));
   if (y0 > 0 && y0 < y1 * 0.5) y0 = 0; // mała wartość minimalna - oś od zera czyta się łatwiej
   if (x1 === x0) x1 = x0 + 1;
   if (y1 === y0) { y1 += 1; y0 -= 1; }
+  const step = niceStep(y1 - y0, 4);
+  y0 = Math.floor(y0 / step) * step;
+  y1 = Math.ceil(y1 / step) * step;
+  const ticks = [];
+  for (let v = y0; v <= y1 + step / 2; v += step) ticks.push(Math.abs(v) < step / 2 ? 0 : v);
+
+  // lewy margines na najdłuższą etykietę (ok. 5 px na znak przy 9 px fontu)
+  const labels = ticks.map((v) => fmt(v));
+  const pad = { l: Math.max(...labels.map((s) => s.length)) * 5 + 10, r: 8, t: 8, b: 20 };
   const sx = (x) => pad.l + (x - x0) / (x1 - x0) * (W - pad.l - pad.r);
   const sy = (y) => pad.t + (y1 - y) / (y1 - y0) * (H - pad.t - pad.b);
 
-  const grid = [y1, (y0 + y1) / 2, y0].map((v) =>
-    `<line x1="${pad.l}" x2="${W - pad.r}" y1="${sy(v)}" y2="${sy(v)}" class="chart-grid"/>`
-    + `<text x="${pad.l + 2}" y="${sy(v) - 3}" class="chart-label">${esc(fmt(v))}</text>`).join("");
-  const zero = y0 < 0 && y1 > 0 ? `<line x1="${pad.l}" x2="${W - pad.r}" y1="${sy(0)}" y2="${sy(0)}" class="chart-zero"/>` : "";
-  // lata na osi x: co 1, 2, 5, 10... tak, żeby było najwyżej ~6 etykiet
+  const grid = ticks.map((v, i) =>
+    `<line x1="${pad.l}" x2="${W - pad.r}" y1="${sy(v)}" y2="${sy(v)}" class="${v === 0 && y0 < 0 ? "chart-zero" : "chart-grid"}"/>`
+    + `<text x="${pad.l - 5}" y="${sy(v)}" class="chart-label" text-anchor="end" dominant-baseline="middle">${esc(labels[i])}</text>`).join("");
+  // lata na osi x: co 1, 2, 5, 10... tak, żeby było najwyżej ~6 etykiet; przy każdym pionowa linia siatki
   const span = x1 - x0;
-  const step = [1, 2, 5, 10, 20, 50].find((s) => span / s <= 6) ?? 100;
+  const yearStep = [1, 2, 5, 10, 20, 50].find((s) => span / s <= 6) ?? 100;
   let years = "";
-  for (let y = Math.ceil(x0 / step) * step; y <= x1; y += step) {
+  for (let y = Math.ceil(x0 / yearStep) * yearStep; y <= x1; y += yearStep) {
     const x = sx(y);
-    const anchor = x < 16 ? "start" : x > W - 16 ? "end" : "middle"; // skrajne lata nie wychodzą poza wykres
-    years += `<text x="${x}" y="${H - 4}" class="chart-label" text-anchor="${anchor}">${y}</text>`;
+    years += `<line x1="${x}" x2="${x}" y1="${pad.t}" y2="${H - pad.b}" class="chart-grid"/>`
+      + `<text x="${x}" y="${H - 5}" class="chart-label" text-anchor="middle">${y}</text>`;
   }
   const lines = series.map((s) =>
     `<polyline points="${s.points.map((p) => `${sx(p[0]).toFixed(1)},${sy(p[1]).toFixed(1)}`).join(" ")}" style="stroke:${s.color}" class="chart-line"/>`).join("");
-  return `<svg viewBox="0 0 ${W} ${H}" class="chart-svg" role="img">${grid}${zero}${years}${lines}</svg>`;
+  return `<svg viewBox="0 0 ${W} ${H}" class="chart-svg" role="img">${grid}${years}${lines}</svg>`;
 }
 
 function financeHtml(f) {
