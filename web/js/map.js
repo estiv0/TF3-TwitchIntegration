@@ -297,10 +297,10 @@ export class MapView {
     // Punkt wskazany na liście: reszta półprzezroczysta, on na końcu, w pełnym kolorze.
     const spot = this.spotItem();
     ctx.globalAlpha = spot ? DIM : 1;
-    this.drawIndustries(spot);
-    if (this.showStations) this.drawStations(spot);
     if (this.linesView) this.drawVisibleLines();
     else if (this.selected?.kind === "line") this.drawLine(this.selected.id);
+    this.drawIndustries(spot);
+    if (this.showStations) this.drawStations(spot);
     this.drawTowns(spot);
     ctx.globalAlpha = 1;
     if (spot?.kind === "industry") this.drawIndustry(spot);
