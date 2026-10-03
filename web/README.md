@@ -44,7 +44,9 @@ web/
 - Sieć jest budowana raz do `Path2D` w układzie świata. Pan i zoom zmieniają tylko transformację, więc ok. 9 tys. odcinków rysuje się płynnie.
 - Oś y w grze rośnie na północ, a na ekranie w dół, dlatego mapa używa `(x, -y)`.
 - Linii nie da się jeszcze narysować, bo mod nie eksportuje pozycji stacji (patrz `docs/reactive-dynamic-export.md`, sekcja „stacje”).
-- Pojazdy: gra nie podaje ich pozycji, tylko numer przystanku i stan. Pojazd `AT_TERMINAL` stoi na przystanku, a `EN_ROUTE` leży na trasie od poprzedniego przystanku do tego, do którego jedzie; kilka pojazdów na jednym odcinku rozkłada się po nim równo.
+- Pojazdy: mod wysyła ich pozycję (`vehicles[].pos`). Pozycja przy trasie linii (do 40 m od odcinka dojazdu do `stop`) daje ruch wzdłuż trasy, inna (statki, samoloty) - po prostej. Bez `pos` (pozycje wyłączone w modzie albo starszy eksport) położenie jest zgadywane: `AT_TERMINAL` na przystanku, `EN_ROUTE` na trasie od poprzedniego przystanku do `stop`, kilka pojazdów na odcinku rozłożonych równo (na długim odcinku pojazd wtedy stoi).
+- Ruch pojazdów jest interpolowany: po nowej paczce danych pojazd jedzie z miejsca, w którym jest na ekranie, do nowej pozycji, przez średni odstęp między paczkami. Obraz jest więc o jedną paczkę (ok. 10–15 s) opóźniony. Animacja ma 30 kl./s.
+- Trasa linii: przystanek dociągany jest do węzła sieci w tym samym spójnym kawałku co sąsiedni przystanek, bo eksport ma odcięte fragmenty dróg (dojazdy do stacji).
 - Zaznaczenie jest w adresie (`#line=<id>`, `#town=`, `#industry=`, `#station=`), obok pinezki: `#pin=...&note=...&line=<id>`.
 - Na dotyku: przesuwanie jednym palcem, przybliżanie szczypaniem.
 

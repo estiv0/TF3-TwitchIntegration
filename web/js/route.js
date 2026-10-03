@@ -1,9 +1,11 @@
-// Trasa linii po sieci: graf z krawędzi network.json, przystanki dociągane do najbliższego
-// węzła właściwego typu (tor / droga), odcinki między przystankami szukane przez A*.
+// Trasa linii po sieci: graf z krawędzi network.json, przystanki dociągane do najbliższych
+// węzłów właściwego typu (tor / droga) w tym samym spójnym kawałku sieci, odcinki między
+// przystankami szukane przez A*.
 // Gra nie eksportuje ścieżki linii, więc to przybliżenie (najkrótsza droga, bez kierunkowości).
 // Układ współrzędnych jak w map.js: (x, -y) ze świata gry.
 
 const SNAP_DISTANCE = 300; // m - dalej od sieci przystanek łączymy linią prostą
+const SNAP_CANDIDATES = 8; // tyle najbliższych węzłów przystanku bierzemy pod uwagę przy łączeniu odcinka
 
 // Nośnik linii -> typ krawędzi, po której jeździ (WATER/AIR: linia prosta).
 const ROAD_FOR_CARRIER = { RAIL: "TRACK", ROAD: "STREET", TRAM: "STREET" };
@@ -52,6 +54,58 @@ export class RouteGraph {
       if (cell) cell.push(n);
       else this.grid.set(k, [n]);
     }
+
+    // Spójne kawałki sieci osobno dla dróg i torów (n.comp[road] = numer kawałka). Eksport ma
+    // odcięte fragmenty (np. dojazdy do stacji, których krawędzie łączące należą do konstrukcji),
+    // a najbliższy przystankowi węzeł bywa w takim fragmencie - wtedy A* nie znalazłby drogi.
+    let comp = 0;
+    for (const start of this.nodes.values()) {
+      start.comp ??= {};
+      for (const road of start.roads) {
+        if (start.comp[road] != null) continue;
+        start.comp[road] = ++comp;
+        const stack = [start];
+        while (stack.length) {
+          for (const a of stack.pop().adj) {
+            if (a.edge.road !== road) continue;
+            a.to.comp ??= {};
+            if (a.to.comp[road] != null) continue;
+            a.to.comp[road] = comp;
+            stack.push(a.to);
+          }
+        }
+      }
+    }
+  }
+
+  // Do SNAP_CANDIDATES najbliższych węzłów danego typu w promieniu SNAP_DISTANCE: [{ n, d }] od najbliższego.
+  nearestNodes(x, y, road) {
+    const out = [];
+    const cx = Math.floor(x / SNAP_DISTANCE), cy = Math.floor(y / SNAP_DISTANCE);
+    for (let i = cx - 1; i <= cx + 1; i++) {
+      for (let j = cy - 1; j <= cy + 1; j++) {
+        for (const n of this.grid.get(cellKey(i, j)) ?? []) {
+          if (!n.roads.has(road)) continue;
+          const d = Math.hypot(n.x - x, n.y - y);
+          if (d < SNAP_DISTANCE) out.push({ n, d });
+        }
+      }
+    }
+    return out.sort((a, b) => a.d - b.d).slice(0, SNAP_CANDIDATES);
+  }
+
+  // Para węzłów (po jednym z kandydatów każdego przystanku) w tym samym kawałku sieci, z najmniejszą
+  // sumą odległości od przystanków; null, gdy przystanków nie łączy żaden kawałek.
+  snapPair(ca, cb, road) {
+    let best = null, bestD = Infinity;
+    for (const a of ca) {
+      if (a.d >= bestD) break;
+      for (const b of cb) {
+        if (a.d + b.d >= bestD) break;
+        if (a.n.comp[road] === b.n.comp[road]) { best = [a.n, b.n]; bestD = a.d + b.d; }
+      }
+    }
+    return best;
   }
 
   nearestNode(x, y, road) {
@@ -103,9 +157,10 @@ export class RouteGraph {
     return null;
   }
 
-  // Path2D trasy linii (zamknięta pętla, jak w grze) + bbox + łamana po kolei (do sprawdzania,
-  // czy linia jest na ekranie) + legs: indeks przystanku na linii -> łamana dojazdu do niego od
-  // poprzedniego przystanku (do stawiania pojazdów w drodze). Przystanki bez pozycji pomijamy.
+  // Path2D trasy linii (zamknięta pętla, jak w grze) + bbox + łamana po kolei (poly: do sprawdzania,
+  // czy linia jest na ekranie, i do ruchu pojazdów; cum = odległość od startu do każdego punktu,
+  // length = długość pętli) + legs: indeks przystanku na linii -> { start, end, first, last }, odcinek
+  // dojazdu do niego od poprzedniego przystanku (odległości wzdłuż pętli i indeksy w poly). Przystanki bez pozycji pomijamy.
   routeLine(line) {
     const all = line.stops ?? [];
     const index = [];  // indeks w stops (po odfiltrowaniu) -> indeks przystanku na linii
@@ -117,35 +172,40 @@ export class RouteGraph {
     });
     const path = new Path2D();
     const legs = new Map();
-    if (stops.length < 2) return { path, stops, bbox: bboxOf(stops), poly: stops, legs };
+    if (stops.length < 2) return { path, stops, bbox: bboxOf(stops), poly: stops, cum: [0], length: 0, legs };
 
     const road = ROAD_FOR_CARRIER[line.carrier] ?? (line.carrier ? null : this.guessRoad(stops[0]));
-    const snapped = stops.map((s) => (road ? this.nearestNode(s.x, s.y, road) : null));
+    const candidates = stops.map((s) => (road ? this.nearestNodes(s.x, s.y, road) : []));
     const poly = [];
 
     for (let i = 0; i < stops.length; i++) {
       const j = (i + 1) % stops.length;
       const a = stops[i], b = stops[j];
-      const na = snapped[i], nb = snapped[j];
-      const steps = na && nb ? this.path(na, nb, road) : null;
-      const leg = [a];
+      const [na, nb] = this.snapPair(candidates[i], candidates[j], road) ?? [];
+      const steps = na ? this.path(na, nb, road) : null;
+      const first = poly.length;
+      poly.push(a);
       path.moveTo(a.x, a.y);
       if (steps) {
         path.lineTo(na.x, na.y);
-        leg.push(na);
+        poly.push(na);
         for (const { edge: e, forward } of steps) {
           if (forward) path.bezierCurveTo(e.c0x, e.c0y, e.c1x, e.c1y, e.x1, e.y1);
           else path.bezierCurveTo(e.c1x, e.c1y, e.c0x, e.c0y, e.x0, e.y0);
-          leg.push(forward ? { x: e.x1, y: e.y1 } : { x: e.x0, y: e.y0 });
+          // kilka punktów z krzywej, żeby pojazdy na długich łukach nie ścinały zakrętu
+          for (const t of BEZIER_SAMPLES) poly.push(bezierPoint(e, forward ? t : 1 - t));
+          poly.push(forward ? { x: e.x1, y: e.y1 } : { x: e.x0, y: e.y0 });
         }
       }
       path.lineTo(b.x, b.y);
-      poly.push(...leg);
-      leg.push(b);
-      legs.set(index[j], leg);
+      legs.set(index[j], { first, last: poly.length }); // last = indeks punktu b (początek następnego)
     }
     poly.push(stops[0]);
-    return { path, stops, bbox: bboxOf(poly), poly, legs };
+
+    const cum = new Float64Array(poly.length);
+    for (let i = 1; i < poly.length; i++) cum[i] = cum[i - 1] + Math.hypot(poly[i].x - poly[i - 1].x, poly[i].y - poly[i - 1].y);
+    for (const [k, { first, last }] of legs) legs.set(k, { first, last, start: cum[first], end: cum[last] });
+    return { path, stops, bbox: bboxOf(poly), poly, cum, length: cum[poly.length - 1], legs };
   }
 
   // Linia bez pojazdów nie ma znanego nośnika - wybierz typ sieci bliższy pierwszemu przystankowi.
@@ -157,18 +217,47 @@ export class RouteGraph {
   }
 }
 
-/** Punkt w ułamku f (0..1) długości łamanej. */
-export function pointAlong(pts, f) {
-  let total = 0;
-  for (let i = 1; i < pts.length; i++) total += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
-  let left = total * f;
-  for (let i = 1; i < pts.length; i++) {
-    const a = pts[i - 1], b = pts[i];
-    const d = Math.hypot(b.x - a.x, b.y - a.y);
-    if (left <= d && d > 0) return { x: a.x + (b.x - a.x) * left / d, y: a.y + (b.y - a.y) * left / d };
-    left -= d;
+/** Punkt trasy (wynik routeLine) w odległości d wzdłuż pętli (d dowolne, liczone modulo długość). */
+export function pointAtDistance(route, d) {
+  const { poly, cum, length } = route;
+  if (!(length > 0)) return poly[0];
+  d = ((d % length) + length) % length;
+  let lo = 0, hi = cum.length - 1; // ostatni punkt z cum[i] <= d
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (cum[mid] <= d) lo = mid;
+    else hi = mid;
   }
-  return pts[pts.length - 1];
+  const a = poly[lo], b = poly[hi], seg = cum[hi] - cum[lo];
+  const f = seg > 0 ? (d - cum[lo]) / seg : 0;
+  return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+}
+
+/**
+ * Rzut punktu (układ ścieżki) na odcinek trasy dojazdu do przystanku stop: { d, dist } - odległość
+ * wzdłuż pętli i odległość punktu od trasy; null, gdy linia nie ma takiego odcinka. Tylko ten odcinek,
+ * bo tam i z powrotem pociąg jedzie po tych samych torach - cała pętla nie rozstrzygnęłaby kierunku.
+ */
+export function projectOnLeg(route, stop, p) {
+  const leg = route.legs.get(stop);
+  if (!leg) return null;
+  const { poly, cum } = route;
+  let best = null;
+  for (let i = leg.first; i < leg.last; i++) {
+    const a = poly[i], b = poly[i + 1];
+    const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
+    const t = len2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2)) : 0;
+    const dist = Math.hypot(a.x + dx * t - p.x, a.y + dy * t - p.y);
+    if (!best || dist < best.dist) best = { d: cum[i] + (cum[i + 1] - cum[i]) * t, dist };
+  }
+  return best;
+}
+
+const BEZIER_SAMPLES = [0.25, 0.5, 0.75];
+
+function bezierPoint(e, t) {
+  const u = 1 - t, a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t, d = t * t * t;
+  return { x: a * e.x0 + b * e.c0x + c * e.c1x + d * e.x1, y: a * e.y0 + b * e.c0y + c * e.c1y + d * e.y1 };
 }
 
 /** Czy trasa (wynik routeLine) przecina prostokąt { minX, minY, maxX, maxY } w układzie ścieżki. */

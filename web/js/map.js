@@ -2,7 +2,7 @@
 // Układ "ścieżki" = (x, -y) ze świata gry, bo w grze oś y rośnie na północ, a na ekranie w dół.
 
 import { cargoImg, industryOfStation, rgb, stationImg, townSize } from "./format.js";
-import { RouteGraph, pointAlong, routeInRect } from "./route.js";
+import { RouteGraph, pointAtDistance, projectOnLeg, routeInRect } from "./route.js";
 
 const RAW_INDUSTRIES = new Set([
   "coal_mine", "iron_ore_mine", "quarry", "forest", "farm", "oil_well",
@@ -36,6 +36,11 @@ const OUTPUT_ICON_PX = 30; // ikonki produkcji nad zakładem
 const PIN_HEAD_Y = 22;      // główka pinezki tyle px nad wskazanym punktem
 const DIM = 0.3;            // krycie reszty mapy, gdy na liście w panelu wskazano jeden obiekt
 const MIN_SCALE = 0.005, MAX_SCALE = 20;
+// Ruch pojazdów między paczkami danych: klatki co ANIM_FRAME_MS (30 fps wystarczy, a cała mapa
+// rysuje się od nowa); dłuższa przerwa w danych (karta w tle, gra wstrzymana) - bez animacji, skok.
+const ANIM_FRAME_MS = 33;
+const UPDATE_MS_MIN = 2000, UPDATE_MS_MAX = 30000, SNAP_AFTER_MS = 60000;
+const ON_ROUTE_M = 40; // pozycja pojazdu tak blisko trasy linii = jedzie po niej (animacja wzdłuż trasy)
 
 // Kolory z CSS (motyw) odczytywane raz na klatkę, nie dla każdego obiektu.
 function readTheme() {
@@ -63,7 +68,13 @@ export class MapView {
     this.stations = [];         // dworce, porty, lotniska (bez przystanków)
     this.showStations = true;
     this.vehicleData = [];      // dynamic.vehicles
-    this.vehicles = null;       // pojazdy z pozycją na mapie, liczone leniwie (vehicleItems)
+    this.vehicleAnim = new Map(); // id pojazdu -> ruch po trasie linii (retargetVehicles)
+    this.vehiclesDirty = false; // nowe dane albo trasy - wyznacz cele ruchu przy następnej klatce
+    this.vehicles = [];         // pojazdy z pozycją w ostatniej klatce (rysowanie, hitTest)
+    this.updateMs = 10000;      // średni odstęp między paczkami dynamic.json = czas jazdy do nowej pozycji
+    this.lastDynamicAt = 0;
+    this.animUntil = 0;         // do kiedy pojazdy jadą (performance.now)
+    this.animTimer = 0;
     this.showVehicles = true;
     this.iconImages = new Map(); // url -> Image (ikony z gry: maski stacji, ładunki)
     this.iconCache = new Map();  // url|kolor|px -> canvas z zabarwioną ikoną
@@ -112,7 +123,7 @@ export class MapView {
     this.paths = paths;
     this.graph = new RouteGraph(network);
     this.routeCache.clear();
-    this.vehicles = null;
+    this.vehiclesDirty = true; // nowe trasy - pojazdy przeskakują na nie bez animacji
     if (network.edges.length) this.bbox = { minX, minY, maxX, maxY };
     if (!this.fitted) this.fit();
     this.requestDraw();
@@ -126,7 +137,12 @@ export class MapView {
 
     this.lines = new Map((dynamic.lines ?? []).map((l) => [l.id, l]));
     this.vehicleData = dynamic.vehicles ?? [];
-    this.vehicles = null;
+    this.vehiclesDirty = true;
+    const now = performance.now();
+    const gap = now - this.lastDynamicAt;
+    if (!this.lastDynamicAt || gap > SNAP_AFTER_MS) this.vehicleAnim.clear();
+    else this.updateMs = Math.max(UPDATE_MS_MIN, Math.min(UPDATE_MS_MAX, (this.updateMs + gap) / 2));
+    this.lastDynamicAt = now;
 
     this.industries = (dynamic.industries ?? []).filter((i) => i.pos).map((i) => ({
       kind: "industry", id: i.id, data: i, px: i.pos[0], py: -i.pos[1], type: industryKind(i),
@@ -274,6 +290,8 @@ export class MapView {
     const { ctx, dpr, w, h, view } = this;
     const css = (name) => this.theme[name];
     this.theme = readTheme();
+    const now = performance.now();
+    this.vehicles = this.showVehicles ? this.positionVehicles(now) : [];
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = css("--map-bg");
     ctx.fillRect(0, 0, w, h);
@@ -327,6 +345,13 @@ export class MapView {
     else if (spot?.kind === "station") this.drawStation(spot);
     else if (spot?.kind === "town") this.drawTown(spot, null);
     this.drawPin();
+
+    if (this.showVehicles && now < this.animUntil && !this.animTimer) {
+      this.animTimer = setTimeout(() => {
+        this.animTimer = 0;
+        this.requestDraw();
+      }, ANIM_FRAME_MS);
+    }
   }
 
   // Linia wskazana w panelu, której nie podświetla już drawVisibleLines (ta robi to tylko na zakładce
@@ -572,41 +597,137 @@ export class MapView {
   }
 
   // ---------------------------------------------------------------- pojazdy
-  // Gra nie eksportuje pozycji pojazdów, tylko numer przystanku (stop) i stan. AT_TERMINAL - pojazd
-  // stoi na przystanku stop; EN_ROUTE - jedzie do niego, więc kładziemy go na trasie od poprzedniego
-  // przystanku, a kilka pojazdów na tym samym odcinku rozkładamy po nim równo. W zajezdni - pomijamy.
-  vehicleItems() {
-    if (this.vehicles) return this.vehicles;
-    const groups = new Map(); // linia|przystanek|stan -> pojazdy
+  // Ruch pojazdu między paczkami danych (wpis w vehicleAnim), od t0 przez dur:
+  //   * mode "route" - wzdłuż pętli trasy linii: odległość from -> from + delta,
+  //   * mode "line"  - po prostej (x0, y0) -> (x1, y1); route + d: ten punkt na trasie, jeśli na niej leży.
+  // Z każdą paczką pojazd jedzie z miejsca, w którym jest na ekranie, do nowej pozycji przez updateMs,
+  // czyli do następnej paczki. To interpolacja: obraz jest o jedną paczkę opóźniony, ale ruch jest płynny.
+  //
+  // Pozycja z moda (v.pos) - prawdziwa; po trasie, gdy leży przy odcinku dojazdu do v.stop, inaczej
+  // po prostej (statki, samoloty, objazdy). Bez pos (stary eksport albo pozycje wyłączone w modzie)
+  // zgadujemy z numeru przystanku (retargetGuessed).
+  retargetVehicles(now) {
+    this.vehiclesDirty = false;
+    const prev = this.vehicleAnim;
+    const next = new Map();
+    const guessed = [];
+    let moving = false;
+
     for (const v of this.vehicleData) {
-      if (!this.lines.has(v.line) || (v.state !== "EN_ROUTE" && v.state !== "AT_TERMINAL")) continue;
+      if (!this.lines.has(v.line) || v.state === "IN_DEPOT") continue;
+      if (!v.pos) {
+        if (v.state === "EN_ROUTE" || v.state === "AT_TERMINAL") guessed.push(v);
+        continue;
+      }
+      const p = { x: v.pos[0], y: -v.pos[1] };
+      const a = prev.get(v.id);
+      const route = this.lineRoute(v.line);
+      const proj = route ? projectOnLeg(route, v.stop, p) : null;
+      const onRoute = proj && proj.dist <= ON_ROUTE_M;
+      const cur = a ? this.animPoint(a, now) : p;
+
+      // Po trasie, jeśli poprzednia pozycja też na niej była i ruch jest do przodu, nie dłuższy niż
+      // 3x prosta (inaczej to np. zawrócenie albo trasa z A* inna niż w grze - wtedy po prostej).
+      const from = onRoute ? this.distanceOn(a, route, now) : null;
+      if (from != null) {
+        let delta = loopDelta(proj.d - from, route.length);
+        if (delta < 0 && delta > -ON_ROUTE_M) delta = 0; // drgania pozycji
+        if (delta >= 0 && delta <= 3 * Math.hypot(p.x - cur.x, p.y - cur.y) + 100) {
+          next.set(v.id, { v, line: v.line, mode: "route", route, from, delta, t0: now, dur: this.updateMs });
+          if (delta) moving = true;
+          continue;
+        }
+      }
+      next.set(v.id, {
+        v, line: v.line, mode: "line", x0: cur.x, y0: cur.y, x1: p.x, y1: p.y, t0: now, dur: this.updateMs,
+        route: onRoute ? route : null, d: onRoute ? proj.d : null,
+      });
+      if (cur.x !== p.x || cur.y !== p.y) moving = true;
+    }
+
+    if (this.retargetGuessed(guessed, prev, next, now)) moving = true;
+    this.vehicleAnim = next;
+    this.animUntil = moving ? now + this.updateMs : 0;
+  }
+
+  // Bez pozycji z moda: AT_TERMINAL - na przystanku stop; EN_ROUTE - na trasie od poprzedniego
+  // przystanku do stop, kilka pojazdów na jednym odcinku rozłożonych równo. Na długim odcinku pojazd
+  // stoi, dopóki nie dojedzie do przystanku - stąd pozycje w modzie. -> czy coś jedzie.
+  retargetGuessed(vehicles, prev, next, now) {
+    const groups = new Map(); // linia|przystanek|stan -> pojazdy
+    for (const v of vehicles) {
       const key = `${v.line}|${v.stop}|${v.state}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(v);
     }
 
-    const out = [];
+    let moving = false;
     for (const vs of groups.values()) {
       const { line: lineId, stop, state } = vs[0];
-      const line = this.lines.get(lineId);
-      const pos = line.stops?.[stop]?.pos;
-      let leg = null;
-      if (state === "EN_ROUTE") {
-        leg = this.lineRoute(lineId)?.legs.get(stop) ?? null;
-        if (!leg && pos) { // bez trasy: prosta od poprzedniego przystanku z pozycją
-          const stops = line.stops;
-          for (let k = 1; k < stops.length && !leg; k++) {
-            const prev = stops[(stop - k + stops.length) % stops.length]?.pos;
-            if (prev) leg = [{ x: prev[0], y: -prev[1] }, { x: pos[0], y: -pos[1] }];
-          }
+      const route = this.lineRoute(lineId);
+      const leg = route?.legs.get(stop);
+      if (!leg) { // bez trasy (np. sieć jeszcze nie przyszła): na przystanku, bez ruchu
+        const pos = this.lines.get(lineId).stops?.[stop]?.pos;
+        if (!pos) continue;
+        for (const v of vs) {
+          next.set(v.id, { v, line: lineId, mode: "line", x0: pos[0], y0: -pos[1], x1: pos[0], y1: -pos[1], t0: now, dur: 1 });
         }
+        continue;
+      }
+      const L = route.length;
+      const was = (v) => this.distanceOn(prev.get(v.id), route, now);
+      // Na odcinku pojazdy w kolejności, w jakiej jadą (nowe na początku), żeby się nie mijały.
+      if (state === "EN_ROUTE" && vs.length > 1) {
+        const order = (v) => (was(v) == null ? -Infinity : loopDelta(was(v) - leg.start, L));
+        vs.sort((a, b) => order(a) - order(b) || a.id - b.id);
       }
       vs.forEach((v, k) => {
-        const p = leg ? pointAlong(leg, (k + 1) / (vs.length + 1)) : pos ? { x: pos[0], y: -pos[1] } : null;
-        if (p) out.push({ kind: "vehicle", id: v.id, data: v, line: lineId, px: p.x, py: p.y });
+        const target = state === "EN_ROUTE" ? leg.start + (leg.end - leg.start) * (k + 1) / (vs.length + 1) : leg.end;
+        const from = was(v);
+        // Zawsze do przodu po pętli. Cel za pojazdem bierze się z równego rozkładu (np. drugi pojazd
+        // zjechał z odcinka, więc ten "spada" z 2/3 na 1/2) - wtedy pojazd jedzie dalej, do połowy
+        // drogi, która mu została do przystanku.
+        let delta = from == null ? 0 : loopDelta(target - from, L);
+        if (delta < 0) {
+          const done = loopDelta(from - leg.start, L), legLen = leg.end - leg.start;
+          delta = done >= 0 && done <= legLen ? (legLen - done) / 2 : 0;
+        }
+        if (delta) moving = true;
+        next.set(v.id, { v, line: lineId, mode: "route", route, from: from ?? target, delta, t0: now, dur: this.updateMs });
       });
     }
-    this.vehicles = out;
+    return moving;
+  }
+
+  animProgress(a, now) {
+    return Math.min(1, (now - a.t0) / a.dur);
+  }
+
+  animDistance(a, now) {
+    return a.from + a.delta * this.animProgress(a, now);
+  }
+
+  // Pozycja pojazdu na ekranie w chwili now (układ ścieżki).
+  animPoint(a, now) {
+    if (a.mode === "route") return pointAtDistance(a.route, this.animDistance(a, now));
+    const f = this.animProgress(a, now);
+    return { x: a.x0 + (a.x1 - a.x0) * f, y: a.y0 + (a.y1 - a.y0) * f };
+  }
+
+  // Odległość wzdłuż trasy route, w której jest pojazd (wpis a), albo null, gdy nie jest na tej trasie.
+  distanceOn(a, route, now) {
+    if (!a || a.route !== route) return null;
+    return a.mode === "route" ? this.animDistance(a, now) : a.d;
+  }
+
+  // Pojazdy z pozycją w chwili now (układ ścieżki).
+  positionVehicles(now) {
+    if (this.vehiclesDirty) this.retargetVehicles(now);
+    const out = [];
+    for (const a of this.vehicleAnim.values()) {
+      const p = this.animPoint(a, now);
+      out.push({ kind: "vehicle", id: a.v.id, data: a.v, line: a.line, px: p.x, py: p.y });
+    }
     return out;
   }
 
@@ -619,7 +740,7 @@ export class MapView {
     ctx.globalAlpha = base * alpha;
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = css("--map-bg");
-    for (const v of this.vehicleItems()) {
+    for (const v of this.vehicles) {
       if (!filter(v)) continue;
       const [x, y] = this.toScreen(v.px, v.py);
       if (x < -10 || y < -10 || x > this.w + 10 || y > this.h + 10) continue;
@@ -732,7 +853,7 @@ export class MapView {
       const r = this.view.scale >= STATION_ICON_SCALE ? 11 : 6;
       for (const s of this.stations) consider(s, r);
     }
-    if (this.showVehicles) for (const v of this.vehicleItems()) consider(v, 6);
+    for (const v of this.vehicles) consider(v, 6); // pozycje z ostatniej klatki - tam, gdzie je widać
     // pinezka na wierzchu: łapiemy jej główkę (PIN_HEAD_Y px nad wskazanym punktem)
     if (this.pin) {
       const [x, y] = this.toScreen(this.pin.x, -this.pin.y);
@@ -855,6 +976,12 @@ export class MapView {
       this.requestDraw();
     });
   }
+}
+
+// Różnica odległości na pętli długości L sprowadzona do (-L/4, 3L/4]: ruch do przodu albo mały wstecz.
+function loopDelta(d, L) {
+  const m = ((d % L) + L) % L;
+  return m > L * 0.75 ? m - L : m;
 }
 
 const truncate = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
