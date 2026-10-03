@@ -5,7 +5,10 @@ public sealed class BridgeOptions
 {
     public const string Section = "Bridge";
 
-    /// <summary>Folder the mod writes to (app.saveUserdata "tf3export").</summary>
+    /// <summary>
+    /// Folder the mod writes to (app.saveUserdata "tf3export").
+    /// Empty = detected from Steam (see <see cref="ResolveInputDir"/>).
+    /// </summary>
     public string InputDir { get; set; } = "";
 
     /// <summary>
@@ -27,6 +30,15 @@ public sealed class BridgeOptions
 
     /// <summary>Write indented JSON to the output (debugging; larger files).</summary>
     public bool IndentOutput { get; set; }
+
+    /// <summary>
+    /// A configured path wins (relative to the exe folder); empty = Steam's userdata folder of the
+    /// account that plays TF3 (<see cref="SteamLocator"/>), or "" when none was found.
+    /// </summary>
+    public static string ResolveInputDir(string dir) =>
+        !string.IsNullOrWhiteSpace(dir)
+            ? Path.GetFullPath(dir, AppContext.BaseDirectory)
+            : SteamLocator.FindInputDir() ?? "";
 
     /// <summary>
     /// Relative paths are resolved against the exe folder, not the working directory, so the app

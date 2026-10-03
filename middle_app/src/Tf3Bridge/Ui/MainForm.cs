@@ -59,7 +59,9 @@ public sealed class MainForm : Form
         var paths = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, Margin = new Padding(0, 8, 0, 8) };
         paths.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         paths.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        AddPathRow(paths, "Wejście (mod):", _options.InputDir);
+        AddPathRow(paths, "Wejście (mod):", _options.InputDir.Length > 0
+            ? _options.InputDir
+            : "(nie znaleziono folderu TF3 w Steam – ustaw --Bridge:InputDir=…)");
         AddPathRow(paths, "Wyjście (strona):", _options.OutputDir);
 
         var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12), RowCount = 3, ColumnCount = 1 };

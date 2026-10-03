@@ -34,7 +34,11 @@ internal static class Program
         builder.Logging.AddDebug();
 
         builder.Services.Configure<BridgeOptions>(builder.Configuration.GetSection(BridgeOptions.Section));
-        builder.Services.PostConfigure<BridgeOptions>(o => o.OutputDir = BridgeOptions.ResolveOutputDir(o.OutputDir));
+        builder.Services.PostConfigure<BridgeOptions>(o =>
+        {
+            o.InputDir = BridgeOptions.ResolveInputDir(o.InputDir);
+            o.OutputDir = BridgeOptions.ResolveOutputDir(o.OutputDir);
+        });
         builder.Services.AddSingleton<LocalFolderPublisher>();
         builder.Services.AddSingleton<AzureMirror>();
         builder.Services.AddSingleton<IPublisher, MirroringPublisher>();

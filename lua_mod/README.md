@@ -40,6 +40,14 @@ New-Item -ItemType Junction -Path "C:\Program Files (x86)\Steam\userdata\3828742
 
 Mod trzeba włączyć przy tworzeniu lub wczytywaniu gry.
 
+## Paczka dla innych
+
+```powershell
+lua_mod\pack.ps1
+```
+
+Skrypt generuje `_content.json` z plików `.lua` w `content\` (po dodaniu nowego modułu wystarczy go uruchomić; `-ContentOnly` tylko odświeża listę) i buduje `lua_mod\dist\estiv0_tf3export.zip`. Zip zawiera folder `estiv0_tf3export` z `mod.json`, `_content.json`, `_metadata` i `content`. Rozpakowuje się go do `Steam\userdata\<konto>\3493540\local\mods\` i włącza mod w grze.
+
 ## Pliki wyjściowe
 
 Folder: `C:\Program Files (x86)\Steam\userdata\38287428\3493540\local\tf3export\`
