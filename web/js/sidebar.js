@@ -86,6 +86,13 @@ export class Sidebar {
     });
     this.list.addEventListener("mouseleave", () => onHoverItem?.(null));
 
+    // Tak samo linie w szczegółach (miasta, stacji, zakładu): wskazana linia na mapie na tle zaznaczonego obiektu.
+    this.detail.addEventListener("mouseover", (e) => {
+      const line = e.target.closest("[data-line]");
+      onHoverItem?.(line ? "line" : null, line ? Number(line.dataset.line) : null);
+    });
+    this.detail.addEventListener("mouseleave", () => onHoverItem?.(null));
+
     this.detail.addEventListener("click", (e) => {
       if (e.target.closest("[data-close]")) {
         onClose?.();

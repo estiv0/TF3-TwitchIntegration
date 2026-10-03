@@ -294,24 +294,34 @@ export class MapView {
     }
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    // Punkt wskazany na liście: reszta półprzezroczysta, on na końcu, w pełnym kolorze.
-    const spot = this.spotItem();
-    ctx.globalAlpha = spot ? DIM : 1;
+    // Punkt wskazany na liście albo linia wskazana w panelu (wtedy razem z zaznaczonym obiektem, np. miastem):
+    // reszta półprzezroczysta, wskazane na końcu, w pełnym kolorze.
+    const spotLine = this.spotLine();
+    const spot = this.spotItem(spotLine === null ? this.listHover : this.selected);
+    ctx.globalAlpha = spot || spotLine !== null ? DIM : 1;
     if (this.linesView) this.drawVisibleLines();
     else if (this.selected?.kind === "line") this.drawLine(this.selected.id);
     this.drawIndustries(spot);
     if (this.showStations) this.drawStations(spot);
     this.drawTowns(spot);
     ctx.globalAlpha = 1;
+    if (spotLine !== null) this.drawLine(spotLine);
     if (spot?.kind === "industry") this.drawIndustry(spot);
     else if (spot?.kind === "station") this.drawStation(spot);
     else if (spot?.kind === "town") this.drawTown(spot, null);
     this.drawPin();
   }
 
-  // Miasto / zakład / stacja wskazane na liście, o ile jest na ekranie; inaczej null.
-  spotItem() {
+  // Linia wskazana w panelu, której nie podświetla już drawVisibleLines (ta robi to tylko na zakładce
+  // Linie z okiem, bez zaznaczonej linii); inaczej null.
+  spotLine() {
     const h = this.listHover;
+    if (h?.kind !== "line" || !this.lines.has(h.id)) return null;
+    return this.linesView && this.selected?.kind !== "line" ? null : h.id;
+  }
+
+  // Miasto / zakład / stacja ({ kind, id }), o ile jest na ekranie; inaczej null.
+  spotItem(h) {
     const items = { town: this.towns, industry: this.industries, station: this.stations }[h?.kind];
     const item = items?.find((x) => x.id === h.id);
     if (!item) return null;
