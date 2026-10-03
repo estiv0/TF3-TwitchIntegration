@@ -149,6 +149,7 @@ Ze strony [api.engine](https://wiki.transportfever3.com/script-doc/api/engine.ht
   - `industry.getIndustryProductivityInfo(e)`
   - `headquarters.getTransportedData()`, `getCompaniesValue()`
   - `logbook.getLogValueMostRecent(e, name)`
+  - `logbook.getChart(e, names)` (potwierdzone w logu): `series[i]` to **para list** `{ czasy gry (ms), wartości }`, a nie lista punktów `{x, y}`, jak sugeruje typ `{{{number}}}`. Bez `ChartConfig` każda seria ma 50 punktów od początku gry do teraz, wartości uśrednione w przedziałach. `xRange`/`yRange` to `{min, max}`.
 - **Systemy** (`api.engine.system.*`): `getLineVehicles(line)`, `getLinesForPlayer(player)`, `getStations(town)`, `getNodeTrackSegments(node)` / `getNodeStreetSegments(node)` (to rozstrzyga, czy krawędź jest torem, czy drogą).
 - **Nazwy ładunków:** `api.res.cargoTypeRep.get(id).name` (używane w `landmarks_notification.script.tl`).
 

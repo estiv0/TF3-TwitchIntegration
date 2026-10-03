@@ -103,23 +103,25 @@ end
 
 -- Historia z logbooka świata (wykresy z okna Finanse/Miasta): nazwa -> [[rok, wartość], ...], rok jako
 -- liczba z ułamkiem (1921.5 = połowa 1921). Najwyżej maxPoints punktów na serię (równo przerzedzone,
--- ostatni zawsze); x punktu to czas gry, zamieniany na datę przez getCalendarDate.
+-- ostatni zawsze). ChartResult.series[i] to para list { czasy gry, wartości } (domyślnie po 50 punktów
+-- od początku gry do teraz, wartości uśrednione w przedziałach); czas zamieniamy na datę przez util.date.
 function C.worldHistory(names, maxPoints)
 	local res = api.engine.util.logbook.getChart(api.engine.util.getWorld(), names)
 	local out = {}
 	for i, series in ipairs(util.list(res and res.series)) do
-		local pts = util.list(series)
-		local step = math.max(1, math.ceil(#pts / maxPoints))
+		local xs, ys = util.list(util.field(series, 1)), util.list(util.field(series, 2))
+		local n = math.min(#xs, #ys)
+		local step = math.max(1, math.ceil(n / maxPoints))
 		local o = {}
-		local function add(p)
-			local x, y = util.field(p, 1), util.field(p, 2)
+		local function add(j)
+			local x, y = xs[j], ys[j]
 			local d = type(x) == "number" and util.date(x)
 			if d and type(d.year) == "number" and type(y) == "number" then
 				o[#o + 1] = { util.round(d.year + ((d.month or 1) - 1) / 12 + ((d.day or 1) - 1) / 365, 3), util.round(y, 0) }
 			end
 		end
-		for j = 1, #pts, step do add(pts[j]) end
-		if #pts > 0 and (#pts - 1) % step ~= 0 then add(pts[#pts]) end
+		for j = 1, n, step do add(j) end
+		if n > 0 and (n - 1) % step ~= 0 then add(n) end
 		if names[i] then out[names[i]] = o end
 	end
 	return out
