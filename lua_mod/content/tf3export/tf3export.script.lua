@@ -111,10 +111,27 @@ local function newSession(now)
 end
 
 ---------------------------------------------------------------- ustawienia
+-- Czy plik ustawień istnieje? app.loadUserdata na brakującym pliku zgłasza błąd gry
+-- ("Failed to load userdata", z oknem błędu) mimo pcall, więc najpierw sprawdzamy listę plików.
+-- getAllUserdata zwraca nazwy; na wszelki wypadek akceptujemy też wariant z ".lua".
+local function settingsFileExists()
+	local ok, names = pcall(function() return app.getAllUserdata(SETTINGS_DIR) end)
+	if not ok then return false end
+	for _, name in ipairs(util.list(names)) do
+		if name == SETTINGS_FILE or name == SETTINGS_FILE .. ".lua" then return true end
+	end
+	return false
+end
+
 -- Wczytuje SETTINGS do cfg; zwraca listę zmienionych kluczy ("klucz=wartość").
+-- Brak pliku = wartości domyślne; nieudany odczyt (np. plik w trakcie zapisu) = bez zmian.
 local function loadSettings()
-	local ok, t = pcall(function() return app.loadUserdata(SETTINGS_DIR, SETTINGS_FILE) end)
-	if not ok or type(t) ~= "table" then t = {} end
+	local t = {}
+	if settingsFileExists() then
+		local ok, loaded = pcall(function() return app.loadUserdata(SETTINGS_DIR, SETTINGS_FILE) end)
+		if not ok or type(loaded) ~= "table" then return {} end
+		t = loaded
+	end
 	local changed = {}
 	for key, spec in pairs(SETTINGS) do
 		local v = t[key]

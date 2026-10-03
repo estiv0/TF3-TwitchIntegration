@@ -51,6 +51,7 @@ internal static class Program
         var mirror = host.Services.GetRequiredService<AzureMirror>();
         mirror.Configure(AzureSettingsStore.Load());
         var mod = ModInstaller.Sync(options.InputDir, host.Services.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(ModInstaller)));
+        ModSettingsStore.EnsureExists(options.InputDir);
 
         Application.Run(new MainForm(runner, mirror, options, mod, uiLog));
     }

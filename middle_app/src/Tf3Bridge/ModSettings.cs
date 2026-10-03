@@ -88,6 +88,18 @@ public static partial class ModSettingsStore
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Writes the defaults when there is no settings file yet, so the mod always finds one
+    /// (a missing file makes the game log a userdata error). Best effort: failures are ignored.
+    /// </summary>
+    public static void EnsureExists(string inputDir)
+    {
+        var path = PathFor(inputDir);
+        if (path is null || File.Exists(path)) return;
+        try { Save(ModSettings.Default, path); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+
     /// <summary>Written to a temp file and moved over, so the game never reads half a file.</summary>
     public static void Save(ModSettings settings, string path)
     {
