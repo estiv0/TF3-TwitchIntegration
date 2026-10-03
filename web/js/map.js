@@ -227,11 +227,18 @@ export class MapView {
     this.w = width;
     this.h = height;
     this.dpr = dpr;
-    this.canvas.width = Math.max(1, Math.round(width * dpr));
-    this.canvas.height = Math.max(1, Math.round(height * dpr));
+    const cw = Math.max(1, Math.round(width * dpr));
+    const ch = Math.max(1, Math.round(height * dpr));
+    if (this.canvas.width === cw && this.canvas.height === ch) return this.requestDraw();
+    this.canvas.width = cw;
+    this.canvas.height = ch;
     // Dane mogły przyjść, zanim canvas dostał rozmiar - dopasuj widok, gdy już go ma.
     if (!this.fitted) this.fit();
-    this.requestDraw();
+    // Zmiana rozmiaru czyści canvas, a ResizeObserver działa już po klatkach rAF -
+    // rysuj od razu, inaczej przeglądarka pokaże pustą klatkę (migotanie przy przeciąganiu panelu).
+    if (this.frame) cancelAnimationFrame(this.frame);
+    this.frame = 0;
+    this.draw();
   }
 
   fit(bbox = this.bbox, maxScale = Infinity) {
