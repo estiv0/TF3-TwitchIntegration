@@ -220,6 +220,18 @@ button { font: inherit; color: inherit; }
 .filters button:hover { color: var(--text); }
 .filters button[aria-pressed="true"] { color: var(--text); border-color: var(--accent); }
 .filters button span { opacity: .7; margin-left: 2px; }
+/* Zakłady: przełącznik produkcja/zużycie w osobnym wierszu, ładunki jako ikonki z liczbą. */
+.filter-modes { display: flex; gap: 6px; width: 100%; }
+.filters .cargo-btn { display: inline-flex; align-items: center; padding: 3px 8px 3px 6px; }
+.filters .cargo-btn .cargo-ico { margin-right: 3px; }
+
+/* Kwadracik zakładu z ikonkami produkcji; obwódka w kolorze rodzaju (jak .dot-raw / .dot-processing). */
+.ind-badge {
+  display: inline-flex; flex: none; gap: 1px; padding: 1px; border-radius: 4px;
+  border: 2px solid var(--industry-processing); background: var(--panel-2);
+}
+.ind-badge.ind-raw { border-color: var(--industry-raw); }
+.ind-badge img { width: 16px; height: 16px; object-fit: contain; display: block; }
 
 .row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .row-main .row-name { flex: none; }

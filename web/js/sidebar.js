@@ -1,7 +1,7 @@
 // Panel boczny: listy (miasta, przemysł, stacje, linie) i szczegóły zaznaczonego obiektu.
 
 import {
-  STATION_ORDER, carrierIcon, carrierName, cargoLabel, escapeHtml as esc, iconHtml, landUseName, stationName,
+  STATION_ORDER, carrierIcon, carrierName, cargoImg, cargoLabel, cargoName, escapeHtml as esc, iconHtml, landUseName, stationName,
   fmtDec, fmtInt, fmtMoney, fmtPercent, fmtSignedPercent, industryOfStation, linesByIndustry, linesByStation, rgb, stationImg,
   stationUse, townGrowth, townSize,
 } from "./format.js";
@@ -32,6 +32,7 @@ export class Sidebar {
     this.carriers = root.querySelector("[data-carriers]");
     this.viewportBtn = root.querySelector("[data-viewport]");
     this.typeFilter = { lines: "", stations: "" }; // filtr nośnika / rodzaju stacji, "" = wszystkie
+    this.industryFilter = { mode: "out", cargo: "" }; // lista zakładów: produkuje ("out") / zużywa ("in") ładunek
     this.townSort = "size";                        // lista miast: "size" (wielkość), "profit" (zarobek linii), "growth" (wzrost)
     this.earnings = { towns: new Map(), outside: null }; // townEarnings()
     this.stationLines = new Map();                 // id stacji -> linie
@@ -45,6 +46,16 @@ export class Sidebar {
       const sort = e.target.closest("[data-sort]");
       if (sort) {
         this.townSort = sort.dataset.sort;
+        this.renderCarriers();
+        this.renderList();
+        return;
+      }
+      const mode = e.target.closest("[data-ind-mode]");
+      const cargo = e.target.closest("[data-ind-cargo]");
+      if (mode || cargo) {
+        if (mode) this.industryFilter.mode = mode.dataset.indMode;
+        // ponowny klik w wybrany ładunek zdejmuje filtr
+        else this.industryFilter.cargo = cargo.dataset.indCargo === this.industryFilter.cargo ? "" : cargo.dataset.indCargo;
         this.renderCarriers();
         this.renderList();
         return;
@@ -228,10 +239,12 @@ export class Sidebar {
           </li>`;
       }
     } else if (this.tab === "industries") {
-      html = [...d.industries].filter((i) => match(i.name)).sort((a, b) => (b.level ?? 0) - (a.level ?? 0))
+      const { mode, cargo } = this.industryFilter;
+      const hasCargo = (i) => !cargo || industryCargos(i, mode).has(cargo);
+      html = [...d.industries].filter((i) => hasCargo(i) && match(i.name)).sort((a, b) => (b.level ?? 0) - (a.level ?? 0))
         .map((i) => `
           <li class="row" data-kind="industry" data-id="${i.id}" aria-current="${isSel("industry", i.id)}">
-            <span class="dot dot-${industryKind(i)}"></span>
+            ${industryBadge(i)}
             <span class="row-name">${esc(i.name)}</span>
             <span class="row-value">${esc(t("list.level", { n: i.level ?? "–" }))}</span>
           </li>`).join("");
@@ -247,7 +260,7 @@ export class Sidebar {
           const [k, id] = ind ? ["industry", ind.id] : ["station", s.id];
           return `
           <li class="row" data-kind="${k}" data-id="${id}" aria-current="${isSel(k, id)}">
-            ${ind ? `<span class="dot dot-${industryKind(ind)}"></span>` : iconHtml(stationImg(s), s.kind)}
+            ${ind ? industryBadge(ind) : iconHtml(stationImg(s), s.kind)}
             <span class="row-name">${ind ? iconHtml(stationImg(s), s.kind) : ""} ${esc(s.name ?? ind?.name ?? stationName(s.kind))}</span>
             <span class="row-value">${esc(t("list.lines", { n: fmtInt(nLines(s)) }))}</span>
           </li>`;
@@ -277,7 +290,11 @@ export class Sidebar {
 
   // Przyciski typów linii / rodzajów stacji: tylko typy obecne w danych, z liczbą pozycji.
   renderCarriers() {
-    this.carriers.hidden = !(this.tab in this.typeFilter || this.tab === "towns");
+    this.carriers.hidden = !(this.tab in this.typeFilter || this.tab === "towns" || this.tab === "industries");
+    if (this.tab === "industries") {
+      this.carriers.innerHTML = this.industryFilterHtml();
+      return;
+    }
     if (this.tab === "towns") {
       const btn = (key) =>
         `<button type="button" data-sort="${key}" aria-pressed="${this.townSort === key}">${esc(t(`town.sort.${key}`))}</button>`;
@@ -300,6 +317,27 @@ export class Sidebar {
     this.carriers.innerHTML = btn("", esc(t("filter.all")), items.length)
       + order.filter((c) => counts.has(c))
         .map((c) => btn(c, `${carrierIcon(c, c)} ${esc(nameOf(c) ?? t("filter.none"))}`, counts.get(c))).join("");
+  }
+
+  // Filtr zakładów: tryb (produkcja / zużycie) i jeden ładunek z liczbą zakładów, które go produkują / zużywają.
+  industryFilterHtml() {
+    const f = this.industryFilter;
+    const counts = new Map();
+    for (const i of this.dynamic?.industries ?? [])
+      for (const c of industryCargos(i, f.mode)) counts.set(c, (counts.get(c) ?? 0) + 1);
+    if (f.cargo && !counts.has(f.cargo)) counts.set(f.cargo, 0); // wybrany ładunek zostaje po zmianie trybu
+    const modeBtn = (key) =>
+      `<button type="button" data-ind-mode="${key}" aria-pressed="${f.mode === key}">${esc(t(key === "out" ? "industry.filterOut" : "industry.filterIn"))}</button>`;
+    const cargoBtn = ([c, n]) => {
+      const src = cargoImg(c);
+      const label = src ? `<img class="cargo-ico" src="${src}" alt="" onerror="this.remove()">` : esc(cargoName(c));
+      return `<button type="button" class="cargo-btn" data-ind-cargo="${esc(c)}" aria-pressed="${f.cargo === c}"`
+        + ` title="${esc(cargoName(c))}" aria-label="${esc(cargoName(c))}">${label}<span>${fmtInt(n)}</span></button>`;
+    };
+    const cargos = [...counts].sort(([a], [b]) => cargoName(a).localeCompare(cargoName(b), locale()));
+    const all = `<button type="button" data-ind-cargo="" aria-pressed="${!f.cargo}">${esc(t("filter.all"))}`
+      + `<span>${fmtInt(this.dynamic?.industries?.length ?? 0)}</span></button>`;
+    return `<div class="filter-modes">${modeBtn("out")}${modeBtn("in")}</div>${all}${cargos.map(cargoBtn).join("")}`;
   }
 
   // ---------------------------------------------------------------- szczegóły
@@ -419,7 +457,7 @@ function industryDetail(i, lines) {
   const outputs = industryOutputs(i);
   const produced = new Set(outputs.keys());
   const stocks = i.stocks ?? [];
-  const isInput = (s) => s.input ?? !produced.has(s.cargo); // starszy eksport: bez flagi input
+  const isInput = (s) => isInputStock(s, produced);
   const inputs = stocks.filter(isInput);
   const perYear = (n) => (n == null ? "" : `<span>${esc(t("industry.perYear", { n: fmtInt(n) }))}</span>`);
   const yearOut = i.producedYear ?? {};
@@ -456,6 +494,24 @@ function industryDetail(i, lines) {
     ${storage}
     ${year}
     ${lineLinks(lines)}`;
+}
+
+// Starszy eksport nie ma flagi input: wejściem jest magazyn ładunku, którego zakład nie produkuje.
+const isInputStock = (s, produced) => s.input ?? !produced.has(s.cargo);
+
+/** Ładunki, które zakład produkuje (mode "out") albo zużywa (mode "in"). */
+function industryCargos(i, mode) {
+  const produced = new Set(industryOutputs(i).keys());
+  if (mode === "out") return produced;
+  return new Set((i.stocks ?? []).filter((s) => isInputStock(s, produced)).map((s) => s.cargo));
+}
+
+// Kwadracik zakładu w kolorze rodzaju z ikonkami produkowanych ładunków (jak ikonka rodzaju przy stacjach).
+function industryBadge(i) {
+  const imgs = [...industryOutputs(i).keys()].map(cargoImg).filter(Boolean)
+    .map((src) => `<img src="${src}" alt="" onerror="this.remove()">`).join("");
+  return imgs ? `<span class="ind-badge ind-${industryKind(i)}" aria-hidden="true">${imgs}</span>`
+    : `<span class="dot dot-${industryKind(i)}"></span>`;
 }
 
 // Stan "oka" zapamiętany w przeglądarce; domyślnie włączone.
