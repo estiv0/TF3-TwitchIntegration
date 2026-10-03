@@ -55,6 +55,9 @@ const sidebar = new Sidebar($("#sidebar"), {
   onStop(lineId, index) {
     map.focusStop(lineId, index);
   },
+  onClose() {
+    clearSelection();
+  },
   onLinesView(view) {
     map.setLinesView(view);
   },
@@ -75,11 +78,15 @@ $("#stations").addEventListener("click", (e) => {
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || e.defaultPrevented) return;
   if (e.target.closest?.("input, textarea, select, [contenteditable]")) return;
-  if (!sidebar.selected) return;
+  if (sidebar.selected) clearSelection();
+});
+
+// Odznaczenie obiektu: Esc albo × w panelu szczegółów.
+function clearSelection() {
   map.select(null);
   sidebar.setSelected(null);
   map.hoverItem(null);
-});
+}
 
 let stationLines = new Map();  // id stacji -> linie (do tooltipa)
 let industryLines = new Map(); // id zakładu -> linie jego stacji

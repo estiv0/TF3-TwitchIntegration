@@ -8,7 +8,7 @@ import { locale, t } from "./i18n.js";
 import { industryKind, industryOutputs } from "./map.js";
 
 export class Sidebar {
-  constructor(root, { onPick, onStop, onLinesView, onHoverItem }) {
+  constructor(root, { onPick, onStop, onClose, onLinesView, onHoverItem }) {
     this.root = root;
     this.onPick = onPick;
     this.onStop = onStop;
@@ -78,6 +78,10 @@ export class Sidebar {
     this.list.addEventListener("mouseleave", () => onHoverItem?.(null));
 
     this.detail.addEventListener("click", (e) => {
+      if (e.target.closest("[data-close]")) {
+        onClose?.();
+        return;
+      }
       const line = e.target.closest("[data-line]");
       if (line) {
         this.onPick("line", Number(line.dataset.line));
@@ -254,10 +258,11 @@ export class Sidebar {
       return;
     }
     this.detail.hidden = false;
-    this.detail.innerHTML = sel.kind === "town" ? townDetail(item)
+    const close = `<button type="button" class="detail-close" data-close title="${esc(t("detail.close"))}" aria-label="${esc(t("detail.close"))}">×</button>`;
+    this.detail.innerHTML = close + (sel.kind === "town" ? townDetail(item)
       : sel.kind === "line" ? lineDetail(item, this.focusedStop)
       : sel.kind === "station" ? stationDetail(item, this.stationLines.get(item.id) ?? [])
-      : industryDetail(item, this.industryLines.get(item.id) ?? []);
+      : industryDetail(item, this.industryLines.get(item.id) ?? []));
   }
 }
 

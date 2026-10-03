@@ -223,10 +223,16 @@ button { font: inherit; color: inherit; }
 .row-hint mark { background: none; color: var(--accent); }
 
 .detail {
-  margin: 0 10px 10px; padding: 14px; border-radius: var(--radius);
+  position: relative; margin: 0 10px 10px; padding: 14px; border-radius: var(--radius);
   background: var(--panel-2); border: 1px solid var(--border);
 }
-.detail h2 { font-size: 16px; }
+.detail h2 { font-size: 16px; padding-right: 24px; }
+.detail-close {
+  position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; padding: 0;
+  border: 0; border-radius: 6px; background: none; cursor: pointer;
+  color: var(--muted); font-size: 18px; line-height: 1;
+}
+.detail-close:hover { color: var(--text); background: var(--bg); }
 .detail h3 { margin: 12px 0 6px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .detail-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
 
