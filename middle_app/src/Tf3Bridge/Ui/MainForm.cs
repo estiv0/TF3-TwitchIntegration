@@ -43,8 +43,8 @@ public sealed class MainForm : Form
         _log = log;
 
         Text = "Tf3Bridge";
-        ClientSize = new Size(720, 420);
-        MinimumSize = new Size(520, 300);
+        ClientSize = new Size(900, 460);
+        MinimumSize = new Size(900, 320);
         StartPosition = FormStartPosition.CenterScreen;
         Font = new Font("Segoe UI", 9f);
 
@@ -54,7 +54,8 @@ public sealed class MainForm : Form
         var openOutput = new Button { Text = "Folder wyjściowy", AutoSize = true, MinimumSize = new Size(0, 30) };
         var openInput = new Button { Text = "Folder moda", AutoSize = true, MinimumSize = new Size(0, 30) };
         var azure = new Button { Text = "Azure…", AutoSize = true, MinimumSize = new Size(0, 30) };
-        header.Controls.AddRange([statusBox, _toggle, openOutput, openInput, azure]);
+        var modSettings = new Button { Text = "Ustawienia moda…", AutoSize = true, MinimumSize = new Size(0, 30) };
+        header.Controls.AddRange([statusBox, _toggle, openOutput, openInput, azure, modSettings]);
 
         var paths = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, Margin = new Padding(0, 8, 0, 8) };
         paths.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -84,6 +85,7 @@ public sealed class MainForm : Form
         openOutput.Click += (_, _) => OpenFolder(_options.OutputDir);
         openInput.Click += (_, _) => OpenFolder(_options.InputDir);
         azure.Click += (_, _) => EditAzure();
+        modSettings.Click += (_, _) => EditModSettings();
 
         var menu = new ContextMenuStrip();
         menu.Items.Add("Pokaż", null, (_, _) => RestoreFromTray());
@@ -198,6 +200,29 @@ public sealed class MainForm : Form
         AzureSettingsStore.Save(dialog.Settings);
         _mirror.Configure(dialog.Settings);
         UpdateAzure();
+    }
+
+    private void EditModSettings()
+    {
+        var path = ModSettingsStore.PathFor(_options.InputDir);
+        if (path is null)
+        {
+            MessageBox.Show("Nie znaleziono folderu TF3 w Steam, więc nie ma gdzie zapisać ustawień moda.\n"
+                +"Uruchom grę raz albo ustaw --Bridge:InputDir=…", "Tf3Bridge", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        using var dialog = new ModSettingsDialog(ModSettingsStore.Load(path));
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        try
+        {
+            ModSettingsStore.Save(dialog.Settings, path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show($"Nie udało się zapisać ustawień:\n{ex.Message}", "Tf3Bridge", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+        _log.CreateLogger(nameof(MainForm)).LogInformation("Mod settings saved to {Path}: {Settings}", path, dialog.Settings);
     }
 
     private void UpdateAzure()

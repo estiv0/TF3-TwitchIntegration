@@ -4,6 +4,8 @@ Mod do Transport Fever 3, który eksportuje dane gry jako JSON:
 - **dane dynamiczne** (miasta, przemysł, linie, pojazdy z pozycjami, gracz, data): co 2 dni gry, ale najwyżej raz na 10 s czasu rzeczywistego. Zbieranie i kodowanie są rozłożone na klatki, najwyżej `cfg.dynamicBudgetMs` (3 ms) pracy na klatkę;
 - **sieć dróg i torów**: pełny zrzut raz na sesję, a potem tylko **różnice** (`networkDelta`) po każdej budowie lub wyburzeniu, zarówno gracza, jak i miasta. Mod nasłuchuje zdarzeń `onPreBuildProposal`/`onPostBuildProposal`, ale reaguje tylko na te, które dotykają dróg, torów albo stacji z krawędziami. Czeka 2 s na koniec serii klików i przebudowuje sieć porcjami po 2 ms na klatkę. Dodatkowo co 5 min robi pełne porównanie na wypadek zmian bez zdarzenia.
 
+Częstotliwość eksportu, pojazdy i teren ustawia się w oknie Tf3Bridge (**Ustawienia moda…**). Bridge zapisuje `local\tf3export_settings\settings.lua`, a mod czyta go przez `app.loadUserdata` co 5 s, bez restartu gry (klucze i zakresy: `SETTINGS` w `tf3export.script.lua`). Bez Bridge obowiązują domyślne wartości z `cfg`.
+
 Na pauzie mod nic nie eksportuje. Szczegóły API i ustalenia z gry opisuje [../docs/tf3-api-findings.md](../docs/tf3-api-findings.md).
 
 ## Jak to działa w TF3 (potwierdzone w grze)
@@ -68,7 +70,10 @@ end
 Middle app wyciąga `json = "..."`, odwraca escapowanie Lua (`\"`, `\\`, `\n`, `\r`, `\t`, `\ddd`), wysyła dane i usuwa plik. Nie wiadomo, czy zapis jest atomowy, więc gdy plik jest niekompletny (brak końcowego `end`), middle app ponawia odczyt.
 
 - **`session`**: losowe ID wątku GUI. Nowe powstaje przy starcie gry i przy cofnięciu czasu gry, czyli po wczytaniu starszego save'a. `seq` liczy się od 1 w każdej sesji, osobno dla `dynamic` i `network`.
-- **`dynamic`**: `{ v, kind, session, seq, gameTime, date{year,month,day}, player{id,name,balance}, towns[], industries[], stations[], lines[], vehicles[] }`
+- **`dynamic`**: `{ v, kind, session, seq, gameTime, date{year,month,day}, player{id,name,balance}, company, towns[], industries[], stations[], lines[], vehicles[] }`
+  - `company` (liczone raz na miesiąc gry): `finance` = tabela z okna Finanse (`computeFinanceTable`, `cfg.financeYears` lat): `{ header[], rows[{ carrier, type, maintenance, construction, values[] }], total[], balance[], interest[], loan[] }`, gdzie `type` itd. to nazwy enumów `JournalEntry` (`INCOME`, `MAINTENANCE`/`VEHICLE`…), a `values[i]` to kwota w roku `header[i]`; `history` = serie z logbooka świata `companyBalance`, `companyTotalValue`, `townResidentialCount` jako `[[rok z ułamkiem, wartość], …]`, najwyżej `cfg.historyMaxPoints` punktów;
+  - `towns[].supply`: zaspokojenie potrzeb `[{ cargo, supply, demand }]` z `townBuildingSystem.getCargoSupplyAndLimit` (`demand` -1 = bez limitu);
+  - `industries[]`: `stocks[]` mają `amount` (stan magazynu), `input` i `consumedYear` (zużycie na rok); `producedYear` = ładunek -> produkcja na rok; `year` = `{ produced, consumed, destroyed }` z logbooka zakładu za ostatni rok;
   - ładunki są podawane jako nazwy zasobów, np. `"::/cargos/logs/logs.cargo"`;
   - `carrier` i `state` pojazdów to nazwy enumów (`RAIL`, `EN_ROUTE`…);
   - `stations[]`: jeden wiersz na konstrukcję stacji `{ id, kind, industry, carriers[], name, file, pos, owner, passengers, cargo, groups[], stations[] }`, gdzie `kind` to `RAIL`, `ROAD`, `WATER`, `AIR` (rzadko `TRAM`, `OTHER` = nierozpoznana stacja przemysłu), a `industry` to id zakładu, gdy stacja jest jego częścią, wyznaczany ze ścieżki konstrukcji, a dla stacji z modów z `carriers` (nośniki całej grupy stacji). Przystanki (bez konstrukcji, `small_stops`, `underground_station`) są pomijane;
@@ -112,10 +117,11 @@ W logu gry (`crash_dump\stdout.txt`) szukaj linii `[tf3export]`:
 - `vehicle positions: … ms for … vehicles (max … ms) - disabled for this session`: pozycje pojazdów wyłączone automatycznie, bo łącznie trwały za długo;
 - `network #N (full): … edges (initial, …)` oraz `networkDelta #N: … changed, … removed (build event, …)`;
 - `network: no change (periodic|build event, …)`: przebudowa nie znalazła zmian;
-- `saveUserdata failed: …`: błąd zapisu, po którym mod przełącza się na log.
+- `saveUserdata failed: …`: błąd zapisu, po którym mod przełącza się na log;
+- `settings: klucz=wartość, …`: wczytane ustawienia z Tf3Bridge, które różnią się od poprzednich.
 
 ## Znane ograniczenia
 
 - Snapshot sieci nie jest atomowy. Budowa w trakcie zbierania może dać mieszany stan.
 - Eksport dynamiczny jest rozłożony na klatki (budżet `cfg.dynamicBudgetMs`), więc snapshot powstaje przez kilka–kilkanaście klatek, a nie w jednej. Pętle (pozycje pojazdów, statystyki linii, kodowanie JSON) są dzielone w dowolnym miejscu. Pojedynczy kolektor (pojazdy, stacje, linie, miasta, przemysł) idzie w całości, więc najdłuższy z nich wyznacza najgorszą klatkę. Przed tą zmianą cały eksport zajmował 30–45 ms w jednej klatce.
-- Pozycje pojazdów (`api.engine.util.vehicle.getPosition` / `getSpeed`) są w każdym eksporcie dynamicznym, nie na żywo. Wyłącznik: `cfg.vehiclePositions = false` w `tf3export.script.lua`. Mod sam je wyłącza do końca sesji, gdy średnio z 3 eksportów trwają łącznie dłużej niż `cfg.vehiclePositionsMaxMs` (30 ms). Strona wtedy zgaduje położenie z numeru przystanku.
+- Pozycje pojazdów (`api.engine.util.vehicle.getPosition` / `getSpeed`) są w każdym eksporcie dynamicznym, nie na żywo. Wyłącznik: „Pojazdy” w ustawieniach moda w Tf3Bridge; wyłącza całe zbieranie pojazdów, a JSON nie ma wtedy klucza `vehicles` i `lines[].vehicleCount` (strona pokazuje „–”). Mod sam je wyłącza do końca sesji, gdy średnio z 3 eksportów trwają łącznie dłużej niż `cfg.vehiclePositionsMaxMs` (30 ms). Strona wtedy zgaduje położenie z numeru przystanku.

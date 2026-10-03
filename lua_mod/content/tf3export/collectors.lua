@@ -34,6 +34,97 @@ function C.player()
 	}
 end
 
+---------------------------------------------------------------- firma
+-- Nazwy enumów JournalEntry (scripts/journal.d.tl) - skrypty gry porównują je przez ==.
+local JOURNAL = {
+	Type = { "LOAN", "INTEREST", "CONSTRUCTION", "ACQUISITION", "MAINTENANCE", "INCOME", "OTHER", "SUBSIDY" },
+	Maintenance = { "VEHICLE", "INFRASTRUCTURE", "OTHER", "VEHICLE_MAINTENANCE" },
+	Construction = { "STREET", "TRACK", "SIGNAL", "STATION", "DEPOT", "BULLDOZER", "WAREHOUSE", "OTHER" },
+	Carrier = { "ROAD", "RAIL", "TRAM", "OTHER", "AIR", "WATER" },
+}
+
+local function journalName(kind, value)
+	if value == nil then return nil end
+	local je = api.type and api.type.JournalEntry
+	local e = je and util.field(je, kind)
+	if e then
+		for _, n in ipairs(JOURNAL[kind]) do
+			local ok, eq = pcall(function() return e[n] == value end)
+			if ok and eq then return n end
+		end
+	end
+	return util.scalar(value)
+end
+
+local function amounts(v)
+	local out = {}
+	for i, x in ipairs(util.list(v)) do out[i] = util.round(x, 0) end
+	return out
+end
+
+-- Tabela z okna Finanse (game_mechanics/finance/finances_table.tl): kolumny = lata (header), wiersze =
+-- { carrier, type, maintenance, construction, values } z kategorii transportu (per nośnik), inwestycji
+-- i innych; do tego zysk (total), stan konta (balance), odsetki, kredyt.
+function C.financeTable(years)
+	local player = api.engine.util.getPlayer()
+	local config = api.type.ChartConfig.new()
+	config.count = years
+	local fd = api.engine.util.finance.computeFinanceTable(player, config)
+	local rows = {}
+	local function addRow(carrier, key, values)
+		local k = util.list(fd:unfoldKey(key))
+		local typ = journalName("Type", k[1])
+		local maintenance = typ == "MAINTENANCE" and journalName("Maintenance", k[2]) or nil
+		rows[#rows + 1] = {
+			carrier = carrier,
+			type = typ,
+			maintenance = maintenance,
+			construction = (typ == "CONSTRUCTION" or maintenance == "INFRASTRUCTURE") and journalName("Construction", k[3]) or nil,
+			values = amounts(values),
+		}
+	end
+	fd:foreach_carrier(function(carrier)
+		local name = journalName("Carrier", carrier)
+		fd:foreach_transport(function(key, values) addRow(name, key, values) end, carrier)
+	end)
+	fd:foreach_investment(function(key, values) addRow(nil, key, values) end)
+	fd:foreach_other(function(_, values) rows[#rows + 1] = { type = "OTHER", values = amounts(values) } end)
+	local header = {}
+	for i, h in ipairs(util.list(fd.header)) do header[i] = tostring(h) end
+	return {
+		header = header,
+		rows = rows,
+		total = amounts(fd.total),
+		balance = amounts(fd.balance),
+		interest = amounts(fd.interest),
+		loan = amounts(fd.loan),
+	}
+end
+
+-- Historia z logbooka świata (wykresy z okna Finanse/Miasta): nazwa -> [[rok, wartość], ...], rok jako
+-- liczba z ułamkiem (1921.5 = połowa 1921). Najwyżej maxPoints punktów na serię (równo przerzedzone,
+-- ostatni zawsze); x punktu to czas gry, zamieniany na datę przez getCalendarDate.
+function C.worldHistory(names, maxPoints)
+	local res = api.engine.util.logbook.getChart(api.engine.util.getWorld(), names)
+	local out = {}
+	for i, series in ipairs(util.list(res and res.series)) do
+		local pts = util.list(series)
+		local step = math.max(1, math.ceil(#pts / maxPoints))
+		local o = {}
+		local function add(p)
+			local x, y = util.field(p, 1), util.field(p, 2)
+			local d = type(x) == "number" and util.date(x)
+			if d and type(d.year) == "number" and type(y) == "number" then
+				o[#o + 1] = { util.round(d.year + ((d.month or 1) - 1) / 12 + ((d.day or 1) - 1) / 365, 3), util.round(y, 0) }
+			end
+		end
+		for j = 1, #pts, step do add(pts[j]) end
+		if #pts > 0 and (#pts - 1) % step ~= 0 then add(pts[#pts]) end
+		if names[i] then out[names[i]] = o end
+	end
+	return out
+end
+
 ---------------------------------------------------------------- miasta
 -- cargoNeeds: {{{CargoTypeId, number}}} - lista (typ zabudowy) list par {ładunek, wartość}
 local function cargoNeeds(needs)
@@ -67,6 +158,23 @@ local function townCapacities()
 	return out
 end
 
+-- Zaspokojenie potrzeb miasta: [{ cargo, supply, demand }] jak w statystykach miast w grze
+-- (townBuildingSystem.getCargoSupplyAndLimit, wszystkie strefy razem; game_mechanics/towns/town_util.tl).
+-- demand -1 = bez limitu. nil, gdy API zawiedzie.
+local function townSupply(id)
+	local ok, map = pcall(function() return api.engine.system.townBuildingSystem.getCargoSupplyAndLimit(id) end)
+	if not ok or map == nil then return nil end
+	local out = {}
+	for cargo, v in util.pairs(map) do
+		local supply, limit = util.field(v, 1), util.field(v, 2)
+		if type(supply) == "number" and type(limit) == "number" then
+			out[#out + 1] = { cargo = C.cargoName(cargo), supply = math.ceil(supply), demand = math.floor(limit) }
+		end
+	end
+	table.sort(out, function(a, b) return a.demand > b.demand end)
+	return out
+end
+
 function C.towns()
 	local out = {}
 	local current = townCapacities()
@@ -84,6 +192,7 @@ function C.towns()
 				capacities = current[id] or initial,
 				initialCapacities = initial,
 				cargoNeeds = cargoNeeds(t.cargoNeeds),
+				supply = townSupply(id),
 			}
 		end
 	end
@@ -113,16 +222,52 @@ local function stockRules(stockList)
 	return rules
 end
 
-local function stocks(stockList)
+-- Magazyny zakładu: ładunek, pojemność, stan teraz (simEntityAtStockSystem, StockId od 0),
+-- input (magazyn wejściowy) i consumedYear (zużycie na rok, stockDatas[i].consumeFrequency -
+-- to samo, co okno zakładu pokazuje jako faktyczne zużycie).
+local function stocks(stockList, stockEntity)
 	local out = {}
 	if not stockList then return out end
-	for _, s in ipairs(util.list(stockList.stocks)) do
+	local enums = api.type and api.type["enum"]
+	local inputType = enums and util.field(util.field(enums, "StockListType"), "InputStock")
+	local datas = util.list(stockList.stockDatas)
+	for i, s in ipairs(util.list(stockList.stocks)) do
+		local amount
+		if stockEntity then
+			local ok, n = pcall(function() return api.engine.system.simEntityAtStockSystem.getStockCount(stockEntity, i - 1) end)
+			if ok and type(n) == "number" then amount = n end
+		end
+		local consume = datas[i] and util.field(datas[i], "consumeFrequency")
 		out[#out + 1] = {
 			cargo = C.cargoName(s.cargoType),
 			capacity = s.capacity,
+			amount = amount,
+			input = inputType ~= nil and s.type == inputType or nil,
+			consumedYear = type(consume) == "number" and consume > 0 and util.round(consume, 0) or nil,
 		}
 	end
 	return out
+end
+
+-- Faktyczna produkcja na rok: ładunek -> stockList.cargoData[ładunek].produceFrequency.
+local function producedYear(stockList)
+	local out = {}
+	if not stockList then return json.EMPTY_OBJECT end
+	for cargo, d in util.pairs(stockList.cargoData) do
+		local f = util.field(d, "produceFrequency")
+		if type(f) == "number" and f > 0 then out[C.cargoName(cargo)] = util.round(f, 0) end
+	end
+	return next(out) and out or json.EMPTY_OBJECT
+end
+
+-- Liczniki z logbooka zakładu za ostatni rok (wykres "Przepływ ładunków" w oknie zakładu):
+-- wyprodukowane, zużyte, zmarnowane (niezabrane). Brak wpisu = nil.
+local function yearLog(entity)
+	local function value(name)
+		local ok, v = pcall(function() return api.engine.util.logbook.getLogValuePerYear(entity, name) end)
+		return ok and type(v) == "number" and v or nil
+	end
+	return { produced = value("itemsProduced"), consumed = value("itemsConsumed"), destroyed = value("itemsDestroyed") }
 end
 
 function C.industries()
@@ -144,7 +289,9 @@ function C.industries()
 				manual = ind.manualDevelopment,
 				productivity = modifiers and util.round(util.field(modifiers, "productivity"), 3),
 				rules = stockRules(stock),
-				stocks = stocks(stock),
+				stocks = stocks(stock, ind.stockList),
+				producedYear = producedYear(stock),
+				year = yearLog(ind.stockList),
 			}
 		end
 	end
@@ -359,6 +506,7 @@ function C.lineStats(id, now, prevYear)
 end
 
 -- stationKinds: encja stacji -> rodzaj (z C.stations); nośnik linii bez pojazdów.
+-- vehicles = nil (pojazdy wyłączone): vehicleCount = nil, nośnik tylko z rodzaju stacji.
 function C.lines(vehicles, stationKinds)
 	-- liczba pojazdów i nośnik linii z już zebranej listy pojazdów (bez drugiego przejścia)
 	local perLine, carrier = {}, {}
@@ -443,7 +591,7 @@ function C.lines(vehicles, stationKinds)
 				owner = util.owner(id),
 				carrier = lineCarrier, -- z pojazdów, a bez pojazdów z rodzaju stacji (nil = przystanki przy ulicy)
 				stops = stops,
-				vehicleCount = perLine[id] or 0,
+				vehicleCount = vehicles and (perLine[id] or 0) or nil,
 			}
 		end
 	end

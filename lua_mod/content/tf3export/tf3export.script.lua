@@ -30,6 +30,9 @@ local cfg = {
 	networkSafetyEveryWallSec = 300, -- pełne porównanie sieci także bez zdarzeń (zabezpieczenie)
 	networkBudgetMs = 2,           -- czas pracy nad siecią na klatkę
 	formatVersion = 5,
+	financeYears = 5,              -- kolumny tabeli finansów (lata, jak w oknie Finanse)
+	historyMaxPoints = 300,        -- najwyżej tyle punktów na serię historii (saldo, wartość firmy, mieszkańcy)
+	vehicles = true,               -- pojazdy (lista, pozycje, liczba na linii); false = bez pojazdów w eksporcie
 	vehiclePositions = true,       -- pozycja i prędkość pojazdów (płynny ruch na stronie); false = wyłączone
 	vehiclePositionsMaxMs = 30,    -- pozycje liczone porcjami w budżecie klatki; jeśli łącznie trwają dłużej
 	                               -- (średnio z 3 eksportów), wyłączamy je do końca sesji (log: "vehicle positions")
@@ -40,7 +43,25 @@ local cfg = {
 	terrainBudgetMs = 4,           -- czas pracy nad terenem na klatkę
 	terrainCheckEveryWallSec = 30, -- jak często sprawdzać rewizje kafli terenu (terraformowanie)
 	terrainBench = false,          -- jednorazowy pomiar metod odczytu terenu (terrain.lua); zacina grę na ~6 s, wyniki w docs
+	terrain = true,                -- eksport terenu; false = wyłączony
+	settingsEveryWallSec = 5,      -- jak często czytać ustawienia z Tf3Bridge (patrz SETTINGS)
 }
+
+-- Ustawienia z okna "Ustawienia moda" w Tf3Bridge: local\tf3export_settings\settings.lua
+-- (format jak z app.saveUserdata). Czytane przez app.loadUserdata co settingsEveryWallSec, więc
+-- zmiany działają bez restartu gry. Klucz -> { typ, min, max }; zakresy jak w ModSettings.cs.
+-- Brak pliku albo złej wartości = domyślna z cfg powyżej.
+local SETTINGS_DIR, SETTINGS_FILE = "tf3export_settings", "settings"
+local SETTINGS = {
+	dynamicEveryDays = { "number", 1, 30 },
+	minDynamicWallSec = { "number", 2, 300 },
+	dynamicBudgetMs = { "number", 1, 10 },
+	vehicles = { "boolean" },
+	terrain = { "boolean" },
+	terrainStepM = { "number", 5, 100 },
+}
+local DEFAULTS = {}
+for key in pairs(SETTINGS) do DEFAULTS[key] = cfg[key] end
 
 ---------------------------------------------------------------- stan GUI
 -- Trwały między klatkami wątku GUI, nie trafia do save'a.
@@ -66,6 +87,9 @@ local S = {
 	vehiclePos = true,       -- pozycje pojazdów w tej sesji (wyłączane po przekroczeniu budżetu)
 	vehiclePosMs = {},       -- czasy zbierania pozycji z ostatnich eksportów (ms)
 	dyn = nil,               -- bieżące zadanie eksportu dynamicznego
+	company = nil,           -- finanse i historia (collectors.financeTable / worldHistory), co miesiąc gry
+	companyKey = nil,        -- miesiąc, z którego pochodzi company
+	settingsWall = nil,      -- kiedy ostatnio czytaliśmy ustawienia (nie zależy od sesji)
 }
 local terrainBenchDone = false -- raz na uruchomienie gry, nie na sesję
 
@@ -82,7 +106,44 @@ local function newSession(now)
 	S.seqTerrain, S.terrain, S.terrainSig, S.lastTerrainCheckWall = 0, nil, nil, nil
 	S.lineStats, S.lineStatsKey, S.prevYear = {}, nil, nil
 	S.vehiclePos, S.vehiclePosMs, S.dyn = cfg.vehiclePositions, {}, nil
+	S.company, S.companyKey = nil, nil
 	util.log(string.format("new session %s (writer mode '%s')", S.session, writer.mode()))
+end
+
+---------------------------------------------------------------- ustawienia
+-- Wczytuje SETTINGS do cfg; zwraca listę zmienionych kluczy ("klucz=wartość").
+local function loadSettings()
+	local ok, t = pcall(function() return app.loadUserdata(SETTINGS_DIR, SETTINGS_FILE) end)
+	if not ok or type(t) ~= "table" then t = {} end
+	local changed = {}
+	for key, spec in pairs(SETTINGS) do
+		local v = t[key]
+		if type(v) ~= spec[1] or v ~= v then -- zły typ albo NaN
+			v = DEFAULTS[key]
+		elseif spec[1] == "number" then
+			v = math.max(spec[2], math.min(spec[3], math.floor(v)))
+		end
+		if v ~= cfg[key] then
+			cfg[key] = v
+			changed[#changed + 1] = key .. "=" .. tostring(v)
+		end
+	end
+	table.sort(changed)
+	return changed
+end
+
+local function applySettings()
+	local changed = loadSettings()
+	if #changed == 0 then return end
+	util.log("settings: " .. table.concat(changed, ", "))
+	for _, c in ipairs(changed) do
+		local key = c:match("^(%w+)=")
+		if key == "vehicles" then
+			S.vehiclePos, S.vehiclePosMs = cfg.vehiclePositions, {} -- po włączeniu pozycje od nowa
+		elseif key == "terrain" or key == "terrainStepM" then
+			S.terrain, S.terrainSig = nil, nil -- przerwij bieżący eksport; przy włączonym zacznie się od nowa
+		end
+	end
 end
 
 ---------------------------------------------------------------- statystyki linii
@@ -148,12 +209,13 @@ end
 
 local DYN_STEPS = {
 	{ "vehicles", function(job)
-		job.snap.vehicles = collectors.vehicles()
+		-- bez pojazdów snap.vehicles zostaje nil: brak klucza w JSON i vehicleCount linii (strona pokazuje "–")
+		if cfg.vehicles then job.snap.vehicles = collectors.vehicles() end
 		return true
 	end },
 	{ "positions", function(job, deadline)
 		local vs = job.snap.vehicles
-		if not S.vehiclePos then return true end
+		if not vs or not S.vehiclePos then return true end
 		while job.i <= #vs do
 			if not collectors.vehiclePosition(vs[job.i]) then
 				S.vehiclePos = false
@@ -204,6 +266,23 @@ local DYN_STEPS = {
 		job.snap.player = collectors.player()
 		return true
 	end },
+	-- Firma: tabela finansów (lata) i historia z logbooka świata. Zmienia się wolno, a liczenie
+	-- (cała historia księgowa) może być drogie, więc raz na miesiąc gry (klucz z kroku "lines").
+	{ "company", function(job)
+		if S.company == nil or S.companyKey ~= S.lineStatsKey then
+			S.companyKey = S.lineStatsKey
+			local company = {}
+			local ok, fin = pcall(collectors.financeTable, cfg.financeYears)
+			if ok then company.finance = fin else util.log("finance table failed: " .. tostring(fin)) end
+			local okH, hist = pcall(collectors.worldHistory,
+				{ "companyBalance", "companyTotalValue", "townResidentialCount" }, cfg.historyMaxPoints)
+			if okH then company.history = hist else util.log("world history failed: " .. tostring(hist)) end
+			S.company = company
+			job.companyFresh = true
+		end
+		job.snap.company = S.company
+		return true
+	end },
 	{ "encode", function(job, deadline)
 		while job.k <= #DYN_ARRAYS do
 			local key = DYN_ARRAYS[job.k]
@@ -225,10 +304,13 @@ local DYN_STEPS = {
 			gameTime = job.now,
 			date = util.date(job.now),
 			player = job.snap.player,
+			company = job.snap.company,
 		}):sub(1, -2) -- bez zamykającej klamry
 		local out = { head }
 		for _, key in ipairs(DYN_ARRAYS) do
-			out[#out + 1] = ',"' .. key .. '":[' .. table.concat(job.parts[key], ",") .. "]"
+			if job.snap[key] ~= nil then -- pomijamy wyłączone (pojazdy)
+				out[#out + 1] = ',"' .. key .. '":[' .. table.concat(job.parts[key], ",") .. "]"
+			end
 		end
 		out[#out + 1] = "}"
 		job.content = table.concat(out)
@@ -248,13 +330,14 @@ end
 local function finishDynamic(job)
 	local ms = function(name) return (job.times[name] or 0) * 1000 end
 	local nVehicles = #(job.snap.vehicles or {})
-	if S.vehiclePos then trackVehiclePositions(nVehicles, ms("positions")) end
+	if S.vehiclePos and job.snap.vehicles then trackVehiclePositions(nVehicles, ms("positions")) end
 	util.log(string.format("dynamic #%d: work %.0f ms in %d frames (max %.0f ms/frame), %.2f s wall; "
 		.. "vehicles %.0f, positions %.0f (%d vehicles), stations %.0f, lines %.0f, line stats %.0f (%d lines), "
-		.. "towns %.0f, industries %.0f, player %.0f, encode %.0f, write %.0f ms; %d B",
+		.. "towns %.0f, industries %.0f, player %.0f, company %.0f%s, encode %.0f, write %.0f ms; %d B",
 		job.seq, job.work * 1000, job.frames, job.maxFrame * 1000, util.clock() - job.t0,
 		ms("vehicles"), ms("positions"), nVehicles, ms("stations"), ms("lines"), ms("lineStats"), job.statsCount,
-		ms("towns"), ms("industries"), ms("player"), ms("encode"), ms("write"), #(job.content or "")))
+		ms("towns"), ms("industries"), ms("player"), ms("company"), job.companyFresh and " (refreshed)" or "",
+		ms("encode"), ms("write"), #(job.content or "")))
 end
 
 local function stepDynamic()
@@ -405,6 +488,7 @@ local function stepTerrain()
 end
 
 local function updateTerrain(now, wall)
+	if not cfg.terrain then return end
 	if S.terrain then
 		stepTerrain()
 	elseif S.net == nil and S.rows ~= nil then -- najpierw sieć
@@ -489,6 +573,11 @@ local script = {
 		local now = util.gameTime()
 		if now == nil then return end
 		local wall = wallTime() or 0
+
+		if S.settingsWall == nil or wall - S.settingsWall >= cfg.settingsEveryWallSec then
+			S.settingsWall = wall
+			applySettings()
+		end
 
 		-- nowa sesja: pierwszy start albo cofnięcie czasu gry (wczytany starszy save)
 		if S.session == nil or (S.lastGameTime and now < S.lastGameTime) then

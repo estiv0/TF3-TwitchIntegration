@@ -56,6 +56,21 @@ dotnet test
 
 Każdy klucz można nadpisać z linii poleceń, np. `Tf3Bridge.exe --Bridge:OutputDir=D:\tf3out` (w polu „Element docelowy” skrótu) albo `dotnet run -- --Bridge:OutputDir=D:\tf3out`.
 
+## Ustawienia moda
+
+Przycisk **Ustawienia moda…** w oknie zmienia działanie moda w grze bez edycji plików:
+
+| Pole | Domyślnie | Klucz w modzie |
+|---|---|---|
+| Eksport danych co … dni gry | 2 (1–30) | `dynamicEveryDays` |
+| …ale nie częściej niż co … s | 10 (2–300) | `minDynamicWallSec` |
+| Czas pracy na klatkę | 3 ms (1–10) | `dynamicBudgetMs` |
+| Pojazdy (lista, pozycje, liczba na liniach) | tak | `vehicles` |
+| Eksport terenu | tak | `terrain` |
+| Dokładność terenu | 20 m (5–100) | `terrainStepM` |
+
+Mod nie ma dostępu do plików poza `app.loadUserdata`, więc Bridge zapisuje ustawienia jako plik userdata obok folderu eksportu: `local\tf3export_settings\settings.lua` (`ModSettingsStore`, zapis przez plik tymczasowy). Mod czyta go co 5 s, więc zmiany działają bez restartu gry; w logu gry pojawia się `[tf3export] settings: …`. Usunięcie pliku przywraca wartości domyślne.
+
 ## Wysyłka do Azure
 
 Zapis zawsze idzie lokalnie (`web\data`), a jeśli w oknie włączono Azure, `AzureMirror` dosyła zmienione pliki do kontenera Blob Storage, z którego czyta strona.
@@ -112,6 +127,8 @@ middle_app/
     BridgeRunner.cs               pętla co PollIntervalMs (start/stop z okna): przebieg + wysyłka do Azure
     Ui/MainForm.cs                okno: stan, log, zasobnik
     Ui/AzureDialog.cs             ustawienia Azure z testem połączenia
+    Ui/ModSettingsDialog.cs       ustawienia moda (częstotliwość eksportu, pojazdy, teren)
+    ModSettings.cs                ustawienia moda i ich zapis jako settings.lua dla app.loadUserdata
     Ui/UiLogProvider.cs           logi do okna
     Cloud/AzureSettings.cs        adres kontenera + SAS, zapis zaszyfrowany (DPAPI)
     Cloud/AzureMirror.cs          kolejka zmienionych plików i upload do Blob Storage
@@ -123,7 +140,7 @@ middle_app/
     Processing/JsonRead.cs        bezpieczne odczyty liczb i stringów z JsonNode
     Output/IPublisher.cs          interfejs celu publikacji
     Output/LocalFolderPublisher.cs
-  tests/Tf3Bridge.Tests/          xUnit: reader, składanie sieci, przebieg procesora, ustawienia Azure
+  tests/Tf3Bridge.Tests/          xUnit: reader, składanie sieci, przebieg procesora, ustawienia Azure i moda
 ```
 
 Skrypt zakładający zasoby w Azure: [../infra/azure-setup.ps1](../infra/azure-setup.ps1).
