@@ -28,6 +28,7 @@ lua_mod/                              → w grze: staging_area/estiv0_tf3export 
     util.lua              bezpieczny dostęp do API, enumy -> nazwy, czas gry, log
     writer.lua            zapis: app.saveUserdata albo log gry (zapas)
     terrain.lua           heightmapa (getBaseHeightAt porcjami) + jednorazowy benchmark metod odczytu terenu
+    commands.lua          komendy od Tf3Bridge (akcje widzów): local	f3export_cmd\queue.lua -> api.cmd -> results.lua
 ```
 
 Moduły ładuje się względnie przez `ug_require "util.lua"`. Wszystkie leżą w jednym folderze.
@@ -108,6 +109,25 @@ Gdy `app.saveUserdata` jest niedostępne, `writer.lua` pisze do `...\3493540\loc
 ```
 [tf3x] <kind> <session> <seq> <part>/<total> <fragment JSON-a>
 ```
+
+## Komendy od Tf3Bridge (akcje widzów)
+
+`commands.lua` co sekundę (`commandsEveryWallSec`) czyta w wątku GUI `local\tf3export_cmd\queue.lua`, który pisze Tf3Bridge:
+
+```lua
+function data()
+return {
+	commands = {
+		{ id = "3f2a9c1d7b4e", kind = "setName", created = 1759590000, entity = 1234, name = "Kraków | widz" },
+	},
+}
+end
+```
+
+- Rodzaje komend: na razie tylko `setName` (`api.cmd.makeEntitySetNameCmd`).
+- Wynik trafia do `local\tf3export_cmd\results.lua` (`app.saveUserdata`): `json` z listą `{ id, status, error }` (status `ok`, `failed`, `invalid`, `expired`) i `done` z identyfikatorami, z których mod po restarcie gry odtwarza, co już wykonał.
+- Komendy starsze niż 300 s są pomijane (`expired`).
+- Gra wysyła komendy ze swoich skryptów w wątkach symulacji; z wątku GUI to **jeszcze niesprawdzone**. Dlatego mod nie ufa tylko callbackowi `sendCommand`: po wysłaniu przez 15 s sprawdza, czy efekt jest widoczny (dla `setName`: czy encja ma nową nazwę). Log: `command <id>: sent setName`, potem `ok` albo `failed (...)`.
 
 ## Diagnostyka
 

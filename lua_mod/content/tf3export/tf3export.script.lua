@@ -20,6 +20,7 @@ local collectors = ug_require "collectors.lua"
 local writer = ug_require "writer.lua"
 local bench = ug_require "bench.lua"
 local terrain = ug_require "terrain.lua"
+local commands = ug_require "commands.lua"
 
 local cfg = {
 	dynamicEveryDays = 2,          -- eksport miast, przemysłu, stacji, linii i pojazdów (czas gry)...
@@ -45,6 +46,7 @@ local cfg = {
 	terrainBench = false,          -- jednorazowy pomiar metod odczytu terenu (terrain.lua); zacina grę na ~6 s, wyniki w docs
 	terrain = true,                -- eksport terenu; false = wyłączony
 	settingsEveryWallSec = 5,      -- jak często czytać ustawienia z Tf3Bridge (patrz SETTINGS)
+	commandsEveryWallSec = 1,      -- jak często czytać kolejkę komend z Tf3Bridge (commands.lua)
 }
 
 -- Ustawienia z okna "Ustawienia moda" w Tf3Bridge: local\tf3export_settings\settings.lua
@@ -90,6 +92,7 @@ local S = {
 	company = nil,           -- finanse i historia (collectors.financeTable / worldHistory), co miesiąc gry
 	companyKey = nil,        -- miesiąc, z którego pochodzi company
 	settingsWall = nil,      -- kiedy ostatnio czytaliśmy ustawienia (nie zależy od sesji)
+	commandsWall = nil,      -- kiedy ostatnio czytaliśmy kolejkę komend
 }
 local terrainBenchDone = false -- raz na uruchomienie gry, nie na sesję
 
@@ -111,23 +114,11 @@ local function newSession(now)
 end
 
 ---------------------------------------------------------------- ustawienia
--- Czy plik ustawień istnieje? app.loadUserdata na brakującym pliku zgłasza błąd gry
--- ("Failed to load userdata", z oknem błędu) mimo pcall, więc najpierw sprawdzamy listę plików.
--- getAllUserdata zwraca nazwy; na wszelki wypadek akceptujemy też wariant z ".lua".
-local function settingsFileExists()
-	local ok, names = pcall(function() return app.getAllUserdata(SETTINGS_DIR) end)
-	if not ok then return false end
-	for _, name in ipairs(util.list(names)) do
-		if name == SETTINGS_FILE or name == SETTINGS_FILE .. ".lua" then return true end
-	end
-	return false
-end
-
 -- Wczytuje SETTINGS do cfg; zwraca listę zmienionych kluczy ("klucz=wartość").
 -- Brak pliku = wartości domyślne; nieudany odczyt (np. plik w trakcie zapisu) = bez zmian.
 local function loadSettings()
 	local t = {}
-	if settingsFileExists() then
+	if util.userdataExists(SETTINGS_DIR, SETTINGS_FILE) then
 		local ok, loaded = pcall(function() return app.loadUserdata(SETTINGS_DIR, SETTINGS_FILE) end)
 		if not ok or type(loaded) ~= "table" then return {} end
 		t = loaded
@@ -594,6 +585,13 @@ local script = {
 		if S.settingsWall == nil or wall - S.settingsWall >= cfg.settingsEveryWallSec then
 			S.settingsWall = wall
 			applySettings()
+		end
+
+		-- komendy od Tf3Bridge: błąd nie może zatrzymać eksportu
+		if S.commandsWall == nil or wall - S.commandsWall >= cfg.commandsEveryWallSec then
+			S.commandsWall = wall
+			local okCmd, errCmd = pcall(commands.poll, wall)
+			if not okCmd then util.log("commands failed: " .. tostring(errCmd)) end
 		end
 
 		-- nowa sesja: pierwszy start albo cofnięcie czasu gry (wczytany starszy save)

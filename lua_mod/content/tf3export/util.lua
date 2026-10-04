@@ -84,6 +84,18 @@ function util.vec3(v)
 	return { util.round(x), util.round(y), util.round(z) }
 end
 
+-- Czy plik userdata istnieje? app.loadUserdata na brakującym pliku zgłasza błąd gry
+-- ("Failed to load userdata", z oknem błędu) mimo pcall, więc najpierw sprawdzamy listę plików.
+-- getAllUserdata zwraca nazwy; na wszelki wypadek akceptujemy też wariant z ".lua". Tylko wątek GUI.
+function util.userdataExists(dir, name)
+	local ok, names = pcall(function() return app.getAllUserdata(dir) end)
+	if not ok then return false end
+	for _, n in ipairs(util.list(names)) do
+		if n == name or n == name .. ".lua" then return true end
+	end
+	return false
+end
+
 function util.name(entity)
 	if entity == nil then return nil end
 	local ok, n = pcall(function() return api.engine.util.getEntityName(entity) end)

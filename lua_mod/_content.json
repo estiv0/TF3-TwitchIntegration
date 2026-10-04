@@ -5,6 +5,7 @@
         "tf3export/tf3export.script.lua",
         "tf3export/bench.lua",
         "tf3export/collectors.lua",
+        "tf3export/commands.lua",
         "tf3export/json.lua",
         "tf3export/terrain.lua",
         "tf3export/util.lua",
