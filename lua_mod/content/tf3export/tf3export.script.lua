@@ -315,6 +315,7 @@ local DYN_STEPS = {
 			date = util.date(job.now),
 			player = job.snap.player,
 			company = job.snap.company,
+			effects = effects.list(), -- aktywne efekty z nagród za punkty kanału (effects.lua)
 		}):sub(1, -2) -- bez zamykającej klamry
 		local out = { head }
 		for _, key in ipairs(DYN_ARRAYS) do

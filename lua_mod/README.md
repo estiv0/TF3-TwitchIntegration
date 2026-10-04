@@ -148,6 +148,7 @@ end
 - `lineStop` nie rusza pojazdów, które gracz zatrzymał wcześniej.
 - `lineHold`: API nie pokazuje trybu ręcznego odjazdu, więc efekt uznajemy za wykonany po wysłaniu komend.
 - Efekt niepotwierdzony w 15 s jest cofany, a Tf3Bridge zwraca punkty.
+- **Kto i do kiedy:** komenda `effect` niesie `user` (widz z Twitcha). Wynik komendy w `results.lua` ma `until = { year, month, day }`, czyli koniec efektu w kalendarzu gry; Tf3Bridge podaje tę datę widzowi na czacie. Aktywne efekty trafiają do każdego eksportu dynamicznego jako `effects` (`effects.list()`), a strona pokazuje je przy obiektach.
 - **Zapis w save'ie:** wątek GUI nie może pisać stanu game scriptu. Lista efektów idzie więc zdarzeniem `tf3x_effects` (`makeScriptingSendEventCmd`) do `handleEvent` w wątku symulacji, który zapisuje ją w `state.effects`. Po wczytaniu gry mod odtwarza efekty z tego stanu (log: `effects: N active effect(s) restored from the save`).
 
 ## Diagnostyka

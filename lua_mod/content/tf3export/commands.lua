@@ -3,7 +3,8 @@
 --   Tf3Bridge -> local\tf3export_cmd\queue.lua    (format app.saveUserdata, pisany przez Tf3Bridge)
 --     { commands = { { id = "...", kind = "setName", created = <unix s>, entity = 123, name = "..." }, ... } }
 --     rodzaje: setName { entity, name }, adopt { entity, owner },
---              effect { effect = townBoost|industryBoost|lineStop|lineHold, entity, months, factor } (effects.lua)
+--              effect { effect = townBoost|industryBoost|lineStop|lineHold, entity, months, factor, user } (effects.lua)
+--   wynik efektu ma też until = { year, month, day } (koniec w kalendarzu gry, do wiadomości na czacie)
 --   mod      -> local\tf3export_cmd\results.lua  (app.saveUserdata)
 --     { json = '{"results":[{"id":"...","status":"ok|failed|invalid|expired","error":"..."}]}',
 --       done = "id1\nid2\n..." }
@@ -39,10 +40,10 @@ local function save()
 	if not ok then util.log("commands: saving results failed: " .. tostring(err)) end
 end
 
-local function finish(id, status, err)
+local function finish(id, status, err, info)
 	pending[id] = nil
 	done[id] = true
-	results[#results + 1] = { id = id, status = status, error = err }
+	results[#results + 1] = { id = id, status = status, error = err, ["until"] = info and info["until"] or nil }
 	while #results > MAX_RESULTS do table.remove(results, 1) end
 	util.log(string.format("command %s: %s%s", id, status, err and (" (" .. err .. ")") or ""))
 	save()
@@ -60,7 +61,8 @@ local function loadDone()
 end
 
 ---------------------------------------------------------------- rodzaje komend
--- kind -> function(cmd) -> verify (function() -> true, gdy efekt widoczny) albo nil, błąd
+-- kind -> function(cmd) -> verify (function() -> true, gdy efekt widoczny) albo nil, błąd;
+-- opcjonalnie trzecia wartość: info dołączane do wyniku (np. until)
 local KINDS = {}
 
 -- Zmiana nazwy encji (miasto, zakład, grupa stacji, linia, pojazd).
@@ -105,10 +107,10 @@ local function start(c, wall)
 	end
 	local kind = KINDS[c.kind]
 	if not kind then return finish(id, "invalid", "unknown kind " .. tostring(c.kind)) end
-	local ok, verify, err = pcall(kind, c)
+	local ok, verify, err, info = pcall(kind, c)
 	if not ok then return finish(id, "failed", tostring(verify)) end
 	if not verify then return finish(id, "invalid", err) end
-	pending[id] = { sent = wall, verify = verify, cmd = c }
+	pending[id] = { sent = wall, verify = verify, cmd = c, info = info }
 	util.log(string.format("command %s: sent %s", id, c.kind))
 end
 
@@ -116,7 +118,7 @@ local function check(wall)
 	for id, p in pairs(pending) do
 		local ok, visible = pcall(p.verify)
 		if ok and visible then
-			finish(id, "ok")
+			finish(id, "ok", nil, p.info)
 		elseif p.callback == false or wall - p.sent >= VERIFY_SEC then
 			-- nieudany efekt cofamy, bo Tf3Bridge zwróci widzowi punkty
 			if p.cmd.kind == "effect" then pcall(effects.abort, p.cmd) end

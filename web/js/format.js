@@ -153,6 +153,27 @@ export function splitAllOwners(dynamic) {
   for (const l of dynamic.lines ?? []) splitOwners(l.stops);
 }
 
+// Efekty z nagród za punkty kanału (dynamic.effects z moda): rodzaj efektu -> lista obiektów.
+const EFFECT_TARGET = { townBoost: "towns", industryBoost: "industries", lineStop: "lines", lineHold: "lines" };
+
+/**
+ * Dokleja aktywne efekty do miast, zakładów i linii (x.effects). Postęp efektu (0..1, ile już minęło)
+ * z czasu gry eksportu: effect.progress.
+ */
+export function attachEffects(dynamic) {
+  const effects = Array.isArray(dynamic.effects) ? dynamic.effects : [];
+  const byId = {};
+  for (const key of new Set(Object.values(EFFECT_TARGET))) byId[key] = new Map((dynamic[key] ?? []).map((x) => [x.id, x]));
+  for (const key of Object.keys(byId)) for (const x of dynamic[key] ?? []) x.effects = [];
+  for (const e of effects) {
+    const x = byId[EFFECT_TARGET[e.type]]?.get(e.entity);
+    if (!x) continue;
+    const span = (e.untilTime ?? 0) - (e.startTime ?? 0);
+    e.progress = span > 0 && dynamic.gameTime != null ? Math.min(1, Math.max(0, (dynamic.gameTime - e.startTime) / span)) : null;
+    x.effects.push(e);
+  }
+}
+
 export const townSize = (t) => (t.capacities ?? []).reduce((a, b) => a + b, 0);
 
 /** Wzrost miasta od startu gry (obecna pojemność / initialCapacities - 1) albo null. */

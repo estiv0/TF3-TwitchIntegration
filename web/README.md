@@ -51,6 +51,15 @@ web/
 - Zaznaczenie jest w adresie (`#line=<id>`, `#town=`, `#industry=`, `#station=`), obok pinezki: `#pin=...&note=...&line=<id>`.
 - Na dotyku: przesuwanie jednym palcem, przybliżanie szczypaniem.
 
+## Efekty od widzów
+
+`dynamic.effects` (z moda, `effects.lua`) to aktywne efekty z nagród za punkty kanału: `{ type, entity, user, factor, startTime, untilTime, until: {year, month, day} }`.
+
+- `attachEffects` (`format.js`) dokleja je do miast (`townBoost`), zakładów (`industryBoost`) i linii (`lineStop`, `lineHold`) jako `x.effects`. Dolicza też `progress`, czyli ile czasu już minęło, liczone z `gameTime` eksportu.
+- Na liście: znaczek przy nazwie (⚡ boost, ⛔ linia zatrzymana, ⏸ linia czeka) z opisem w podpowiedzi.
+- W szczegółach: sekcja „Efekty od widzów” z siłą, datą końca w kalendarzu gry, kupującym widzem i paskiem pozostałego czasu.
+- Starszy eksport bez `effects` działa jak dawniej.
+
 ## Wdrożenie na Azure
 
 Strona działa na **Azure Static Web Apps** (plan Free: własna domena i HTTPS za darmo). Dane czyta z kontenera `live` konta `tf3liveblob` (`AZURE_DATA_URL` w `config.js`). Wgrywanie: [../infra/deploy-web.ps1](../infra/deploy-web.ps1), wymaga Node.js (`winget install OpenJS.NodeJS.LTS`).

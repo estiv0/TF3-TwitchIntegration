@@ -262,6 +262,20 @@ button { font: inherit; color: inherit; }
 .detail-owner { font-size: 12px; margin-top: 4px; color: var(--muted); }
 .detail-owner strong { color: var(--accent); }
 
+/* Efekty od widzów (nagrody za punkty kanału): znaczki na liście i lista w szczegółach. */
+.fx-badge { flex: none; font-size: 12px; line-height: 1; cursor: help; }
+.effects { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.effects li {
+  display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: baseline;
+  padding: 6px 8px; border-radius: 6px; background: var(--bg); border: 1px solid var(--border); font-size: 12px;
+}
+.effects .fx-name { font-weight: 600; color: var(--accent); }
+.effects .fx-lineStop .fx-name, .effects li.fx-lineStop .fx-name { color: var(--error); }
+.effects li.fx-lineHold .fx-name { color: var(--stale); }
+.effects .fx-meta { color: var(--muted); text-align: right; }
+.fx-bar { grid-column: 1 / -1; display: block; height: 3px; border-radius: 2px; background: var(--panel-2); overflow: hidden; }
+.fx-bar b { display: block; height: 100%; background: var(--accent); }
+
 .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 12px; margin: 12px 0 0; }
 .stats dt { color: var(--muted); font-size: 11px; }
 .stats dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }

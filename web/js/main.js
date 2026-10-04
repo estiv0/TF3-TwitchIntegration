@@ -4,7 +4,7 @@ import { config } from "../config.js";
 import { DataFeed } from "./api.js";
 import {
   carrierIcon, carrierName, cargoLabel, escapeHtml as esc, fmtDate, fmtInt, fmtMoney, fmtPercent,
-  fmtSignedPercent, iconHtml, linesByIndustry, linesByStation, rgb, stationImg, stationName, splitAllOwners, stationUse, townGrowth, townSize,
+  fmtSignedPercent, iconHtml, linesByIndustry, linesByStation, rgb, stationImg, stationName, splitAllOwners, attachEffects, stationUse, townGrowth, townSize,
 } from "./format.js";
 import { balanceSparkline } from "./company.js";
 import { readSelection, writeSelection } from "./hash.js";
@@ -271,6 +271,7 @@ new DataFeed({
   },
   onDynamic(dynamic) {
     splitAllOwners(dynamic);
+    attachEffects(dynamic);
     stationLines = linesByStation(dynamic);
     linesById = new Map((dynamic.lines ?? []).map((l) => [l.id, l]));
     industryLines = linesByIndustry(dynamic, stationLines);

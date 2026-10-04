@@ -3,7 +3,7 @@
 
 import {
   STATION_ORDER, carrierIcon, carrierName, cargoImg, cargoLabel, cargoName, escapeHtml as esc, iconHtml, landUseName, stationName,
-  fmtDec, fmtInt, fmtMoney, fmtPercent, fmtSignedPercent, industryOfStation, linesByIndustry, linesByStation, rgb, stationImg,
+  fmtDate, fmtDec, fmtInt, fmtMoney, fmtPercent, fmtSignedPercent, industryOfStation, linesByIndustry, linesByStation, rgb, stationImg,
   stationUse, townGrowth, townSize,
 } from "./format.js";
 import { companyHtml } from "./company.js";
@@ -232,6 +232,7 @@ export class Sidebar {
           <li class="row" data-kind="town" data-id="${x.id}" aria-current="${isSel("town", x.id)}">
             <span class="dot dot-town"></span>
             <span class="row-name">${esc(x.name)}</span>
+            ${effectBadges(x)}
             <span class="row-value">${value(x)}</span>
           </li>`).join("");
       const outside = this.earnings.outside;
@@ -251,6 +252,7 @@ export class Sidebar {
           <li class="row" data-kind="industry" data-id="${i.id}" aria-current="${isSel("industry", i.id)}">
             ${industryBadge(i)}
             <span class="row-name">${esc(i.name)}</span>
+            ${effectBadges(i)}
             <span class="row-value">${esc(t("list.level", { n: i.level ?? "–" }))}</span>
           </li>`).join("");
     } else if (this.tab === "stations") {
@@ -285,6 +287,7 @@ export class Sidebar {
               <span class="row-name">${carrierIcon(l.carrier, l.carrier)} ${esc(l.name)}</span>
               ${stations.length ? `<span class="row-hint">${viaHtml(stations, this.filter)}</span>` : ""}
             </span>
+            ${effectBadges(l)}
             <span class="row-value">${esc(t("list.lineStats", { v: fmtInt(l.vehicleCount), s: l.stops?.length ?? 0 }))}</span>
           </li>`).join("");
     }
@@ -368,9 +371,40 @@ export class Sidebar {
   }
 }
 
-// Właściciel z nazwy w grze ("Nazwa | Właściciel", splitAllOwners).
+// Właściciel z nazwy w grze ("Nazwa | Właściciel", splitAllOwners) i efekty od widzów (attachEffects).
 function ownerHtml(x) {
-  return `<p class="detail-owner">${x.owner ? `${esc(t("owner"))}: <strong>${esc(x.owner)}</strong>` : esc(t("owner.none"))}</p>`;
+  return `<p class="detail-owner">${x.owner ? `${esc(t("owner"))}: <strong>${esc(x.owner)}</strong>` : esc(t("owner.none"))}</p>`
+    + effectsHtml(x);
+}
+
+// Nazwa efektu z siłą: "Boost miasta +50%".
+function effectName(e) {
+  const name = t(`fx.${e.type}`);
+  return e.factor ? `${name} +${Math.round((e.factor - 1) * 100)}%` : name;
+}
+
+function effectTip(e) {
+  return [effectName(e), e.until ? t("fx.until", { date: fmtDate(e.until) }) : "", e.user ? t("fx.by", { user: e.user }) : ""]
+    .filter(Boolean).join(" · ");
+}
+
+// Znaczki na liście (miasta, zakłady, linie): ⚡ boost, ⏸ czeka na stacjach, ⛔ zatrzymana.
+const EFFECT_ICON = { townBoost: "⚡", industryBoost: "⚡", lineStop: "⛔", lineHold: "⏸" };
+function effectBadges(x) {
+  return (x.effects ?? []).map((e) =>
+    `<span class="fx-badge fx-${esc(e.type)}" title="${esc(effectTip(e))}">${EFFECT_ICON[e.type] ?? "★"}</span>`).join("");
+}
+
+// W szczegółach: każdy efekt z datą końca w grze, kupującym widzem i paskiem upływu czasu.
+function effectsHtml(x) {
+  if (!x.effects?.length) return "";
+  const rows = x.effects.map((e) => `
+    <li class="fx-${esc(e.type)}">
+      <span class="fx-name">${EFFECT_ICON[e.type] ?? "★"} ${esc(effectName(e))}</span>
+      <span class="fx-meta">${esc([e.until ? t("fx.until", { date: fmtDate(e.until) }) : "", e.user ? t("fx.by", { user: e.user }) : ""].filter(Boolean).join(" · "))}</span>
+      ${e.progress != null ? `<i class="fx-bar" title="${esc(t("fx.left", { p: Math.round((1 - e.progress) * 100) }))}"><b style="width:${((1 - e.progress) * 100).toFixed(0)}%"></b></i>` : ""}
+    </li>`).join("");
+  return `<h3 title="${esc(t("fx.hint"))}">${esc(t("fx.title"))}</h3><ul class="effects">${rows}</ul>`;
 }
 
 // Linie są klikalne (data-line) - przełączają wybór na linię.

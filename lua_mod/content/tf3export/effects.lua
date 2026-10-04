@@ -259,8 +259,9 @@ function E.abort(c)
 	util.log("effect " .. key .. " aborted")
 end
 
--- Komenda "effect" z kolejki: { effect = "townBoost", entity, months, factor }.
--- Zwraca verify albo nil, błąd (jak rodzaje komend w commands.lua).
+-- Komenda "effect" z kolejki: { effect = "townBoost", entity, months, factor, user }.
+-- Zwraca verify albo nil, błąd (jak rodzaje komend w commands.lua), a na końcu info
+-- { until = data końca w kalendarzu gry } dla wiadomości na czacie.
 function E.start(c, now)
 	if active == nil then return nil, "effects not loaded yet" end
 	local t = TYPES[c.effect]
@@ -283,19 +284,34 @@ function E.start(c, now)
 			existing.factor = factor
 			t.upgrade(existing)
 		end
+		if type(c.user) == "string" and c.user ~= "" then existing.user = c.user end
 		persist()
 		util.log(string.format("effect %s extended by %d months%s", key, months,
 			stronger and (", now " .. t.describe(existing)) or ""))
-		return function() return true end
+		return function() return true end, nil, { ["until"] = util.date(existing.untilTime) }
 	end
 
-	local e = { key = key, type = c.effect, entity = entity, untilTime = now + months * monthLength(), startTime = now, factor = factor }
+	local e = { key = key, type = c.effect, entity = entity, untilTime = now + months * monthLength(), startTime = now,
+		factor = factor, user = type(c.user) == "string" and c.user or nil }
 	local verify, err = t.apply(e)
 	if not verify then return nil, err end
 	active[key] = e
 	persist()
 	util.log(string.format("effect %s started for %d months%s", key, months, t.describe and (": " .. t.describe(e)) or ""))
-	return verify
+	return verify, nil, { ["until"] = util.date(e.untilTime) }
+end
+
+-- Aktywne efekty do eksportu dynamicznego (strona pokazuje je przy mieście, zakładzie i linii).
+function E.list()
+	local out = {}
+	for _, e in pairs(active or {}) do
+		out[#out + 1] = {
+			type = e.type, entity = e.entity, user = e.user, factor = e.factor,
+			startTime = e.startTime, untilTime = e.untilTime, ["until"] = util.date(e.untilTime),
+		}
+	end
+	table.sort(out, function(a, b) return a.untilTime < b.untilTime end)
+	return out
 end
 
 return E
