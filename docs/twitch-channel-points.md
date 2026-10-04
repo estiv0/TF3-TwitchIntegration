@@ -1,6 +1,8 @@
 # Punkty kanału Twitcha (channel points): analiza integracji
 
-**Stan (2026-10-04):** w Tf3Bridge działa logowanie streamera ([opis](../middle_app/README.md#twitch-logowanie)), kanał Tf3Bridge → mod działa w grze ([opis](../middle_app/README.md#komendy-dla-moda-akcje-widzów)), a EventSub odbiera czat i wykupienia ([opis](../middle_app/README.md#twitch-eventsub-czat-i-punkty-kanału)). Kanał autora nie ma statusu Affiliate, więc pierwszym prawdziwym źródłem akcji będą komendy z czatu (sekcja 6).
+**Stan (2026-10-04):** w Tf3Bridge działa logowanie streamera ([opis](../middle_app/README.md#twitch-logowanie)), kanał Tf3Bridge → mod działa w grze ([opis](../middle_app/README.md#komendy-dla-moda-akcje-widzów)), a EventSub odbiera czat i wykupienia ([opis](../middle_app/README.md#twitch-eventsub-czat-i-punkty-kanału)). Kanał autora nie ma statusu Affiliate, więc zmiany w grze sprawdzamy na razie przyciskiem **Test akcji…** i Twitch CLI.
+
+**Zasada (2026-10-04): grę zmieniają tylko punkty kanału.** Adopcje, boosty fabryk i podobne akcje są wyłącznie nagrodami za punkty, bo nad nimi streamer ma kontrolę: koszt, cooldown, limity, pauza. Komendy z czatu są tylko informacyjne (np. kto jest właścicielem miasta, stan linii) i nigdy nie trafiają do kolejki komend gry. Streamer nie kontroluje, kto i jak często ich używa, a mogłyby popsuć balans. W kodzie pilnuje tego `CommandSource`: komenda dla moda może pochodzić tylko z punktów kanału albo z ręcznego testu w oknie.
 
 W skrócie: integrację da się zrobić bez nowej infrastruktury w Azure. Tf3Bridge odbiera wykupienia z Twitcha i przekazuje je do moda tą samą drogą, którą dziś wysyła ustawienia moda. Gra ma gotowe komendy na większość sensownych nagród.
 
@@ -103,8 +105,8 @@ Rzeczy poza samymi nagrodami:
 1. ✅ Zarejestrować aplikację na dev.twitch.tv jako public client i dodać logowanie Device Code w Tf3Bridge.
 2. ✅ Kanał `queue.lua` → mod → `results.lua` z komendą `setName` i przyciskiem **Test akcji…** w Tf3Bridge (adopcja obiektu bez Twitcha). Sprawdzone w grze: `api.cmd.sendCommand` działa z wątku GUI.
 3. ✅ EventSub przez WebSocket. Wykupienia sprawdzone na Twitch CLI 1.1.24; czatu Twitch CLI nie obsługuje, więc testujemy go na prawdziwym kanale.
-4. Komendy z czatu (`channel.chat.message`, uprawnienie `user:read:chat`, opcjonalnie `user:write:chat` do odpowiedzi): np. `!adoptuj Kraków`, z cooldownami i limitami na widza. Działa bez statusu Affiliate.
-5. Punkty kanału jako kolejne źródło, gdy kanał będzie Affiliate albo na kanale znajomego: tworzenie nagród, rozliczanie wykupień (FULFILLED/CANCELED) i auto-pauza.
+4. Informacyjne komendy z czatu, bez zmian w grze (`channel.chat.message`, uprawnienie `user:read:chat`; odpowiedzi na czacie wymagają `user:write:chat`): np. kto jest właścicielem miasta, ile zarabia linia, link do mapy. Działa bez statusu Affiliate.
+5. Punkty kanału: jedyne źródło zmian w grze (adopcja, boosty fabryk itd.). Tworzenie nagród, rozliczanie wykupień (FULFILLED/CANCELED) i auto-pauza. Na żywo da się to sprawdzić dopiero na kanale Affiliate (np. u znajomego), wcześniej przez Twitch CLI.
 6. Kolejne akcje, a potem feed i ranking na stronie.
 
 ## Źródła

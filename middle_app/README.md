@@ -94,7 +94,7 @@ Nowy token (np. gdy stary wygasa): `.\infra\azure-setup.ps1 -Name <nazwa> -SasOn
 
 ## Twitch (logowanie)
 
-Integracja z Twitchem ([../docs/twitch-channel-points.md](../docs/twitch-channel-points.md)): logowanie streamera i EventSub (opis niżej). Nagród za punkty i obsługi komend z czatu jeszcze nie ma.
+Integracja z Twitchem ([../docs/twitch-channel-points.md](../docs/twitch-channel-points.md)): logowanie streamera i EventSub (opis niżej). Nagród za punkty i obsługi komend z czatu jeszcze nie ma. Grę zmieniają tylko punkty kanału; czat jest wyłącznie informacyjny.
 
 - Aplikacja na dev.twitch.tv jest typu **Public**, bez client secret. `Twitch:ClientId` w `appsettings.json` jest jawny i wspólny dla wszystkich streamerów.
 - **Twitch…** → **Zaloguj przez Twitch**: okno pokazuje kod i otwiera `twitch.tv/activate`, a streamer zatwierdza tam dostęp (Device Code Grant Flow). Uprawnienia: `channel:read:redemptions`, `channel:manage:redemptions`, `user:read:chat`. Gdy aplikacja potrzebuje nowego uprawnienia, zapisane konto jest zapominane i trzeba zalogować się ponownie.
@@ -134,7 +134,7 @@ W Visual Studio/Riderze jest do tego profil uruchomienia „Tf3Bridge (Twitch CL
 
 ## Komendy dla moda (akcje widzów)
 
-Wspólna droga dla wszystkich źródeł akcji widzów: przycisku testowego, a później komend z czatu i punktów kanału.
+Droga zmian w grze od widzów. Źródła (`CommandSource`): punkty kanału i ręczny test w oknie. Czat celowo nie może tu nic wysłać: komendy z czatu są tylko informacyjne, bo streamer nie ma nad nimi kontroli i mogłyby popsuć balans.
 
 - `ModCommandQueue` pisze kolejkę do `local\tf3export_cmd\queue.lua` (format `app.saveUserdata`, zapis przez plik tymczasowy). Mod czyta ją co sekundę i zapisuje wyniki do `results.lua` obok. Szczegóły formatu: [../lua_mod/README.md](../lua_mod/README.md#komendy-od-tf3bridge-akcje-widzów).
 - Komenda zostaje w kolejce, dopóki mod nie zgłosi wyniku. Mod pomija identyfikatory, które już obsłużył, więc przepisywanie kolejki niczego nie wykona dwa razy. Po 320 s bez odpowiedzi (gra wyłączona albo bez moda) komenda jest oznaczana jako `expired`.

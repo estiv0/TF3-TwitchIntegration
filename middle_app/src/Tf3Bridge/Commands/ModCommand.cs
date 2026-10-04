@@ -5,14 +5,21 @@ using System.Text.RegularExpressions;
 namespace Tf3Bridge.Commands;
 
 /// <summary>
+/// Who may change the game. Chat is deliberately missing: chat commands are informational only,
+/// because the streamer has no control over them and they could break the game balance.
+/// Game changes come only from channel points rewards (and the manual test in the bridge window).
+/// </summary>
+public enum CommandSource { Test, ChannelPoints }
+
+/// <summary>
 /// One command for the mod (lua_mod/content/tf3export/commands.lua). <see cref="Kind"/> and
 /// <see cref="Args"/> go to the game; <see cref="Source"/> and <see cref="User"/> stay in the bridge.
 /// </summary>
 public sealed record ModCommand(
-    string Id, string Kind, DateTimeOffset Created, IReadOnlyDictionary<string, object> Args, string Source, string User)
+    string Id, string Kind, DateTimeOffset Created, IReadOnlyDictionary<string, object> Args, CommandSource Source, string User)
 {
     /// <summary>Renames an entity (town, industry, station group, line, vehicle).</summary>
-    public static ModCommand SetName(long entity, string name, string source, string user) =>
+    public static ModCommand SetName(long entity, string name, CommandSource source, string user) =>
         new(NewId(), "setName", DateTimeOffset.UtcNow,
             new Dictionary<string, object> { ["entity"] = entity, ["name"] = name }, source, user);
 

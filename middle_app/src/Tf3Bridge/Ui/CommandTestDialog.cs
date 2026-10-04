@@ -146,7 +146,7 @@ public sealed class CommandTestDialog : Form
     {
         if (Selected is not { } o || NewName() is not { } name) return;
         var viewer = OwnerName.Clean(_viewer.Text);
-        var command = _queue.Enqueue(ModCommand.SetName(o.Entity, name, "test", viewer.Length > 0 ? viewer : "-"));
+        var command = _queue.Enqueue(ModCommand.SetName(o.Entity, name, CommandSource.Test, viewer.Length > 0 ? viewer : "-"));
         _lastId = command.Id;
         _result.ForeColor = SystemColors.ControlText;
         _result.Text = $"Wysłano #{command.Id}, czekam na grę…";

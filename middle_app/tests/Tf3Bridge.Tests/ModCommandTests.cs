@@ -41,7 +41,7 @@ public sealed class ModCommandTests : IDisposable
     public void Queue_file_has_the_saveUserdata_layout()
     {
         var c = new ModCommand("abc", "setName", DateTimeOffset.FromUnixTimeSeconds(1_759_590_000),
-            new Dictionary<string, object> { ["entity"] = 1234L, ["name"] = "Kraków | widz" }, "test", "widz");
+            new Dictionary<string, object> { ["entity"] = 1234L, ["name"] = "Kraków | widz" }, CommandSource.Test, "widz");
 
         var lua = ModCommandLua.ToLua([c]);
 
@@ -56,7 +56,7 @@ public sealed class ModCommandTests : IDisposable
     public void Rejects_argument_names_that_are_not_identifiers()
     {
         var c = new ModCommand("abc", "setName", DateTimeOffset.UtcNow,
-            new Dictionary<string, object> { ["x = 1, y"] = 1L }, "test", "-");
+            new Dictionary<string, object> { ["x = 1, y"] = 1L }, CommandSource.Test, "-");
 
         Assert.Throws<ArgumentException>(() => ModCommandLua.ToLua([c]));
     }
@@ -65,8 +65,8 @@ public sealed class ModCommandTests : IDisposable
     public void Removes_a_command_from_the_queue_once_the_mod_reports_it()
     {
         var queue = Queue();
-        var a = queue.Enqueue(ModCommand.SetName(1, "A | x", "test", "x"));
-        var b = queue.Enqueue(ModCommand.SetName(2, "B | x", "test", "x"));
+        var a = queue.Enqueue(ModCommand.SetName(1, "A | x", CommandSource.Test, "x"));
+        var b = queue.Enqueue(ModCommand.SetName(2, "B | x", CommandSource.Test, "x"));
         var completed = new List<(ModCommand, ModCommandResult)>();
         queue.Completed += (c, r) => completed.Add((c, r));
         Assert.Contains(a.Id, QueueText);
@@ -86,7 +86,7 @@ public sealed class ModCommandTests : IDisposable
     public void Reports_errors_from_the_mod()
     {
         var queue = Queue();
-        var a = queue.Enqueue(ModCommand.SetName(1, "A", "test", "x"));
+        var a = queue.Enqueue(ModCommand.SetName(1, "A", CommandSource.Test, "x"));
 
         WriteResults($$"""{"results":[{"id":"{{a.Id}}","status":"invalid","error":"entity not found"}]}""");
         queue.Poll();
@@ -100,7 +100,7 @@ public sealed class ModCommandTests : IDisposable
     public void Gives_up_when_the_game_does_not_answer()
     {
         var queue = Queue();
-        var a = queue.Enqueue(ModCommand.SetName(1, "A", "test", "x"));
+        var a = queue.Enqueue(ModCommand.SetName(1, "A", CommandSource.Test, "x"));
 
         _time.Now = DateTimeOffset.UtcNow + ModCommandQueue.GiveUpAfter + TimeSpan.FromSeconds(1);
         queue.Poll();
@@ -113,7 +113,7 @@ public sealed class ModCommandTests : IDisposable
     public void Ignores_a_half_written_results_file()
     {
         var queue = Queue();
-        var a = queue.Enqueue(ModCommand.SetName(1, "A", "test", "x"));
+        var a = queue.Enqueue(ModCommand.SetName(1, "A", CommandSource.Test, "x"));
         File.WriteAllText(Path.Combine(_dir, "results.lua"), "function data()\r\nreturn {\r\n\t\tjson = \"{\\\"res");
 
         queue.Poll();
