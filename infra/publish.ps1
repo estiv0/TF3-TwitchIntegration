@@ -10,8 +10,9 @@ $dotnetRoot = Join-Path $env:USERPROFILE ".dotnet"
 $dotnet = if (Get-Command dotnet -ErrorAction SilentlyContinue) { "dotnet" } else { Join-Path $dotnetRoot "dotnet.exe" }
 $env:DOTNET_ROOT = $dotnetRoot
 
-$project = Join-Path $PSScriptRoot "src\Tf3Bridge\Tf3Bridge.csproj"
-$dist = Join-Path $PSScriptRoot "dist"
+$appDir = (Resolve-Path (Join-Path $PSScriptRoot "..\middle_app")).Path
+$project = Join-Path $appDir "src\Tf3Bridge\Tf3Bridge.csproj"
+$dist = Join-Path $appDir "dist"
 
 $running = Get-Process Tf3Bridge -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$dist*" }
 if ($running) { throw "Tf3Bridge z dist\ jest uruchomiony - zamknij go przed publikacją." }

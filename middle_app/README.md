@@ -25,7 +25,7 @@ Tf3Bridge to mała aplikacja okienkowa (WinForms). Okno pokazuje stan (działa /
 Gotowy exe ze skrótem na pulpicie:
 
 ```powershell
-middle_app\publish.ps1
+infra\publish.ps1
 ```
 
 Skrypt buduje `middle_app\dist\Tf3Bridge.exe` (folder `dist\` jest w `.gitignore`) i tworzy skrót `Tf3Bridge` na pulpicie (`-NoShortcut` pomija skrót). Przed ponowną publikacją zamknij działającą aplikację.
