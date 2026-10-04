@@ -32,9 +32,9 @@ public sealed record ModCommand(
     /// Timed effect (effects.lua): townBoost/industryBoost (with factor), lineStop/lineHold.
     /// <paramref name="created"/> = when the viewer asked; the mod drops commands older than 300 s.
     /// </summary>
-    public static ModCommand Effect(string effect, long entity, int days, double? factor, CommandSource source, string user, DateTimeOffset? created = null)
+    public static ModCommand Effect(string effect, long entity, int months, double? factor, CommandSource source, string user, DateTimeOffset? created = null)
     {
-        var args = new Dictionary<string, object> { ["effect"] = effect, ["entity"] = entity, ["days"] = (long)days };
+        var args = new Dictionary<string, object> { ["effect"] = effect, ["entity"] = entity, ["months"] = (long)months };
         if (factor is { } f) args["factor"] = f;
         return new(NewId(), "effect", created ?? DateTimeOffset.UtcNow, args, source, user);
     }

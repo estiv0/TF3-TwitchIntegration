@@ -3,7 +3,7 @@
 --   Tf3Bridge -> local\tf3export_cmd\queue.lua    (format app.saveUserdata, pisany przez Tf3Bridge)
 --     { commands = { { id = "...", kind = "setName", created = <unix s>, entity = 123, name = "..." }, ... } }
 --     rodzaje: setName { entity, name }, adopt { entity, owner },
---              effect { effect = townBoost|industryBoost|lineStop|lineHold, entity, days, factor } (effects.lua)
+--              effect { effect = townBoost|industryBoost|lineStop|lineHold, entity, months, factor } (effects.lua)
 --   mod      -> local\tf3export_cmd\results.lua  (app.saveUserdata)
 --     { json = '{"results":[{"id":"...","status":"ok|failed|invalid|expired","error":"..."}]}',
 --       done = "id1\nid2\n..." }

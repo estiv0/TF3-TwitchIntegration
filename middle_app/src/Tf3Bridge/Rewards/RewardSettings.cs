@@ -9,21 +9,22 @@ namespace Tf3Bridge.Rewards;
 public enum RewardKind { AdoptTown, BoostTown, BoostIndustry, StopLine, HoldLine }
 
 /// <summary>
-/// One reward as the streamer configured it. <see cref="Days"/> and <see cref="Factor"/> only matter
-/// for timed effects (see <see cref="RewardKinds"/>). Prompts may use {days} and {percent}.
+/// One reward as the streamer configured it. <see cref="Months"/> (game months) and <see cref="Factor"/>
+/// only matter for timed effects (see <see cref="RewardKinds"/>). Prompts may use {months} and {percent}.
+/// Months, not days: a game day lasts only 2-3 s, so effects of a few days were over before anyone saw them.
 /// </summary>
 public sealed record RewardConfig(
     RewardKind Kind, bool Enabled, string Title, string Prompt, int Cost,
-    int CooldownSec, int MaxPerStream, int MaxPerUserPerStream, int Days, double Factor)
+    int CooldownSec, int MaxPerStream, int MaxPerUserPerStream, int Months, double Factor)
 {
     public const int MaxTitle = 45;
     public const int MaxPrompt = 200;
-    public static readonly (int Min, int Max) DaysRange = (1, 365);
+    public static readonly (int Min, int Max) MonthsRange = (1, 60);
     public static readonly (double Min, double Max) FactorRange = (1.05, 5.0);
 
     /// <summary>Prompt shown on Twitch with the placeholders filled in.</summary>
     public string TwitchPrompt => Prompt
-        .Replace("{days}", Days.ToString(CultureInfo.InvariantCulture))
+        .Replace("{months}", Months.ToString(CultureInfo.InvariantCulture))
         .Replace("{percent}", Math.Round((Factor - 1) * 100).ToString(CultureInfo.InvariantCulture));
 
     /// <summary>Values clamped to what Twitch and the mod accept.</summary>
@@ -35,7 +36,7 @@ public sealed record RewardConfig(
         CooldownSec = Math.Clamp(CooldownSec, 0, 7 * 24 * 3600),
         MaxPerStream = Math.Max(0, MaxPerStream),
         MaxPerUserPerStream = Math.Max(0, MaxPerUserPerStream),
-        Days = Math.Clamp(Days, DaysRange.Min, DaysRange.Max),
+        Months = Math.Clamp(Months, MonthsRange.Min, MonthsRange.Max),
         Factor = Math.Round(Math.Clamp(Factor, FactorRange.Min, FactorRange.Max), 2),
     };
 
@@ -64,7 +65,7 @@ public static class RewardKinds
 
     public static bool HasFactor(RewardKind kind) => kind is RewardKind.BoostTown or RewardKind.BoostIndustry;
 
-    public static bool HasDays(RewardKind kind) => Effect(kind) is not null;
+    public static bool HasMonths(RewardKind kind) => Effect(kind) is not null;
 
     /// <summary>Starting values; costs and durations are guesses to be balanced on stream.</summary>
     public static IReadOnlyList<RewardConfig> Defaults { get; } =
@@ -73,17 +74,17 @@ public static class RewardKinds
             "Wpisz nazwę miasta bez właściciela. Zostaniesz jego właścicielem (pokaże się w grze i na mapie).",
             5000, 60, 0, 1, 0, 1),
         new(RewardKind.BoostTown, true, "TF3: boost miasta",
-            "Wpisz nazwę miasta. Przez {days} dni gry jego docelowa wielkość rośnie o {percent}% (miasto się rozbudowuje).",
-            3000, 120, 0, 0, 30, 1.5),
+            "Wpisz nazwę miasta. Przez {months} mies. gry jego docelowa wielkość rośnie o {percent}% (miasto się rozbudowuje).",
+            3000, 120, 0, 0, 12, 1.5),
         new(RewardKind.BoostIndustry, true, "TF3: boost przemysłu",
-            "Wpisz nazwę zakładu. Produkuje o {percent}% więcej przez {days} dni gry.",
-            3000, 120, 0, 0, 30, 1.5),
+            "Wpisz nazwę zakładu. Produkuje o {percent}% więcej przez {months} mies. gry.",
+            3000, 120, 0, 0, 6, 1.5),
         new(RewardKind.StopLine, true, "TF3: zatrzymaj linię",
-            "Wpisz nazwę linii. Jej pojazdy staną tam, gdzie są, na {days} dni gry.",
-            10000, 600, 0, 1, 3, 1),
+            "Wpisz nazwę linii. Jej pojazdy staną tam, gdzie są, na {months} mies. gry.",
+            10000, 600, 0, 1, 1, 1),
         new(RewardKind.HoldLine, true, "TF3: linia czeka na stacjach",
-            "Wpisz nazwę linii. Jej pojazdy czekają na przystankach przez {days} dni gry.",
-            8000, 600, 0, 1, 3, 1),
+            "Wpisz nazwę linii. Jej pojazdy czekają na przystankach przez {months} mies. gry.",
+            8000, 600, 0, 1, 1, 1),
     ];
 }
 
@@ -97,7 +98,12 @@ public sealed record RewardSettings(IReadOnlyList<RewardConfig> Rewards, string 
     /// <summary>Every kind exactly once (missing ones from defaults), values normalized.</summary>
     public RewardSettings Normalized() => this with
     {
-        Rewards = [.. RewardKinds.Defaults.Select(d => (Rewards.FirstOrDefault(r => r.Kind == d.Kind) ?? d).Normalized())],
+        Rewards = [.. RewardKinds.Defaults.Select(d => Rewards.FirstOrDefault(r => r.Kind == d.Kind) switch
+        {
+            null => d,
+            { Months: <= 0 } r => r with { Months = d.Months }, // plik sprzed zmiany dni -> miesiące
+            var r => r,
+        }).Select(r => r.Normalized())],
     };
 }
 

@@ -93,7 +93,7 @@ public sealed class RewardTests : IDisposable
         var path = Path.Combine(_dir, "rewards-test.json");
         var custom = RewardSettings.Default with
         {
-            Rewards = [RewardKinds.Defaults[1] with { Cost = 1234, Days = 999, Factor = 9 }],
+            Rewards = [RewardKinds.Defaults[1] with { Cost = 1234, Months = 999, Factor = 9 }],
             ChannelUserId = "42",
             TwitchIds = new Dictionary<RewardKind, string> { [RewardKind.BoostTown] = "rw1" },
         };
@@ -103,16 +103,31 @@ public sealed class RewardTests : IDisposable
 
         Assert.Equal(Enum.GetValues<RewardKind>(), loaded.Rewards.Select(r => r.Kind));
         var boost = loaded.Get(RewardKind.BoostTown);
-        Assert.Equal((1234, 365, 5.0), (boost.Cost, boost.Days, boost.Factor)); // przycięte do zakresów
+        Assert.Equal((1234, 60, 5.0), (boost.Cost, boost.Months, boost.Factor)); // przycięte do zakresów
         Assert.Equal("rw1", loaded.TwitchIds[RewardKind.BoostTown]);
+    }
+
+    [Fact]
+    public void Old_settings_with_days_get_default_months()
+    {
+        var path = Path.Combine(_dir, "rewards-old.json");
+        File.WriteAllText(path, """
+            {"Rewards":[{"Kind":"StopLine","Enabled":true,"Title":"Stop","Prompt":"p","Cost":777,"CooldownSec":0,"MaxPerStream":0,"MaxPerUserPerStream":0,"Days":3,"Factor":1}],
+             "ChannelUserId":"42","TwitchIds":{"StopLine":"rw9"}}
+            """);
+
+        var stop = RewardSettingsStore.Load(path).Get(RewardKind.StopLine);
+
+        Assert.Equal(777, stop.Cost);
+        Assert.Equal(RewardKinds.Defaults.Single(d => d.Kind == RewardKind.StopLine).Months, stop.Months);
     }
 
     [Fact]
     public void Prompt_shows_days_and_percent()
     {
-        var c = RewardKinds.Defaults[2] with { Prompt = "+{percent}% na {days} dni", Days = 7, Factor = 1.25 };
+        var c = RewardKinds.Defaults[2] with { Prompt = "+{percent}% na {months} mies.", Months = 7, Factor = 1.25 };
 
-        Assert.Equal("+25% na 7 dni", c.TwitchPrompt);
+        Assert.Equal("+25% na 7 mies.", c.TwitchPrompt);
     }
 
     [Fact]
@@ -155,11 +170,11 @@ public sealed class RewardTests : IDisposable
     }
 
     [Theory]
-    [InlineData(RewardKind.BoostTown, "nowy sacz", "effect = \"townBoost\", entity = 12, days = 30, factor = 1.5")]
-    [InlineData(RewardKind.BoostIndustry, "kopalnia", "effect = \"industryBoost\", entity = 20, days = 30, factor = 1.5")]
-    [InlineData(RewardKind.StopLine, "linia 1", "effect = \"lineStop\", entity = 30, days = 3 }")]
-    [InlineData(RewardKind.HoldLine, "linia 1", "effect = \"lineHold\", entity = 30, days = 3 }")]
-    public void Effects_carry_days_and_factor_from_settings(RewardKind kind, string input, string expected)
+    [InlineData(RewardKind.BoostTown, "nowy sacz", "effect = \"townBoost\", entity = 12, months = 12, factor = 1.5")]
+    [InlineData(RewardKind.BoostIndustry, "kopalnia", "effect = \"industryBoost\", entity = 20, months = 6, factor = 1.5")]
+    [InlineData(RewardKind.StopLine, "linia 1", "effect = \"lineStop\", entity = 30, months = 1 }")]
+    [InlineData(RewardKind.HoldLine, "linia 1", "effect = \"lineHold\", entity = 30, months = 1 }")]
+    public void Effects_carry_months_and_factor_from_settings(RewardKind kind, string input, string expected)
     {
         var service = Service();
 

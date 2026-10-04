@@ -202,7 +202,7 @@ public sealed class RewardService
 
         var created = redeemedAt > DateTimeOffset.UtcNow ? DateTimeOffset.UtcNow : redeemedAt;
         var command = RewardKinds.Effect(kind) is { } effect
-            ? ModCommand.Effect(effect, target.Entity, config.Days, RewardKinds.HasFactor(kind) ? config.Factor : null,
+            ? ModCommand.Effect(effect, target.Entity, config.Months, RewardKinds.HasFactor(kind) ? config.Factor : null,
                 CommandSource.ChannelPoints, owner, created)
             : ModCommand.Adopt(target.Entity, owner, CommandSource.ChannelPoints, owner, created);
         lock (_gate) _pending[command.Id] = new Pending(token, kind, owner, input, target.Name, redemption);

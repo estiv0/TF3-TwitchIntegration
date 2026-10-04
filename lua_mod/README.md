@@ -29,7 +29,7 @@ lua_mod/                              → w grze: staging_area/estiv0_tf3export 
     writer.lua            zapis: app.saveUserdata albo log gry (zapas)
     terrain.lua           heightmapa (getBaseHeightAt porcjami) + jednorazowy benchmark metod odczytu terenu
     commands.lua          komendy od Tf3Bridge (akcje widzów): local\tf3export_cmd\queue.lua -> api.cmd -> results.lua
-    effects.lua           efekty czasowe z nagród (boost miasta/przemysłu, zatrzymanie linii), cofane po X dniach gry
+    effects.lua           efekty czasowe z nagród (boost miasta/przemysłu, zatrzymanie linii), cofane po X miesiącach gry
 ```
 
 Moduły ładuje się względnie przez `ug_require "util.lua"`. Wszystkie leżą w jednym folderze.
@@ -128,23 +128,23 @@ end
 - Rodzaje komend:
   - `setName { entity, name }`: zmiana nazwy (`makeEntitySetNameCmd`);
   - `adopt { entity, owner }`: „Nazwa” → „Nazwa | owner”, tylko gdy obiekt nie ma właściciela (sprawdzane w chwili wykonania, inaczej `invalid`, a Tf3Bridge zwraca punkty);
-  - `effect { effect, entity, days, factor }`: efekt czasowy z `effects.lua`, opis niżej.
+  - `effect { effect, entity, months, factor }`: efekt czasowy z `effects.lua`, opis niżej.
 - Wynik trafia do `local\tf3export_cmd\results.lua` (`app.saveUserdata`): `json` z listą `{ id, status, error }` (status `ok`, `failed`, `invalid`, `expired`) i `done` z identyfikatorami, z których mod po restarcie gry odtwarza, co już wykonał.
 - Komendy starsze niż 300 s są pomijane (`expired`).
 - Gra wysyła komendy ze swoich skryptów w wątkach symulacji; z wątku GUI to **jeszcze niesprawdzone**. Dlatego mod nie ufa tylko callbackowi `sendCommand`: po wysłaniu przez 15 s sprawdza, czy efekt jest widoczny (dla `setName`: czy encja ma nową nazwę). Log: `command <id>: sent setName`, potem `ok` albo `failed (...)`.
 
 ### Efekty czasowe (`effects.lua`)
 
-| Efekt | Co robi | Cofnięcie po `days` dniach gry |
+| Efekt | Co robi | Cofnięcie po `months` miesiącach gry |
 |---|---|---|
 | `townBoost` | `sizeFactors` miasta × `factor` (`makeTownUpdateSizeCmd`, budynki dorastają stopniowo) | stare `sizeFactors` |
 | `industryBoost` | produktywność zakładu × `factor` (`makeStockListSetModifiersCmd`) | produktywność sprzed boostu |
 | `lineStop` | pojazdy linii zatrzymane jak przyciskiem w grze (`makeVehicleSetStoppedByUserCmd`), także na szlaku | start tych, które zatrzymał efekt |
 | `lineHold` | ręczny odjazd (`makeVehicleSetManualDepartureCmd`): pojazdy czekają na przystankach | ręczny odjazd wyłączony + `makeVehicleTryToDepartCmd` |
 
-- `factor` 1–5, `days` 1–365. Czas liczy się w czasie gry, więc na pauzie efekt stoi.
-- Drugi efekt tego samego rodzaju na tym samym celu przedłuża czas, ale nie zwiększa siły.
-- Skrypt gry `industry_workers` też ustawia produktywność (boost od pracowników). Dlatego co sekundę pilnujemy produktywności: gdy ktoś ją zmieni, nowa wartość staje się bazą i znów mnożymy ją przez `factor`.
+- `factor` 1–5, `months` 1–60 (miesiąc = 365/12 dni gry). Czas liczy się w czasie gry, więc na pauzie efekt stoi. Miesiące, bo dzień gry trwa tylko 2–3 s.
+- Drugi efekt tego samego rodzaju na tym samym celu przedłuża czas. Siła rośnie tylko wtedy, gdy nowe wykupienie ma większy mnożnik (np. po zmianie ustawień).
+- Skrypt gry `industry_workers` też ustawia produktywność (boost od pracowników). Dlatego co sekundę pilnujemy produktywności. Po naszym ustawieniu mod czeka kilka sekund, aż gra je przyjmie, i zapamiętuje faktyczną wartość (gra może mieć własny limit; log: `game keeps productivity …`). Dopiero zmiana względem tej wartości oznacza ingerencję innego skryptu: wtedy nowa wartość staje się bazą (log: `productivity changed by the game …`).
 - `lineStop` nie rusza pojazdów, które gracz zatrzymał wcześniej.
 - `lineHold`: API nie pokazuje trybu ręcznego odjazdu, więc efekt uznajemy za wykonany po wysłaniu komend.
 - Efekt niepotwierdzony w 15 s jest cofany, a Tf3Bridge zwraca punkty.

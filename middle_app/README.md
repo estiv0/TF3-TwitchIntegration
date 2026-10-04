@@ -134,15 +134,15 @@ W Visual Studio/Riderze jest do tego profil uruchomienia „Tf3Bridge (Twitch CL
 
 ## Nagrody za punkty kanału
 
-Jedyna droga zmian w grze od widzów (`RewardService`). Pięć nagród, każdą da się wyłączyć i zbalansować w oknie **Nagrody…**: tytuł, opis, koszt, cooldown, limity na stream i na widza, dni gry i mnożnik.
+Jedyna droga zmian w grze od widzów (`RewardService`). Pięć nagród, każdą da się wyłączyć i zbalansować w oknie **Nagrody…**: tytuł, opis, koszt, cooldown, limity na stream i na widza, czas w miesiącach gry i mnożnik. Czas jest w miesiącach, nie w dniach: dzień gry trwa tylko 2–3 s, więc efekt na kilka dni mijał, zanim było go widać.
 
 | Nagroda | Cel (tekst od widza) | Komenda dla moda |
 |---|---|---|
 | Adopcja miasta | miasto bez właściciela | `adopt`: „Nazwa \| widz”; miasto z właścicielem = zwrot punktów |
-| Boost miasta | miasto | `effect townBoost` (dni, mnożnik) |
-| Boost przemysłu | zakład | `effect industryBoost` (dni, mnożnik) |
-| Stop linii (od razu) | linia | `effect lineStop` (dni) |
-| Linia czeka na stacjach | linia | `effect lineHold` (dni) |
+| Boost miasta | miasto | `effect townBoost` (miesiące, mnożnik) |
+| Boost przemysłu | zakład | `effect industryBoost` (miesiące, mnożnik) |
+| Stop linii (od razu) | linia | `effect lineStop` (miesiące) |
+| Linia czeka na stacjach | linia | `effect lineHold` (miesiące) |
 
 - **Na Twitchu:** Tf3Bridge sam tworzy nagrody (tylko te może potem zmieniać i rozliczać), zapamiętuje ich ID w `%LOCALAPPDATA%\Tf3Bridge\rewards.json` i aktualizuje je po zapisaniu ustawień. Gdy przez 2 minuty nie ma nowego eksportu z gry, nagrody są pauzowane. Wymaga kanału Affiliate/Partner; bez tego nic nie trafia na Twitcha.
 - **Wykupienie:** tekst od widza jest dopasowywany do nazw z ostatniego `dynamic.json` (`TargetResolver`). Wielkość liter, polskie znaki, spacje i „\| właściciel” nie mają znaczenia. Wygrywa dokładne dopasowanie, potem jednoznaczny początek nazwy, potem jednoznaczny fragment.
@@ -210,7 +210,7 @@ middle_app/
     Commands/ModCommandQueue.cs   kolejka queue.lua, odczyt wyników z results.lua, wygasanie
     Commands/GameObjects.cs       cele akcji z dynamic.json, nazwy „Nazwa | Właściciel”
     Ui/CommandTestDialog.cs       test bez Twitcha: symulacja nagrody i ręczna zmiana nazwy
-    Rewards/RewardSettings.cs     nagrody (rodzaje, koszty, dni, mnożniki), zapis rewards.json
+    Rewards/RewardSettings.cs     nagrody (rodzaje, koszty, miesiące, mnożniki), zapis rewards.json
     Rewards/TargetResolver.cs     dopasowanie tekstu od widza do miasta, zakładu albo linii
     Rewards/RewardService.cs      nagrody na Twitchu, wykupienia -> komendy, FULFILLED/CANCELED, pauza bez gry
     Twitch/ChannelPointsApi.cs    Helix: nagrody i status wykupień

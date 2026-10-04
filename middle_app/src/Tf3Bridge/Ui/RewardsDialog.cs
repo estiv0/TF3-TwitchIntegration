@@ -35,8 +35,8 @@ public sealed class RewardsDialog : Form
             AutoSize = true, MaximumSize = new Size(1060, 0), ForeColor = SystemColors.GrayText,
             Text = "Tylko te nagrody mogą zmieniać grę (czat jest wyłącznie informacyjny). Tf3Bridge tworzy je na Twitchu sam "
                  + "i pauzuje, gdy gra nie wysyła danych. Widz wpisuje nazwę miasta, zakładu albo linii; gdy jej nie ma, cel jest "
-                 + "niejednoznaczny albo gra nie wykona akcji, punkty wracają. W opisie można użyć {days} i {percent}. "
-                 + "Limit 0 = bez limitu. Dni to dni gry (efekt stoi, gdy gra jest na pauzie).\n\nStan: " + status,
+                 + "niejednoznaczny albo gra nie wykona akcji, punkty wracają. W opisie można użyć {months} i {percent}. "
+                 + "Limit 0 = bez limitu. Czas efektów jest w miesiącach gry (miesiąc to ok. 1–1,5 min przy prędkości 1×; na pauzie efekt stoi).\n\nStan: " + status,
         };
 
         AddText("title", "Tytuł (max 45)", 170);
@@ -47,17 +47,17 @@ public sealed class RewardsDialog : Form
         AddText("cooldown", "Cooldown (s)", 80);
         AddText("perStream", "Limit / stream", 80);
         AddText("perUser", "Limit / widz", 75);
-        AddText("days", "Dni gry", 60);
+        AddText("months", "Miesiące gry", 75);
         AddText("factor", "Mnożnik", 65);
         _grid.Columns.Insert(1, new DataGridViewTextBoxColumn { Name = "kind", HeaderText = "Akcja", Width = 140, ReadOnly = true });
 
         foreach (var r in rewards)
         {
             var i = _grid.Rows.Add(r.Enabled, KindLabel(r.Kind), r.Title, r.Prompt, r.Cost, r.CooldownSec, r.MaxPerStream,
-                r.MaxPerUserPerStream, RewardKinds.HasDays(r.Kind) ? r.Days : "", RewardKinds.HasFactor(r.Kind) ? r.Factor.ToString("0.##", CultureInfo.CurrentCulture) : "");
+                r.MaxPerUserPerStream, RewardKinds.HasMonths(r.Kind) ? r.Months : "", RewardKinds.HasFactor(r.Kind) ? r.Factor.ToString("0.##", CultureInfo.CurrentCulture) : "");
             var row = _grid.Rows[i];
             row.Tag = r.Kind;
-            if (!RewardKinds.HasDays(r.Kind)) Lock(row.Cells["days"]);
+            if (!RewardKinds.HasMonths(r.Kind)) Lock(row.Cells["months"]);
             if (!RewardKinds.HasFactor(r.Kind)) Lock(row.Cells["factor"]);
         }
 
@@ -120,10 +120,10 @@ public sealed class RewardsDialog : Form
                 error = $"{KindLabel(kind)}: koszt ≥ 1, cooldown i limity ≥ 0 (liczby całkowite).";
                 return false;
             }
-            var days = old.Days;
-            if (RewardKinds.HasDays(kind) && (!int.TryParse(Text("days"), out days) || days < RewardConfig.DaysRange.Min || days > RewardConfig.DaysRange.Max))
+            var months = old.Months;
+            if (RewardKinds.HasMonths(kind) && (!int.TryParse(Text("months"), out months) || months < RewardConfig.MonthsRange.Min || months > RewardConfig.MonthsRange.Max))
             {
-                error = $"{KindLabel(kind)}: dni gry od {RewardConfig.DaysRange.Min} do {RewardConfig.DaysRange.Max}.";
+                error = $"{KindLabel(kind)}: miesiące gry od {RewardConfig.MonthsRange.Min} do {RewardConfig.MonthsRange.Max}.";
                 return false;
             }
             var factor = old.Factor;
@@ -133,7 +133,7 @@ public sealed class RewardsDialog : Form
                 error = $"{KindLabel(kind)}: mnożnik od {RewardConfig.FactorRange.Min} do {RewardConfig.FactorRange.Max} (np. 1,5 = +50%).";
                 return false;
             }
-            list.Add(new RewardConfig(kind, row.Cells["enabled"].Value is true, title, prompt, cost, cooldown, perStream, perUser, days, factor));
+            list.Add(new RewardConfig(kind, row.Cells["enabled"].Value is true, title, prompt, cost, cooldown, perStream, perUser, months, factor));
         }
         return true;
     }
