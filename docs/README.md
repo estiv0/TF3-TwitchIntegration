@@ -7,6 +7,7 @@
 | [reactive-dynamic-export.md](reactive-dynamic-export.md) | Odłożona propozycja: różnicowy i reaktywny eksport danych dynamicznych (zdarzenia gry, `dynamicDelta`, strumień zdarzeń, stacje). |
 | [export-format-performance.md](export-format-performance.md) | Format eksportu a wydajność: gdzie jest koszt, propozycje (tabele Lua zamiast JSON, format kolumnowy, mniejsza precyzja) i pomiar `bench.lua`. |
 | [architecture.md](architecture.md) | Architektura całości: mod → middle app → Azure → strona, plus koszty i opcje rozszerzenia Twitcha. |
+| [twitch-channel-points.md](twitch-channel-points.md) | Analiza integracji punktów kanału Twitcha: API (Helix, EventSub), przepływ Tf3Bridge → mod, pomysły na nagrody i komendy gry, ryzyka. |
 
 Kod:
 - [../lua_mod/](../lua_mod/README.md): mod do gry;

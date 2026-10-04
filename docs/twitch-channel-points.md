@@ -1,0 +1,114 @@
+# Punkty kanału Twitcha (channel points): analiza integracji
+
+**Stan (2026-10-04):** w Tf3Bridge działa logowanie streamera ([opis](../middle_app/README.md#twitch-logowanie)), kanał Tf3Bridge → mod działa w grze ([opis](../middle_app/README.md#komendy-dla-moda-akcje-widzów)), a EventSub odbiera czat i wykupienia ([opis](../middle_app/README.md#twitch-eventsub-czat-i-punkty-kanału)). Kanał autora nie ma statusu Affiliate, więc pierwszym prawdziwym źródłem akcji będą komendy z czatu (sekcja 6).
+
+W skrócie: integrację da się zrobić bez nowej infrastruktury w Azure. Tf3Bridge odbiera wykupienia z Twitcha i przekazuje je do moda tą samą drogą, którą dziś wysyła ustawienia moda. Gra ma gotowe komendy na większość sensownych nagród.
+
+## 1. API Twitcha
+
+### A. Helix REST: zarządzanie nagrodami
+
+Bazowy URL: `https://api.twitch.tv/helix/channel_points/...`
+
+| Endpoint | Do czego |
+|---|---|
+| `POST /custom_rewards` | Tworzy nagrodę: tytuł do 45 znaków, koszt, opcjonalne pole tekstowe dla widza (`is_user_input_required`, prompt do 200 znaków), cooldown (`global_cooldown_seconds`), limity na stream i na widza (`max_per_stream`, `max_per_user_per_stream`), kolor |
+| `PATCH /custom_rewards` | Zmienia nagrodę, np. pauzuje ją (`is_paused`) albo wyłącza, gdy gra nie działa |
+| `GET` / `DELETE /custom_rewards` | Listuje i usuwa nagrody |
+| `GET /custom_rewards/redemptions` | Pobiera wykupienia w kolejce (`UNFULFILLED`) |
+| `PATCH /custom_rewards/redemptions` | Oznacza wykupienie jako `FULFILLED` albo `CANCELED`. `CANCELED` zwraca widzowi punkty |
+
+Wymagania i ograniczenia:
+- Streamer musi być Affiliate albo Partner.
+- Zarządzanie wymaga scope'a `channel:manage:redemptions`, a sam odczyt `channel:read:redemptions`.
+- Kanał może mieć najwyżej 50 nagród, licząc też wyłączone.
+- **Nagrodę może zmieniać i rozliczać tylko ta aplikacja (Client ID), która ją utworzyła.** Nagrody trzeba więc zakładać z poziomu Tf3Bridge, a nie ręcznie w panelu Twitcha. Inaczej nie zrobimy automatycznego zwrotu punktów, gdy komenda się nie uda.
+- `should_redemptions_skip_request_queue = true` od razu oznacza wykupienie jako zrealizowane. U nas powinno być `false`, żeby móc zwracać punkty.
+
+### B. EventSub: zdarzenia w czasie rzeczywistym
+
+| Typ subskrypcji | Wersja | Scope |
+|---|---|---|
+| `channel.channel_points_custom_reward_redemption.add` | 1 | `channel:read:redemptions` |
+| `channel.channel_points_custom_reward_redemption.update` | 1 | `channel:read:redemptions` |
+| `channel.channel_points_custom_reward.add` / `.update` / `.remove` | 1 | `channel:manage:redemptions` |
+| `channel.channel_points_automatic_reward_redemption.add` | 1, 2 | `channel:read:redemptions` |
+
+- Zdarzenie `redemption.add` przychodzi, gdy widz wykupi nagrodę. Zawiera login i nazwę widza, `reward.id` oraz tekst `user_input`.
+- Automatyczne nagrody Twitcha (np. wyróżniona wiadomość) da się tylko odczytać, nie zarządzać nimi. Nadają się najwyżej do feedu.
+- **Wszystkie te zdarzenia działają przez transport WebSocket** (`wss://eventsub.wss.twitch.tv/ws`). Nie potrzeba publicznego serwera ani webhooka, bo aplikacja desktopowa sama otwiera połączenie.
+- Stary Twitch PubSub został wyłączony, więc liczy się tylko EventSub.
+
+### C. Logowanie z aplikacji desktopowej
+
+- Najlepszy będzie **Device Code Grant Flow**. Tf3Bridge pokazuje kod, a streamer wpisuje go na `twitch.tv/activate`.
+- Aplikacja jest rejestrowana na dev.twitch.tv jako „public client”, więc nie trzeba trzymać client secret.
+- Client ID aplikacji (`Twitch:ClientId` w `appsettings.json`): `8cp6n72q1r4gdodyxkonpe4r19ume7`.
+- Token odświeżania przechowujemy zaszyfrowany DPAPI w `%LOCALAPPDATA%\Tf3Bridge`, tak jak dziś SAS (`azure.json`).
+
+## 2. Co mamy po naszej stronie
+
+- **Kanał Tf3Bridge → mod już działa.** Ustawienia moda są zapisywane do `local\tf3export_settings\settings.lua`, a mod czyta je przez `app.loadUserdata` co `settingsEveryWallSec` (5 s). Zobacz `lua_mod/content/tf3export/tf3export.script.lua` i `middle_app/src/Tf3Bridge/ModSettings.cs`. Kolejkę komend można zrobić tak samo, np. jako `local\tf3export_cmd\queue.lua`. Uwaga: `loadUserdata` na brakującym pliku pokazuje okno błędu gry, więc najpierw trzeba sprawdzić `app.getAllUserdata` (jak w `settingsFileExists`).
+- **Kanał mod → Tf3Bridge też działa** przez `app.saveUserdata`. Mod może w ten sam sposób odsyłać wynik komendy („ok” albo „błąd”).
+- **Gra ma bogate API komend:** `api/tealdef/api/cmd.d.tl` w instalacji gry, wysyłane przez `api.cmd.sendCommand`.
+- **Strona już rozumie konwencję `Nazwa | Właściciel`** dla miast, przemysłu, stacji i linii (`splitOwners` w `web/js/format.js`). To naturalna podstawa pod „adopcję” obiektów przez widzów.
+
+## 3. Proponowany przepływ
+
+```
+Widz wykupuje nagrodę
+  → EventSub WebSocket → Tf3Bridge
+      walidacja: whitelist typów, dopasowanie celu po nazwie/ID z ostatniego dynamic.json,
+      filtr tekstu, limity
+  → queue.lua (format app.saveUserdata, z unikalnym redemptionId)
+  → mod (loadUserdata co kilka s) → api.cmd.sendCommand(...)
+  → mod zapisuje wynik (redemptionId, ok/błąd)
+  → Tf3Bridge: PATCH redemption → FULFILLED, albo CANCELED (zwrot punktów)
+  → opcjonalnie: wpis w meta/dynamic → strona pokazuje feed „X zrobił Y”
+```
+
+Opóźnienie wyniesie kilka sekund. Koszt w Azure się nie zmienia, bo wszystko dzieje się na PC streamera.
+
+## 4. Pomysły na nagrody i komendy gry
+
+| Nagroda | Komenda gry | Uwagi |
+|---|---|---|
+| **Adoptuj miasto, linię albo stację** (widz staje się „właścicielem”) | `makeEntitySetNameCmd` → `"Nazwa \| login"` | Działa od razu z obecną stroną: pokaże się jako właściciel. Najlepszy kandydat na start |
+| **Nazwij pociąg lub pojazd** | `makeEntitySetNameCmd` | Tekst od widza wymaga filtra wulgaryzmów i limitu długości |
+| Zmień kolor pojazdu | `makeEntitySetColorCmd` | Kosmetyczne i bezpieczne |
+| Pogoda: zachmurzenie, pora dnia, wiatr | `makeGameSetCloudCoverageCmd`, `makeGameSetTimeOfDayCmd`, `makeWorldChangeWindCmd` | Dobrze wygląda na streamie, nie psuje gry |
+| Wypuść zwierzę | `makeAnimalSpawnAtCmd` | Ciekawostka |
+| Boost miasta | `makeTownUpdateSizeCmd` / `makeTownDevelopAtCmd` | Wpływa na rozgrywkę, wymaga drogiej nagrody i cooldownu |
+| Boost produkcji przemysłu | `makeStockListSetModifiersCmd` | Jak wyżej |
+| „Dotacja” albo „sabotaż” finansowy | `makeJournalBookAssetCmd` | Dodaje lub odejmuje pieniądze firmie |
+| Troll: zatrzymaj losowy pociąg na 30 s | `makeVehicleSetStoppedByUserCmd` (+ odblokowanie po czasie) | Zabawne, ale mod musi sam pamiętać o zdjęciu blokady |
+| Zmiana prędkości gry | `makeGameSetSpeedCmd` | Raczej nie: łatwo zirytować streamera |
+
+Rzeczy poza samymi nagrodami:
+- **Predictions API** (scope `channel:manage:predictions`) pozwala obstawiać punktami, np. „Czy linia X zarobi > 1 mln w tym roku?”. Wynik rozstrzyga się automatycznie z danych eksportu.
+- **Polls API** (scope `channel:manage:polls`) nadaje się do głosowań w stylu „Gdzie zbudować następną linię?”.
+- **Strona i przyszłe rozszerzenie:** ranking adoptujących, feed wykupień, oznaczenie obiektów widza na mapie.
+
+## 5. Ryzyka i rzeczy do sprawdzenia
+
+1. **Nic z tego nie było testowane w TF3.** Trzeba sprawdzić w konsoli, czy `api.cmd.sendCommand` działa z wątku GUI, gdzie mamy `loadUserdata`. Jeśli nie, mod musi przekazać komendę do wątku symulacji przez `game.interface.sendScriptEvent`. Najpierw warto zrobić prosty test z `makeEntitySetNameCmd`.
+2. **Wskazanie celu.** Widz wpisuje wolny tekst, więc Tf3Bridge musi dopasować go do nazwy z ostatniego eksportu i przy niejednoznaczności zwrócić punkty. Strona mogłaby pokazywać przy obiekcie krótki „kod do nagrody” do skopiowania.
+3. **Bezpieczeństwo.** Tekst widza trafia do pliku Lua wyłącznie jako escapowany string. Trzeba mieć whitelistę typów komend i limity długości. Treść widza nigdy nie może stać się kodem.
+4. **Idempotencja.** Każda komenda niesie `redemptionId`, a mod pamięta wykonane identyfikatory, żeby po ponownym odczycie pliku nie wykonać ich dwa razy.
+5. **Gra wyłączona albo pauza.** Tf3Bridge powinien pauzować nagrody (`is_paused`), gdy nie widzi świeżych eksportów. Wykupienia, których nie dało się wykonać, zwraca przez `CANCELED`.
+6. **Multiplayer.** Komendy z naszego moda mogą działać inaczej w grze sieciowej. Do sprawdzenia, jeśli będzie potrzebne.
+
+## 6. Proponowana kolejność
+
+1. ✅ Zarejestrować aplikację na dev.twitch.tv jako public client i dodać logowanie Device Code w Tf3Bridge.
+2. ✅ Kanał `queue.lua` → mod → `results.lua` z komendą `setName` i przyciskiem **Test akcji…** w Tf3Bridge (adopcja obiektu bez Twitcha). Sprawdzone w grze: `api.cmd.sendCommand` działa z wątku GUI.
+3. ✅ EventSub przez WebSocket. Wykupienia sprawdzone na Twitch CLI 1.1.24; czatu Twitch CLI nie obsługuje, więc testujemy go na prawdziwym kanale.
+4. Komendy z czatu (`channel.chat.message`, uprawnienie `user:read:chat`, opcjonalnie `user:write:chat` do odpowiedzi): np. `!adoptuj Kraków`, z cooldownami i limitami na widza. Działa bez statusu Affiliate.
+5. Punkty kanału jako kolejne źródło, gdy kanał będzie Affiliate albo na kanale znajomego: tworzenie nagród, rozliczanie wykupień (FULFILLED/CANCELED) i auto-pauza.
+6. Kolejne akcje, a potem feed i ranking na stronie.
+
+## Źródła
+
+- Twitch API reference, Channel Points: https://dev.twitch.tv/docs/api/reference/#create-custom-rewards
+- EventSub subscription types: https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/
+- Komendy gry: `E:/SteamLibrary/steamapps/common/Transport Fever 3/api/tealdef/api/cmd.d.tl`
