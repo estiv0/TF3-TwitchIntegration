@@ -25,8 +25,8 @@ public sealed class TwitchAuthException(string message, bool rejected) : Excepti
 /// </summary>
 public sealed class TwitchAuthClient
 {
-    /// <summary>Channel points (read + manage rewards) and reading chat through EventSub.</summary>
-    public static readonly string[] Scopes = ["channel:read:redemptions", "channel:manage:redemptions", "user:read:chat"];
+    /// <summary>Channel points (read + manage rewards), reading chat through EventSub and answering viewers in chat.</summary>
+    public static readonly string[] Scopes = ["channel:read:redemptions", "channel:manage:redemptions", "user:read:chat", "user:write:chat"];
 
     private const string IdBase = "https://id.twitch.tv/oauth2/";
     private const string HelixBase = "https://api.twitch.tv/helix/";

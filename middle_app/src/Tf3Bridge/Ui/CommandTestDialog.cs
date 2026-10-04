@@ -39,6 +39,7 @@ public sealed class CommandTestDialog : Form
     private readonly TextBox _simViewer = new() { Text = "test_widz", Width = 200 };
     private readonly Label _simResult = new() { AutoSize = true, MaximumSize = new Size(520, 0) };
     private readonly Button _simulate = new() { Text = "Symuluj wykupienie", AutoSize = true, MinimumSize = new Size(110, 28) };
+    private readonly CheckBox _simChat = new() { Text = "Wyślij też odpowiedź na czat (na twoim kanale)", AutoSize = true };
 
     public CommandTestDialog(ModCommandQueue queue, RewardService rewards, string outputDir)
     {
@@ -91,7 +92,8 @@ public sealed class CommandTestDialog : Form
         sim.Controls.Add(_input, 1, 1);
         sim.Controls.Add(RowLabel("Widz:"), 0, 2);
         sim.Controls.Add(_simViewer, 1, 2);
-        sim.Controls.Add(_simulate, 1, 3);
+        sim.Controls.Add(_simChat, 1, 3);
+        sim.Controls.Add(_simulate, 1, 4);
         var simBox = new GroupBox { Text = "Nagroda za punkty kanału (symulacja, bez Twitcha)", AutoSize = true, Dock = DockStyle.Fill, Padding = new Padding(10) };
         var simInner = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, Dock = DockStyle.Fill };
         simInner.Controls.AddRange([sim, _simResult]);
@@ -206,7 +208,7 @@ public sealed class CommandTestDialog : Form
         var kind = Enum.GetValues<RewardKind>()[_reward.SelectedIndex];
         _simResult.ForeColor = SystemColors.ControlText;
         _simResult.Text = "Wysłano do gry, czekam na wynik…";
-        var rejected = _rewards.Simulate(kind, _input.Text, _simViewer.Text, out var token);
+        var rejected = _rewards.Simulate(kind, _input.Text, _simViewer.Text, _simChat.Checked, out var token);
         _simToken = token;
         if (rejected is not null) ShowOutcome(rejected);
     }
@@ -222,7 +224,8 @@ public sealed class CommandTestDialog : Form
     {
         _simToken = null;
         _simResult.ForeColor = o.Ok ? Color.FromArgb(46, 160, 67) : Color.Firebrick;
-        _simResult.Text = o.Ok ? $"Wykonano ({o.Message}). Na Twitchu: zrealizowane." : $"Odrzucone: {o.Message}. Na Twitchu: zwrot punktów.";
+        _simResult.Text = (o.Ok ? $"Wykonano ({o.Message}). Na Twitchu: zrealizowane." : $"Odrzucone: {o.Message}. Na Twitchu: zwrot punktów.")
+            + $"\n\nNa czacie{(_simChat.Checked && _rewards.Settings.ChatMessages ? "" : " (niewysłane)")}: {o.ChatText}";
     }
 
     private static Control Row(params Control[] controls)

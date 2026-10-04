@@ -38,7 +38,7 @@ public sealed class RewardTests : IDisposable
         var store = Path.Combine(_dir, "twitch.json");
         TwitchAccountStore.Save(new TwitchAccount("42", "streamer", broadcasterType, TwitchAuthClient.Scopes, "ACCESS", "REFRESH", DateTimeOffset.UtcNow.AddHours(3)), store);
         var session = new TwitchSession(new TwitchAuthClient(new HttpClient(), "cid"), store, NullLogger.Instance);
-        var service = new RewardService(session, new ChannelPointsApi(session, new HttpClient(_helix)), _queue, mock,
+        var service = new RewardService(session, new ChannelPointsApi(session, new HttpClient(_helix)), new ChatApi(session, new HttpClient(_helix)), _queue, mock,
             Path.Combine(_dir, "out"), Path.Combine(_dir, "rewards.json"), NullLogger.Instance);
         service.Finished += _outcomes.Enqueue;
         return service;
@@ -46,10 +46,11 @@ public sealed class RewardTests : IDisposable
 
     private string QueueText => File.ReadAllText(Path.Combine(_dir, "cmd", "queue.lua"));
 
-    private void ModReports(string status, string? error = null)
+    private void ModReports(string status, string? error = null, string? until = null)
     {
         var id = System.Text.RegularExpressions.Regex.Match(QueueText, "id = \"(\\w+)\"").Groups[1].Value;
-        var json = $$"""{"results":[{"id":"{{id}}","status":"{{status}}"{{(error is null ? "" : $",\"error\":\"{error}\"")}}}]}""";
+        var extra = (error is null ? "" : $",\"error\":\"{error}\"") + (until is null ? "" : $",\"until\":{until}");
+        var json = $$"""{"results":[{"id":"{{id}}","status":"{{status}}"{{extra}}}]}""";
         var path = Path.Combine(_dir, "cmd", "results.lua");
         File.WriteAllText(path, $"function data()\r\nreturn {{\r\n\t\tjson = \"{json.Replace("\"", "\\\"")}\",\r\n\t}}\r\nend");
         File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddSeconds(Random.Shared.Next(1, 1000)));
@@ -150,7 +151,7 @@ public sealed class RewardTests : IDisposable
     {
         var service = Service();
 
-        Assert.Null(service.Simulate(RewardKind.AdoptTown, "lodz", "Widz|X", out _));
+        Assert.Null(service.Simulate(RewardKind.AdoptTown, "lodz", "Widz|X", false, out _));
 
         Assert.Contains("kind = \"adopt\"", QueueText);
         Assert.Contains("entity = 10", QueueText);
@@ -162,7 +163,7 @@ public sealed class RewardTests : IDisposable
     {
         var service = Service();
 
-        var outcome = service.Simulate(RewardKind.AdoptTown, "kraków", "widz", out _);
+        var outcome = service.Simulate(RewardKind.AdoptTown, "kraków", "widz", false, out _);
 
         Assert.True(outcome!.Refunded);
         Assert.Contains("ma już właściciela (ala)", outcome.Message);
@@ -170,15 +171,15 @@ public sealed class RewardTests : IDisposable
     }
 
     [Theory]
-    [InlineData(RewardKind.BoostTown, "nowy sacz", "effect = \"townBoost\", entity = 12, months = 12, factor = 1.5")]
-    [InlineData(RewardKind.BoostIndustry, "kopalnia", "effect = \"industryBoost\", entity = 20, months = 6, factor = 1.5")]
-    [InlineData(RewardKind.StopLine, "linia 1", "effect = \"lineStop\", entity = 30, months = 1 }")]
-    [InlineData(RewardKind.HoldLine, "linia 1", "effect = \"lineHold\", entity = 30, months = 1 }")]
+    [InlineData(RewardKind.BoostTown, "nowy sacz", "effect = \"townBoost\", entity = 12, months = 12, user = \"widz\", factor = 1.5")]
+    [InlineData(RewardKind.BoostIndustry, "kopalnia", "effect = \"industryBoost\", entity = 20, months = 6, user = \"widz\", factor = 1.5")]
+    [InlineData(RewardKind.StopLine, "linia 1", "effect = \"lineStop\", entity = 30, months = 1, user = \"widz\" }")]
+    [InlineData(RewardKind.HoldLine, "linia 1", "effect = \"lineHold\", entity = 30, months = 1, user = \"widz\" }")]
     public void Effects_carry_months_and_factor_from_settings(RewardKind kind, string input, string expected)
     {
         var service = Service();
 
-        Assert.Null(service.Simulate(kind, input, "widz", out _));
+        Assert.Null(service.Simulate(kind, input, "widz", false, out _));
 
         Assert.Contains(expected, QueueText);
     }
@@ -189,7 +190,7 @@ public sealed class RewardTests : IDisposable
         var service = Service();
         service.UpdateSettings(service.Settings with { Rewards = [.. service.Settings.Rewards.Select(r => r with { Enabled = r.Kind != RewardKind.StopLine })] });
 
-        var outcome = service.Simulate(RewardKind.StopLine, "linia 1", "widz", out _);
+        var outcome = service.Simulate(RewardKind.StopLine, "linia 1", "widz", false, out _);
 
         Assert.True(outcome!.Refunded);
     }
@@ -198,7 +199,7 @@ public sealed class RewardTests : IDisposable
     public void Result_from_the_game_finishes_the_simulation()
     {
         var service = Service();
-        service.Simulate(RewardKind.BoostTown, "lodz", "widz", out var token);
+        service.Simulate(RewardKind.BoostTown, "lodz", "widz", false, out var token);
 
         ModReports("ok");
 
@@ -212,7 +213,7 @@ public sealed class RewardTests : IDisposable
     public void Old_mod_in_the_game_is_explained()
     {
         var service = Service();
-        service.Simulate(RewardKind.HoldLine, "linia 1", "widz", out _);
+        service.Simulate(RewardKind.HoldLine, "linia 1", "widz", false, out _);
 
         ModReports("invalid", "unknown kind effect");
 
@@ -345,6 +346,79 @@ public sealed class RewardTests : IDisposable
         Assert.Empty(_helix.Requests);
         Assert.Empty(_outcomes);
     }
+
+    // ------------------------------------------------------------------ czat
+
+    [Fact]
+    public void Chat_text_names_the_effect_and_its_end_in_the_game_calendar()
+    {
+        var boost = RewardKinds.Defaults.Single(r => r.Kind == RewardKind.BoostTown);
+
+        Assert.Equal("@widz boost miasta Szczecin (+50%) działa do 12 maja 1922 (data w grze).",
+            RewardMessages.Text(boost, "widz", "Szczecin", ok: true, new GameDate(1922, 5, 12), reason: null));
+        Assert.Equal("@widz boost miasta Szczecin (+50%) działa przez 12 mies. gry.",
+            RewardMessages.Text(boost, "@widz", "Szczecin", ok: true, until: null, reason: null));
+        Assert.Equal("@widz boost miasta: nie znaleziono „x”. Punkty wróciły do Ciebie.",
+            RewardMessages.Text(boost, "widz", null, ok: false, until: null, reason: "nie znaleziono „x”"));
+    }
+
+    [Fact]
+    public async Task Answers_the_viewer_in_chat_after_a_real_redemption()
+    {
+        var service = await SyncedService();
+        var rewardId = service.Settings.TwitchIds[RewardKind.StopLine];
+
+        await service.HandleRedemptionForTestAsync(new ChannelPointsRedemption("red5", rewardId, "", 0, "7", "widz", "Widz", "linia 1", DateTimeOffset.UtcNow));
+        ModReports("ok", until: """{"year":1922,"month":5,"day":12}""");
+
+        var chat = await _helix.WaitFor(r => r.Url.EndsWith("/chat/messages"));
+        Assert.Contains("\"broadcaster_id\":\"42\"", chat.Body);
+        Assert.Contains("\"sender_id\":\"42\"", chat.Body);
+        Assert.Equal("@widz linia Linia 1 stoi do 12 maja 1922 (data w grze).", Message(chat));
+        Assert.Equal(new GameDate(1922, 5, 12), _outcomes.Last().Until);
+    }
+
+    [Fact]
+    public async Task Tells_the_viewer_why_the_points_came_back()
+    {
+        var service = await SyncedService();
+        var rewardId = service.Settings.TwitchIds[RewardKind.BoostTown];
+
+        await service.HandleRedemptionForTestAsync(new ChannelPointsRedemption("red6", rewardId, "", 0, "7", "widz", "Widz", "gdańsk", DateTimeOffset.UtcNow));
+
+        var chat = await _helix.WaitFor(r => r.Url.EndsWith("/chat/messages"));
+        Assert.Contains("nie znaleziono", Message(chat));
+        Assert.Contains("Punkty wróciły", Message(chat));
+    }
+
+    [Fact]
+    public async Task Chat_answers_can_be_turned_off()
+    {
+        var service = await SyncedService();
+        service.UpdateSettings(service.Settings with { ChatMessages = false });
+        var rewardId = service.Settings.TwitchIds[RewardKind.BoostTown];
+
+        await service.HandleRedemptionForTestAsync(new ChannelPointsRedemption("red7", rewardId, "", 0, "7", "widz", "Widz", "gdańsk", DateTimeOffset.UtcNow));
+        await _helix.WaitFor(r => r.Url.Contains("redemptions"));
+        await Task.Delay(50);
+
+        Assert.DoesNotContain(_helix.Requests, r => r.Url.EndsWith("/chat/messages"));
+    }
+
+    [Fact]
+    public async Task Simulation_posts_to_chat_only_when_asked()
+    {
+        var service = Service();
+
+        service.Simulate(RewardKind.BoostTown, "gdańsk", "widz", false, out _);
+        service.Simulate(RewardKind.BoostTown, "gdańsk", "widz", true, out _);
+
+        var chat = await _helix.WaitFor(r => r.Url.EndsWith("/chat/messages"));
+        Assert.Single(_helix.Requests, r => r.Url.EndsWith("/chat/messages"));
+        Assert.Contains("@widz", chat.Body);
+    }
+
+    private static string Message(Request chat) => (string)System.Text.Json.Nodes.JsonNode.Parse(chat.Body)!["message"]!;
 
     private sealed record Request(string Method, string Url, string Body);
 

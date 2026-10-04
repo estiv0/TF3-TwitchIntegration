@@ -97,7 +97,7 @@ Nowy token (np. gdy stary wygasa): `.\infra\azure-setup.ps1 -Name <nazwa> -SasOn
 Integracja z Twitchem ([../docs/twitch-channel-points.md](../docs/twitch-channel-points.md)): logowanie streamera, EventSub i nagrody za punkty kanału (opis niżej). Komend z czatu jeszcze nie ma. Grę zmieniają tylko punkty kanału; czat jest wyłącznie informacyjny.
 
 - Aplikacja na dev.twitch.tv jest typu **Public**, bez client secret. `Twitch:ClientId` w `appsettings.json` jest jawny i wspólny dla wszystkich streamerów.
-- **Twitch…** → **Zaloguj przez Twitch**: okno pokazuje kod i otwiera `twitch.tv/activate`, a streamer zatwierdza tam dostęp (Device Code Grant Flow). Uprawnienia: `channel:read:redemptions`, `channel:manage:redemptions`, `user:read:chat`. Gdy aplikacja potrzebuje nowego uprawnienia, zapisane konto jest zapominane i trzeba zalogować się ponownie.
+- **Twitch…** → **Zaloguj przez Twitch**: okno pokazuje kod i otwiera `twitch.tv/activate`, a streamer zatwierdza tam dostęp (Device Code Grant Flow). Uprawnienia: `channel:read:redemptions`, `channel:manage:redemptions`, `user:read:chat`, `user:write:chat` (odpowiedzi dla widzów po wykupieniu). Gdy aplikacja potrzebuje nowego uprawnienia, zapisane konto jest zapominane i trzeba zalogować się ponownie.
 - Używany jest tylko user access token. App access token nie jest potrzebny: EventSub przez WebSocket i endpointy punktów kanału go nie przyjmują.
 - Tokeny są w `%LOCALAPPDATA%\Tf3Bridge\twitch.json`, zaszyfrowane DPAPI. Login, ID i uprawnienia są jawne.
 - `TwitchSession` sprawdza token przy starcie i co godzinę (`/oauth2/validate`, Twitch tego wymaga) i odświeża go przed wygaśnięciem. Refresh token public clienta jest jednorazowy i ważny 30 dni, więc po każdym odświeżeniu nowy jest od razu zapisywany. Gdy Twitch go odrzuci (dłuższa przerwa, zmiana hasła, odłączenie aplikacji), konto jest zapominane i trzeba zalogować się ponownie. Przy braku sieci konto zostaje.
@@ -148,7 +148,12 @@ Jedyna droga zmian w grze od widzów (`RewardService`). Pięć nagród, każdą 
 - **Wykupienie:** tekst od widza jest dopasowywany do nazw z ostatniego `dynamic.json` (`TargetResolver`). Wielkość liter, polskie znaki, spacje i „\| właściciel” nie mają znaczenia. Wygrywa dokładne dopasowanie, potem jednoznaczny początek nazwy, potem jednoznaczny fragment.
 - **Rozliczenie:** gdy gra potwierdzi, wykupienie dostaje FULFILLED. Gdy celu nie ma, cel jest niejednoznaczny, nagroda jest wyłączona albo gra odmówi lub nie zdąży, wykupienie dostaje CANCELED i Twitch zwraca punkty.
 - **Wykupienia z czasu, gdy Tf3Bridge był wyłączony:** świeższe niż 5 minut są wykonywane, starsze zwracane.
-- **Test bez Twitcha:** **Test akcji…** → „Nagroda za punkty kanału (symulacja)”. Ta sama droga co prawdziwe wykupienie, z wynikiem i informacją, czy byłby zwrot. W trybie Twitch CLI `twitch event trigger channel.channel_points_custom_reward_redemption.add --transport=websocket -i AdoptTown` wskazuje nagrodę po nazwie rodzaju, ale CLI zawsze wysyła tekst „Test Input From CLI”, więc kończy się zwrotem.
+- **Odpowiedź na czacie** (`RewardMessages`, `ChatApi`, Helix `POST /chat/messages` jako streamer). Wyłącznik jest w **Nagrody…**. Przykłady:
+  - „@widz boost miasta Szczecin (+50%) działa do 12 maja 1922 (data w grze).” Datę końca w kalendarzu gry podaje mod w wyniku komendy (`until`).
+  - „@widz miasto Kraków jest teraz Twoje!”
+  - Przy zwrocie: „@widz boost miasta: nie znaleziono „gdańsk”. Punkty wróciły do Ciebie.”
+- **Efekty na stronie:** mod eksportuje aktywne efekty w `dynamic.json` (`effects`), a strona pokazuje je przy mieście, zakładzie i linii ([../web/README.md](../web/README.md#efekty-od-widzów)).
+- **Test bez Twitcha:** **Test akcji…** → „Nagroda za punkty kanału (symulacja)”. Ta sama droga co prawdziwe wykupienie, z wynikiem, informacją, czy byłby zwrot, i treścią odpowiedzi na czacie. Po zaznaczeniu „Wyślij też odpowiedź na czat” odpowiedź naprawdę trafia na czat kanału, więc działa to także bez statusu Affiliate. W trybie Twitch CLI `twitch event trigger channel.channel_points_custom_reward_redemption.add --transport=websocket -i AdoptTown` wskazuje nagrodę po nazwie rodzaju, ale CLI zawsze wysyła tekst „Test Input From CLI”, więc kończy się zwrotem.
 
 ## Komendy dla moda (akcje widzów)
 
@@ -214,6 +219,8 @@ middle_app/
     Rewards/TargetResolver.cs     dopasowanie tekstu od widza do miasta, zakładu albo linii
     Rewards/RewardService.cs      nagrody na Twitchu, wykupienia -> komendy, FULFILLED/CANCELED, pauza bez gry
     Twitch/ChannelPointsApi.cs    Helix: nagrody i status wykupień
+    Twitch/ChatApi.cs             Helix: wiadomość na czacie jako streamer
+    Rewards/RewardMessages.cs     treść odpowiedzi dla widzów (data końca efektu w grze, powód zwrotu)
     Ui/RewardsDialog.cs           ustawienia nagród (balans)
     Input/LuaUserdataReader.cs    wyciąganie JSON z plików .lua
     Input/ExportFile.cs           parsowanie nazw plików

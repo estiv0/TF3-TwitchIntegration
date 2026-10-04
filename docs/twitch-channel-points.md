@@ -107,7 +107,8 @@ Rzeczy poza samymi nagrodami:
 3. ✅ EventSub przez WebSocket. Wykupienia sprawdzone na Twitch CLI 1.1.24; czatu Twitch CLI nie obsługuje, więc testujemy go na prawdziwym kanale.
 4. Informacyjne komendy z czatu, bez zmian w grze (`channel.chat.message`, uprawnienie `user:read:chat`; odpowiedzi na czacie wymagają `user:write:chat`): np. kto jest właścicielem miasta, ile zarabia linia, link do mapy. Działa bez statusu Affiliate.
 5. ✅ Punkty kanału: jedyne źródło zmian w grze. Adopcja miasta, boost miasta, boost przemysłu, stop linii (od razu) i linia czeka na stacjach ([opis](../middle_app/README.md#nagrody-za-punkty-kanału)), z tworzeniem nagród, rozliczaniem wykupień (FULFILLED/CANCELED) i auto-pauzą. Sprawdzone w grze przez „Symuluj nagrodę” (2026-10-04); czas efektów w miesiącach gry, bo dzień gry trwa 2–3 s. Na żywo na Twitchu jeszcze nie (kanał bez Affiliate). Koszty, czasy i mnożniki są startowe, do zbalansowania na streamie.
-6. Kolejne akcje, a potem feed i ranking na stronie.
+6. ✅ Efekty na stronie (znaczki na liście, szczegóły z datą końca i kupującym) i odpowiedź dla widza na czacie po każdym wykupieniu (efekt z datą końca w grze albo powód zwrotu punktów).
+7. Kolejne akcje, feed i ranking na stronie.
 
 ## Źródła
 

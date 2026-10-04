@@ -22,8 +22,8 @@ public sealed class TwitchAuthTests : IDisposable
     private static TwitchAccount Account(DateTimeOffset expiresAt, string type = "affiliate") =>
         new("42", "streamer", type, TwitchAuthClient.Scopes, "ACCESS-OLD", "REFRESH-OLD", expiresAt);
 
-    private const string Validate = """{"client_id":"cid","login":"streamer","user_id":"42","scopes":["channel:read:redemptions","channel:manage:redemptions","user:read:chat"],"expires_in":14000}""";
-    private const string Tokens = """{"access_token":"ACCESS-NEW","refresh_token":"REFRESH-NEW","expires_in":14000,"scope":["channel:read:redemptions","channel:manage:redemptions","user:read:chat"],"token_type":"bearer"}""";
+    private const string Validate = """{"client_id":"cid","login":"streamer","user_id":"42","scopes":["channel:read:redemptions","channel:manage:redemptions","user:read:chat","user:write:chat"],"expires_in":14000}""";
+    private const string Tokens = """{"access_token":"ACCESS-NEW","refresh_token":"REFRESH-NEW","expires_in":14000,"scope":["channel:read:redemptions","channel:manage:redemptions","user:read:chat","user:write:chat"],"token_type":"bearer"}""";
     private const string Users = """{"data":[{"id":"42","login":"streamer","broadcaster_type":"affiliate"}]}""";
 
     [Fact]

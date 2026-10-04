@@ -139,7 +139,7 @@ public sealed class ModCommandQueue
                     if (r.ValueKind != JsonValueKind.Object || r.GetProperty("id").GetString() is not { } id) continue;
                     var status = r.TryGetProperty("status", out var s) ? s.GetString() ?? "failed" : "failed";
                     var error = r.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String ? e.GetString() : null;
-                    map[id] = new ModCommandResult(id, status, error);
+                    map[id] = new ModCommandResult(id, status, error, ReadDate(r));
                 }
             }
             return map;
@@ -149,6 +149,13 @@ public sealed class ModCommandQueue
             _log.LogDebug("Reading command results failed: {Message}", ex.Message);
             return null;
         }
+    }
+
+    private static GameDate? ReadDate(JsonElement r)
+    {
+        if (!r.TryGetProperty("until", out var u) || u.ValueKind != JsonValueKind.Object) return null;
+        int? Int(string name) => u.TryGetProperty(name, out var v) && v.TryGetInt32(out var n) ? n : null;
+        return Int("year") is { } y && Int("month") is { } m && Int("day") is { } d ? new GameDate(y, m, d) : null;
     }
 
     // Pod _gate. Najpierw plik tymczasowy, żeby gra nie przeczytała połowy.

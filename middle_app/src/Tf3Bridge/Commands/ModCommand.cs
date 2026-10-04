@@ -34,7 +34,7 @@ public sealed record ModCommand(
     /// </summary>
     public static ModCommand Effect(string effect, long entity, int months, double? factor, CommandSource source, string user, DateTimeOffset? created = null)
     {
-        var args = new Dictionary<string, object> { ["effect"] = effect, ["entity"] = entity, ["months"] = (long)months };
+        var args = new Dictionary<string, object> { ["effect"] = effect, ["entity"] = entity, ["months"] = (long)months, ["user"] = user };
         if (factor is { } f) args["factor"] = f;
         return new(NewId(), "effect", created ?? DateTimeOffset.UtcNow, args, source, user);
     }
@@ -46,8 +46,14 @@ public sealed record ModCommand(
         $"{Kind} {string.Join(", ", Args.Select(a => string.Create(CultureInfo.InvariantCulture, $"{a.Key}={a.Value}")))} ({Source}, {User}, #{Id})");
 }
 
-/// <summary>Result written by the mod. Statuses: ok, failed, invalid, expired.</summary>
-public sealed record ModCommandResult(string Id, string Status, string? Error)
+/// <summary>A date in the game calendar.</summary>
+public sealed record GameDate(int Year, int Month, int Day);
+
+/// <summary>
+/// Result written by the mod. Statuses: ok, failed, invalid, expired.
+/// <see cref="Until"/>: end of a timed effect in the game calendar.
+/// </summary>
+public sealed record ModCommandResult(string Id, string Status, string? Error, GameDate? Until = null)
 {
     public bool Ok => Status == "ok";
 }

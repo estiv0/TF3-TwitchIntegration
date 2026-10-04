@@ -91,6 +91,9 @@ public static class RewardKinds
 /// <summary>Rewards plus the Twitch reward IDs created for them on the streamer's channel.</summary>
 public sealed record RewardSettings(IReadOnlyList<RewardConfig> Rewards, string ChannelUserId, IReadOnlyDictionary<RewardKind, string> TwitchIds)
 {
+    /// <summary>Answer the viewer in chat after a redemption (effect and its end date, or why the points came back).</summary>
+    public bool ChatMessages { get; init; } = true;
+
     public static RewardSettings Default { get; } = new(RewardKinds.Defaults, "", new Dictionary<RewardKind, string>());
 
     public RewardConfig Get(RewardKind kind) => Rewards.First(r => r.Kind == kind);

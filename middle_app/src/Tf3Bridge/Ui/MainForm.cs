@@ -284,9 +284,9 @@ public sealed class MainForm : Form
 
     private void EditRewards()
     {
-        using var dialog = new RewardsDialog(_rewards.Settings.Rewards, _rewards.Status.Message);
+        using var dialog = new RewardsDialog(_rewards.Settings.Rewards, _rewards.Settings.ChatMessages, _rewards.Status.Message);
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
-        _rewards.UpdateSettings(_rewards.Settings with { Rewards = dialog.Rewards });
+        _rewards.UpdateSettings(_rewards.Settings with { Rewards = dialog.Rewards, ChatMessages = dialog.ChatMessages });
         _log.CreateLogger(nameof(MainForm)).LogInformation("Reward settings saved");
     }
 

@@ -10,8 +10,13 @@ public enum RewardState { Off, WaitingForLogin, NotAffiliate, Ok, Paused, Error 
 
 public sealed record RewardStatus(RewardState State, string Message);
 
-/// <summary>How a redemption ended. <see cref="Refunded"/>: the points went back to the viewer.</summary>
-public sealed record RewardOutcome(string Token, RewardKind Kind, string User, string Input, bool Ok, string Message)
+/// <summary>
+/// How a redemption ended. <see cref="Refunded"/>: the points went back to the viewer.
+/// <see cref="ChatText"/>: the answer for the viewer in chat (sent only for real redemptions,
+/// or for a simulation when asked to).
+/// </summary>
+public sealed record RewardOutcome(string Token, RewardKind Kind, string User, string Input, bool Ok, string Message,
+    string? Target = null, GameDate? Until = null, string ChatText = "")
 {
     public bool Refunded => !Ok;
 }
@@ -32,6 +37,7 @@ public sealed class RewardService
 
     private readonly TwitchSession _session;
     private readonly ChannelPointsApi _api;
+    private readonly ChatApi _chat;
     private readonly ModCommandQueue _queue;
     private readonly bool _mock;
     private readonly string _dynamicPath;
@@ -50,17 +56,21 @@ public sealed class RewardService
 
     public RewardService(TwitchSession session, EventSubClient eventSub, ModCommandQueue queue,
         IOptions<BridgeOptions> options, ILogger<RewardService> log)
-        : this(session, new ChannelPointsApi(session, new HttpClient { Timeout = TimeSpan.FromSeconds(20) }), queue,
-            eventSub.IsMock, options.Value.OutputDir, RewardSettingsStore.FilePath, log)
+        : this(session, new HttpClient { Timeout = TimeSpan.FromSeconds(20) }, eventSub.IsMock, queue, options.Value.OutputDir, log)
     {
         eventSub.RedemptionReceived += r => _ = HandleRedemptionAsync(r);
     }
 
-    internal RewardService(TwitchSession session, ChannelPointsApi api, ModCommandQueue queue, bool mock,
+    // Jeden HttpClient dla API nagród i czatu.
+    private RewardService(TwitchSession session, HttpClient http, bool mock, ModCommandQueue queue, string outputDir, ILogger log)
+        : this(session, new ChannelPointsApi(session, http), new ChatApi(session, http), queue, mock, outputDir, RewardSettingsStore.FilePath, log) { }
+
+    internal RewardService(TwitchSession session, ChannelPointsApi api, ChatApi chat, ModCommandQueue queue, bool mock,
         string outputDir, string settingsPath, ILogger log)
     {
         _session = session;
         _api = api;
+        _chat = chat;
         _queue = queue;
         _mock = mock;
         _dynamicPath = Path.Combine(outputDir, ExportProcessor.DynamicPath.Replace('/', Path.DirectorySeparatorChar));
@@ -147,26 +157,32 @@ public sealed class RewardService
         }
     }
 
-    /// <summary>Same path as a real redemption, without Twitch (test from the bridge window).</summary>
-    public RewardOutcome? Simulate(RewardKind kind, string input, string user, out string token)
+    /// <summary>
+    /// Same path as a real redemption, without Twitch points (test from the bridge window).
+    /// <paramref name="chat"/>: also post the answer in chat (to test chat messages without Affiliate).
+    /// </summary>
+    public RewardOutcome? Simulate(RewardKind kind, string input, string user, bool chat, out string token)
     {
         token = "sim-" + Guid.NewGuid().ToString("N")[..8];
-        return Process(kind, input, user, DateTimeOffset.UtcNow, redemption: null, token);
+        return Process(kind, input, user, DateTimeOffset.UtcNow, new Origin(null, user, chat), token);
     }
 
     // ------------------------------------------------------------------ wykupienia
 
     private sealed record Redemption(string RewardId, string Id);
 
-    private sealed record Pending(string Token, RewardKind Kind, string User, string Input, string Target, Redemption? Redemption);
+    /// <summary>Where a redemption came from: Twitch (with <see cref="Redemption"/>) or a simulation.</summary>
+    private sealed record Origin(Redemption? Redemption, string Login, bool Chat);
 
-    private async Task HandleRedemptionAsync(ChannelPointsRedemption r)
+    private sealed record Pending(string Token, RewardKind Kind, string User, string Input, string Target, Origin Origin);
+
+    private Task HandleRedemptionAsync(ChannelPointsRedemption r)
     {
         var kind = KindOf(r.RewardId);
-        if (kind is null) return; // nie nasza nagroda
-        var outcome = Process(kind.Value, r.UserInput, r.UserName.Length > 0 ? r.UserName : r.UserLogin,
-            r.RedeemedAt, new Redemption(r.RewardId, r.Id), r.Id);
-        if (outcome is not null) await CloseAsync(new Redemption(r.RewardId, r.Id), outcome);
+        if (kind is null) return Task.CompletedTask; // nie nasza nagroda
+        Process(kind.Value, r.UserInput, r.UserName.Length > 0 ? r.UserName : r.UserLogin,
+            r.RedeemedAt, new Origin(new Redemption(r.RewardId, r.Id), r.UserLogin.Length > 0 ? r.UserLogin : r.UserName, Chat: true), r.Id);
+        return Task.CompletedTask;
     }
 
     internal Task HandleRedemptionForTestAsync(ChannelPointsRedemption r) => HandleRedemptionAsync(r);
@@ -180,14 +196,15 @@ public sealed class RewardService
     }
 
     /// <summary>Null = sent to the game (the result comes through <see cref="Finished"/>); otherwise rejected right away.</summary>
-    private RewardOutcome? Process(RewardKind kind, string input, string user, DateTimeOffset redeemedAt, Redemption? redemption, string token)
+    private RewardOutcome? Process(RewardKind kind, string input, string user, DateTimeOffset redeemedAt, Origin origin, string token)
     {
         var config = Settings.Get(kind);
         RewardOutcome Reject(string why)
         {
-            var o = new RewardOutcome(token, kind, user, input, false, why);
+            var o = new RewardOutcome(token, kind, user, input, false, why,
+                ChatText: RewardMessages.Text(config, origin.Login, null, ok: false, until: null, reason: why));
             _log.LogWarning("Reward \"{Title}\" by {User} ({Input}): refused, {Why}", config.Title, user, input, why);
-            Finished?.Invoke(o);
+            Complete(origin, o);
             return o;
         }
 
@@ -205,7 +222,7 @@ public sealed class RewardService
             ? ModCommand.Effect(effect, target.Entity, config.Months, RewardKinds.HasFactor(kind) ? config.Factor : null,
                 CommandSource.ChannelPoints, owner, created)
             : ModCommand.Adopt(target.Entity, owner, CommandSource.ChannelPoints, owner, created);
-        lock (_gate) _pending[command.Id] = new Pending(token, kind, owner, input, target.Name, redemption);
+        lock (_gate) _pending[command.Id] = new Pending(token, kind, owner, input, target.Name, origin);
         _queue.Enqueue(command);
         _log.LogInformation("Reward \"{Title}\" by {User}: {Target}", config.Title, owner, target.Name);
         return null;
@@ -218,12 +235,38 @@ public sealed class RewardService
         {
             if (!_pending.Remove(command.Id, out p)) return;
         }
-        var message = result.Ok ? $"wykonano: {p.Target}" : $"{p.Target}: {Explain(result)}";
-        var outcome = new RewardOutcome(p.Token, p.Kind, p.User, p.Input, result.Ok, message);
+        var reason = result.Ok ? null : $"{p.Target}: {Explain(result)}";
+        var message = result.Ok
+            ? $"wykonano: {p.Target}{(result.Until is { } u ? $", do {RewardMessages.Date(u)}" : "")}"
+            : reason!;
+        var chat = RewardMessages.Text(Settings.Get(p.Kind), p.Origin.Login, p.Target, result.Ok, result.Until, reason);
+        var outcome = new RewardOutcome(p.Token, p.Kind, p.User, p.Input, result.Ok, message, p.Target, result.Until, chat);
         if (result.Ok) _log.LogInformation("Reward {Kind} by {User}: {Message}", p.Kind, p.User, message);
         else _log.LogWarning("Reward {Kind} by {User}: {Message}, refunding", p.Kind, p.User, message);
+        Complete(p.Origin, outcome);
+    }
+
+    // Koniec wykupienia: zdarzenie dla okna, rozliczenie na Twitchu i odpowiedź na czacie.
+    private void Complete(Origin origin, RewardOutcome outcome)
+    {
         Finished?.Invoke(outcome);
-        if (p.Redemption is { } r) _ = CloseAsync(r, outcome);
+        if (origin.Redemption is { } r) _ = CloseAsync(r, outcome);
+        if (origin.Chat && Settings.ChatMessages) _ = SayAsync(outcome.ChatText);
+    }
+
+    private async Task SayAsync(string text)
+    {
+        if (_mock || text.Length == 0) return; // serwer testowy nie ma czatu
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            await _chat.SendAsync(text, cts.Token);
+            _log.LogInformation("Chat: {Text}", text);
+        }
+        catch (Exception ex) when (ex is TwitchAuthException or HttpRequestException or OperationCanceledException)
+        {
+            _log.LogWarning("Chat message not sent: {Message}", ex.Message);
+        }
     }
 
     private static string Explain(ModCommandResult r) => r.Status switch
@@ -260,7 +303,10 @@ public sealed class RewardService
                 if (DateTimeOffset.UtcNow - r.RedeemedAt > MaxRedemptionAge)
                 {
                     _log.LogWarning("Refunding old redemption of {Kind} by {User} from {At:g}", kind, r.UserName, r.RedeemedAt.ToLocalTime());
-                    await CloseAsync(new Redemption(rewardId, r.Id), new RewardOutcome(r.Id, kind, r.UserName, r.UserInput, false, "za stare"));
+                    const string why = "gra nie działała, gdy nagroda została kupiona";
+                    Complete(new Origin(new Redemption(rewardId, r.Id), r.UserLogin, Chat: true),
+                        new RewardOutcome(r.Id, kind, r.UserName, r.UserInput, false, why,
+                            ChatText: RewardMessages.Text(Settings.Get(kind), r.UserLogin, null, ok: false, until: null, reason: why)));
                     continue;
                 }
                 await HandleRedemptionAsync(new ChannelPointsRedemption(r.Id, rewardId, "", 0, "", r.UserLogin, r.UserName, r.UserInput, r.RedeemedAt));

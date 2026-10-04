@@ -62,6 +62,19 @@ public sealed class ModCommandTests : IDisposable
     }
 
     [Fact]
+    public void Reads_the_effect_end_date_and_sends_the_viewer_to_the_game()
+    {
+        var queue = Queue();
+        var a = queue.Enqueue(ModCommand.Effect("townBoost", 5, 12, 1.5, CommandSource.Test, "widz"));
+        Assert.Contains("months = 12, user = \"widz\", factor = 1.5", QueueText);
+
+        WriteResults("{\"results\":[{\"id\":\"" + a.Id + "\",\"status\":\"ok\",\"until\":{\"year\":1922,\"month\":5,\"day\":12}}]}");
+        queue.Poll();
+
+        Assert.Equal(new GameDate(1922, 5, 12), queue.ResultOf(a.Id)!.Until);
+    }
+
+    [Fact]
     public void Removes_a_command_from_the_queue_once_the_mod_reports_it()
     {
         var queue = Queue();

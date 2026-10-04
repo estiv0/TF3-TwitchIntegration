@@ -13,14 +13,22 @@ public sealed class RewardsDialog : Form
         AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells, BackgroundColor = SystemColors.Window,
     };
     private readonly Label _error = new() { AutoSize = true, ForeColor = Color.Firebrick, MaximumSize = new Size(1060, 0) };
+    private readonly CheckBox _chat = new()
+    {
+        AutoSize = true, Text = "Odpowiadaj widzom na czacie (np. „@widz boost miasta Szczecin działa do 12 maja 1922”, albo dlaczego punkty wróciły)",
+    };
     private readonly IReadOnlyList<RewardConfig> _original;
 
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public IReadOnlyList<RewardConfig> Rewards { get; private set; }
 
-    public RewardsDialog(IReadOnlyList<RewardConfig> rewards, string status)
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool ChatMessages { get; private set; }
+
+    public RewardsDialog(IReadOnlyList<RewardConfig> rewards, bool chatMessages, string status)
     {
         _original = Rewards = rewards;
+        ChatMessages = _chat.Checked = chatMessages;
         Text = "Tf3Bridge: nagrody za punkty kanału";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = MinimizeBox = false;
@@ -69,7 +77,7 @@ public sealed class RewardsDialog : Form
         CancelButton = cancel;
 
         var root = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, Padding = new Padding(14), Dock = DockStyle.Fill };
-        root.Controls.AddRange([hint, _grid, _error, buttons]);
+        root.Controls.AddRange([hint, _grid, _chat, _error, buttons]);
         Controls.Add(root);
 
         ok.Click += (_, _) =>
@@ -77,6 +85,7 @@ public sealed class RewardsDialog : Form
             if (TryRead(out var list, out var error))
             {
                 Rewards = list;
+                ChatMessages = _chat.Checked;
                 DialogResult = DialogResult.OK;
             }
             else _error.Text = error;
@@ -84,6 +93,7 @@ public sealed class RewardsDialog : Form
         defaults.Click += (_, _) =>
         {
             Rewards = RewardKinds.Defaults;
+            ChatMessages = true;
             DialogResult = DialogResult.OK;
         };
     }
