@@ -144,7 +144,7 @@ Jedyna droga zmian w grze od widzów (`RewardService`). Pięć nagród, każdą 
 | Stop linii (od razu) | linia | `effect lineStop` (miesiące) |
 | Linia czeka na stacjach | linia | `effect lineHold` (miesiące) |
 
-- **Na Twitchu:** Tf3Bridge sam tworzy nagrody (tylko te może potem zmieniać i rozliczać), zapamiętuje ich ID w `%LOCALAPPDATA%\Tf3Bridge\rewards.json` i aktualizuje je po zapisaniu ustawień. Gdy przez 2 minuty nie ma nowego eksportu z gry, nagrody są pauzowane. Wymaga kanału Affiliate/Partner; bez tego nic nie trafia na Twitcha.
+- **Na Twitchu:** Tf3Bridge sam tworzy nagrody (tylko te może potem zmieniać i rozliczać), zapamiętuje ich ID w `%LOCALAPPDATA%\Tf3Bridge\rewards.json` i aktualizuje je po zapisaniu ustawień. Nagrody są włączone tylko wtedy, gdy most działa i dostał od startu dane z gry (zapis jest wczytany); przy „Zatrzymaj”, bez nowego eksportu przez 2 minuty (np. pauza w grze) i przy zamykaniu Tf3Bridge są wyłączane (widzowie ich nie widzą). Wykupienia, które mimo to przyjdą, gdy gra nie działa, są od razu zwracane. Wymaga kanału Affiliate/Partner; bez tego nic nie trafia na Twitcha.
 - **Wykupienie:** tekst od widza jest dopasowywany do nazw z ostatniego `dynamic.json` (`TargetResolver`). Wielkość liter, polskie znaki, spacje i „\| właściciel” nie mają znaczenia. Wygrywa dokładne dopasowanie, potem jednoznaczny początek nazwy, potem jednoznaczny fragment.
 - **Rozliczenie:** gdy gra potwierdzi, wykupienie dostaje FULFILLED. Gdy celu nie ma, cel jest niejednoznaczny, nagroda jest wyłączona albo gra odmówi lub nie zdąży, wykupienie dostaje CANCELED i Twitch zwraca punkty.
 - **Wykupienia z czasu, gdy Tf3Bridge był wyłączony:** świeższe niż 5 minut są wykonywane, starsze zwracane.
@@ -218,7 +218,7 @@ middle_app/
     Ui/CommandTestDialog.cs       test bez Twitcha: symulacja nagrody i ręczna zmiana nazwy
     Rewards/RewardSettings.cs     nagrody (rodzaje, koszty, miesiące, mnożniki), zapis rewards.json
     Rewards/TargetResolver.cs     dopasowanie tekstu od widza do miasta, zakładu albo linii
-    Rewards/RewardService.cs      nagrody na Twitchu, wykupienia -> komendy, FULFILLED/CANCELED, pauza bez gry
+    Rewards/RewardService.cs      nagrody na Twitchu, wykupienia -> komendy, FULFILLED/CANCELED, wyłączanie bez gry
     Twitch/ChannelPointsApi.cs    Helix: nagrody i status wykupień
     Twitch/ChatApi.cs             Helix: wiadomość na czacie jako streamer
     Rewards/RewardMessages.cs     treść odpowiedzi dla widzów (data końca efektu w grze, powód zwrotu)

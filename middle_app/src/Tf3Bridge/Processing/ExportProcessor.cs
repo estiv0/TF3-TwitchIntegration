@@ -39,6 +39,11 @@ public sealed class ExportProcessor(IOptions<BridgeOptions> options, IPublisher 
 
     public NetworkState Network => _network;
 
+    private long _lastDynamicTicks;
+
+    /// <summary>When this run last published a dynamic snapshot (a save is loaded and the game exports), null = not yet.</summary>
+    public DateTime? LastDynamicUtc => Volatile.Read(ref _lastDynamicTicks) is var t and > 0 ? new DateTime(t, DateTimeKind.Utc) : null;
+
     public async Task ProcessOnceAsync(CancellationToken ct)
     {
         if (!Directory.Exists(_options.InputDir)) return;
@@ -71,7 +76,10 @@ public sealed class ExportProcessor(IOptions<BridgeOptions> options, IPublisher 
         if (networkChanged)
             await publisher.PublishAsync(NetworkPath, _network.ToJson().ToJsonString(JsonOptions), ct);
         if (dynamicJson is not null)
+        {
             await publisher.PublishAsync(DynamicPath, dynamicJson, ct);
+            Volatile.Write(ref _lastDynamicTicks, DateTime.UtcNow.Ticks);
+        }
         if (networkChanged || dynamicChanged || terrainChanged)
             await publisher.PublishAsync(MetaPath, BuildMeta().ToJsonString(JsonOptions), ct);
     }

@@ -137,20 +137,22 @@ public sealed class MainForm : Form
         }
     }
 
-    // Zamknięcie: najpierw zatrzymaj pętlę (dokończy bieżący przebieg), potem zamknij okno.
+    // Zamknięcie: najpierw zatrzymaj pętlę (dokończy bieżący przebieg) i wyłącz nagrody na Twitchu, potem zamknij okno.
     protected override async void OnFormClosing(FormClosingEventArgs e)
     {
-        if (!_closing && _runner.IsRunning)
+        if (!_closing)
         {
             e.Cancel = true;
             _closing = true;
             Enabled = false;
             _status.Text = "Zamykanie…";
-            await _runner.StopAsync();
+            if (_runner.IsRunning) await _runner.StopAsync();
+            _backgroundCts.Cancel();
+            using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+                await _rewards.DisableAsync(cts.Token); // bez działającego mostu nikt nie obsłuży wykupień
             Close();
             return;
         }
-        _closing = true;
         _backgroundCts.Cancel();
         _timer.Stop();
         _tray.Visible = false;
@@ -273,7 +275,7 @@ public sealed class MainForm : Form
         {
             RewardState.Ok => ($"Nagrody: {r.Message}", Color.FromArgb(46, 160, 67)),
             RewardState.Error => ($"Nagrody: błąd: {r.Message}", Color.Firebrick),
-            RewardState.Paused or RewardState.NotAffiliate => ($"Nagrody: {r.Message}", Color.DarkOrange),
+            RewardState.Inactive or RewardState.NotAffiliate => ($"Nagrody: {r.Message}", Color.DarkOrange),
             _ => ($"Nagrody: {r.Message}", SystemColors.GrayText),
         };
     }

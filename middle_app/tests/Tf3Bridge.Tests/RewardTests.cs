@@ -33,13 +33,15 @@ public sealed class RewardTests : IDisposable
         if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true);
     }
 
+    private string? _whyInactive; // null = gra działa
+
     private RewardService Service(string broadcasterType = "affiliate", bool mock = false)
     {
         var store = Path.Combine(_dir, "twitch.json");
         TwitchAccountStore.Save(new TwitchAccount("42", "streamer", broadcasterType, TwitchAuthClient.Scopes, "ACCESS", "REFRESH", DateTimeOffset.UtcNow.AddHours(3)), store);
         var session = new TwitchSession(new TwitchAuthClient(new HttpClient(), "cid"), store, NullLogger.Instance);
         var service = new RewardService(session, new ChannelPointsApi(session, new HttpClient(_helix)), new ChatApi(session, new HttpClient(_helix)), _queue, mock,
-            Path.Combine(_dir, "out"), Path.Combine(_dir, "rewards.json"), NullLogger.Instance, "https://gin.estfosoft.com/");
+            Path.Combine(_dir, "out"), Path.Combine(_dir, "rewards.json"), () => _whyInactive, NullLogger.Instance, "https://gin.estfosoft.com/");
         service.Finished += _outcomes.Enqueue;
         return service;
     }
@@ -170,11 +172,12 @@ public sealed class RewardTests : IDisposable
     [Fact]
     public void Twitch_body_requires_input_and_keeps_redemptions_in_the_queue()
     {
-        var body = RewardService.Body(RewardKinds.Defaults[0] with { CooldownSec = 0, MaxPerUserPerStream = 2 }, paused: true);
+        var body = RewardService.Body(RewardKinds.Defaults[0] with { CooldownSec = 0, MaxPerUserPerStream = 2 }, active: false);
 
         Assert.True((bool)body["is_user_input_required"]!);
         Assert.False((bool)body["should_redemptions_skip_request_queue"]!); // inaczej nie da się zwrócić punktów
-        Assert.True((bool)body["is_paused"]!);
+        Assert.False((bool)body["is_enabled"]!);
+        Assert.False((bool)body["is_paused"]!);
         Assert.False((bool)body["is_global_cooldown_enabled"]!);
         Assert.False(body.ContainsKey("global_cooldown_seconds"));
         Assert.Equal(2, (int)body["max_per_user_per_stream"]!);
@@ -307,16 +310,77 @@ public sealed class RewardTests : IDisposable
     }
 
     [Fact]
-    public async Task Pauses_rewards_when_the_game_stops_exporting()
+    public async Task Creates_rewards_disabled_while_the_game_sends_no_data()
     {
         _helix.Rewards = """{"data":[]}""";
-        File.SetLastWriteTimeUtc(Path.Combine(_dir, "out", "latest", "meta.json"), DateTime.UtcNow.AddMinutes(-10));
+        _whyInactive = "brak danych z gry (wczytaj zapis)";
         var service = Service();
 
         await service.TickAsync(default);
 
-        Assert.Equal(RewardState.Paused, service.Status.State);
-        Assert.All(_helix.Requests.Where(r => r.Method == "POST"), r => Assert.Contains("\"is_paused\":true", r.Body));
+        Assert.Equal(RewardState.Inactive, service.Status.State);
+        Assert.Contains("wczytaj zapis", service.Status.Message);
+        Assert.All(_helix.Requests.Where(r => r.Method == "POST"), r => Assert.Contains("\"is_enabled\":false", r.Body));
+    }
+
+    [Fact]
+    public async Task Enables_and_disables_rewards_with_the_game()
+    {
+        var service = await SyncedService();
+
+        _whyInactive = "most jest zatrzymany";
+        await service.TickAsync(default);
+        var off = _helix.Requests.Where(r => r.Method == "PATCH").ToList();
+        _helix.Requests.Clear();
+        _whyInactive = null;
+        await service.TickAsync(default);
+        var on = _helix.Requests.Where(r => r.Method == "PATCH").ToList();
+
+        Assert.Equal(5, off.Count);
+        Assert.All(off, r => Assert.Equal("""{"is_enabled":false}""", r.Body));
+        Assert.Equal(5, on.Count);
+        Assert.All(on, r => Assert.Equal("""{"is_enabled":true}""", r.Body));
+        Assert.Equal(RewardState.Ok, service.Status.State);
+    }
+
+    [Fact]
+    public async Task Disables_rewards_when_the_bridge_closes()
+    {
+        var service = await SyncedService();
+
+        await service.DisableAsync(default);
+        await service.DisableAsync(default); // drugi raz nic nie wysyła
+
+        var patches = _helix.Requests.Where(r => r.Method == "PATCH").ToList();
+        Assert.Equal(5, patches.Count);
+        Assert.All(patches, r => Assert.Equal("""{"is_enabled":false}""", r.Body));
+    }
+
+    [Fact]
+    public async Task Refunds_redemptions_while_the_game_sends_no_data()
+    {
+        var service = await SyncedService();
+        var rewardId = service.Settings.TwitchIds[RewardKind.BoostTown];
+        _whyInactive = "gra nie wysyła danych od 2 min";
+
+        await service.HandleRedemptionForTestAsync(new ChannelPointsRedemption("red1", rewardId, "", 0, "7", "widz", "Widz", "łódź", DateTimeOffset.UtcNow));
+
+        var close = await _helix.WaitFor(r => r.Url.Contains("redemptions") && r.Method == "PATCH");
+        Assert.Contains("CANCELED", close.Body);
+        Assert.False(File.Exists(Path.Combine(_dir, "cmd", "queue.lua")) && QueueText.Contains("townBoost"));
+        Assert.Contains("gra nie działa", Assert.Single(_outcomes).Message);
+    }
+
+    [Theory]
+    [InlineData(false, 0.0, "most jest zatrzymany")]
+    [InlineData(true, null, "brak danych z gry (wczytaj zapis)")]
+    [InlineData(true, 3.0, "gra nie wysyła danych od 2 min")]
+    [InlineData(true, 0.5, null)]
+    public void Rewards_need_a_running_bridge_and_fresh_game_data(bool running, double? minutesAgo, string? why)
+    {
+        var now = new DateTime(2026, 10, 4, 12, 0, 0, DateTimeKind.Utc);
+
+        Assert.Equal(why, RewardService.WhyInactive(running, minutesAgo is { } m ? now.AddMinutes(-m) : null, now));
     }
 
     [Fact]

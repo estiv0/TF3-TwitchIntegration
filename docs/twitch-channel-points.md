@@ -97,7 +97,7 @@ Rzeczy poza samymi nagrodami:
 2. **Wskazanie celu.** Widz wpisuje wolny tekst, więc Tf3Bridge musi dopasować go do nazwy z ostatniego eksportu i przy niejednoznaczności zwrócić punkty. Strona mogłaby pokazywać przy obiekcie krótki „kod do nagrody” do skopiowania.
 3. **Bezpieczeństwo.** Tekst widza trafia do pliku Lua wyłącznie jako escapowany string. Trzeba mieć whitelistę typów komend i limity długości. Treść widza nigdy nie może stać się kodem.
 4. **Idempotencja.** Każda komenda niesie `redemptionId`, a mod pamięta wykonane identyfikatory, żeby po ponownym odczycie pliku nie wykonać ich dwa razy.
-5. **Gra wyłączona albo pauza.** Tf3Bridge powinien pauzować nagrody (`is_paused`), gdy nie widzi świeżych eksportów. Wykupienia, których nie dało się wykonać, zwraca przez `CANCELED`.
+5. **Gra wyłączona albo pauza.** Tf3Bridge wyłącza nagrody (`is_enabled: false`), gdy most jest zatrzymany, nie ma świeżych eksportów z wczytanego zapisu albo aplikacja się zamyka; włącza je, gdy dane z gry znów przychodzą. Wykupienia, których nie dało się wykonać, zwraca przez `CANCELED`.
 6. **Multiplayer.** Komendy z naszego moda mogą działać inaczej w grze sieciowej. Do sprawdzenia, jeśli będzie potrzebne.
 
 ## 6. Proponowana kolejność

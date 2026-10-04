@@ -6,7 +6,7 @@ using Tf3Bridge.Twitch;
 
 namespace Tf3Bridge.Rewards;
 
-public enum RewardState { Off, WaitingForLogin, NotAffiliate, Ok, Paused, Error }
+public enum RewardState { Off, WaitingForLogin, NotAffiliate, Ok, Inactive, Error }
 
 public sealed record RewardStatus(RewardState State, string Message);
 
@@ -22,8 +22,8 @@ public sealed record RewardOutcome(string Token, RewardKind Kind, string User, s
 }
 
 /// <summary>
-/// Channel points rewards: keeps them in sync on Twitch (create, update, pause while the game is not
-/// exporting), turns redemptions into mod commands and closes them: FULFILLED when the game confirms,
+/// Channel points rewards: keeps them in sync on Twitch (create, update, enabled only while the bridge runs
+/// and a loaded save exports data, disabled when Tf3Bridge closes), turns redemptions into mod commands and closes them: FULFILLED when the game confirms,
 /// CANCELED (points refunded) when the target is not found, already taken or the game fails.
 /// The only path from viewers to game changes (see CommandSource).
 /// </summary>
@@ -31,7 +31,7 @@ public sealed class RewardService
 {
     /// <summary>Redemptions waiting longer than this (e.g. while Tf3Bridge was off) are refunded.</summary>
     internal static readonly TimeSpan MaxRedemptionAge = TimeSpan.FromMinutes(5);
-    /// <summary>No export for this long = game not running: rewards are paused on Twitch.</summary>
+    /// <summary>No export for this long = game not running: rewards are disabled on Twitch.</summary>
     internal static readonly TimeSpan GameIdleAfter = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan LoopEvery = TimeSpan.FromSeconds(15);
 
@@ -41,7 +41,7 @@ public sealed class RewardService
     private readonly ModCommandQueue _queue;
     private readonly bool _mock;
     private readonly string _dynamicPath;
-    private readonly string _metaPath;
+    private readonly Func<string?> _whyInactive; // null = gra działa i wysyła dane
     private readonly string _settingsPath;
     private readonly string _siteUrl;
     private readonly ILogger _log;
@@ -50,25 +50,31 @@ public sealed class RewardService
     private RewardSettings _settings;
     private volatile RewardStatus _status = new(RewardState.Off, "wyłączone");
     private string? _syncedFor;      // konto, dla którego nagrody są zsynchronizowane
-    private bool? _paused;           // ostatnio ustawiona pauza na Twitchu
+    private bool? _active;           // ostatnio ustawione włączenie na Twitchu
     private readonly SemaphoreSlim _wake = new(0);
+    private readonly SemaphoreSlim _tick = new(1, 1); // pętla i wyłączanie przy zamykaniu
 
     public event Action<RewardOutcome>? Finished;
 
-    public RewardService(TwitchSession session, EventSubClient eventSub, ModCommandQueue queue,
+    public RewardService(TwitchSession session, EventSubClient eventSub, ModCommandQueue queue, BridgeRunner runner, ExportProcessor processor,
         IOptions<BridgeOptions> options, IOptions<TwitchOptions> twitch, ILogger<RewardService> log)
-        : this(session, new HttpClient { Timeout = TimeSpan.FromSeconds(20) }, eventSub.IsMock, queue, options.Value.OutputDir, twitch.Value.SiteUrl, log)
+        : this(session, new HttpClient { Timeout = TimeSpan.FromSeconds(20) }, eventSub.IsMock, queue, options.Value.OutputDir, twitch.Value.SiteUrl,
+            () => WhyInactive(runner.IsRunning, processor.LastDynamicUtc, DateTime.UtcNow), log)
     {
         eventSub.RedemptionReceived += r => _ = HandleRedemptionAsync(r);
+        runner.StateChanged += () => _wake.Release(); // Zatrzymaj / Uruchom: nagrody od razu, nie po 15 s
     }
 
     // Jeden HttpClient dla API nagród i czatu.
-    private RewardService(TwitchSession session, HttpClient http, bool mock, ModCommandQueue queue, string outputDir, string siteUrl, ILogger log)
-        : this(session, new ChannelPointsApi(session, http), new ChatApi(session, http), queue, mock, outputDir, RewardSettingsStore.FilePath, log, siteUrl) { }
+    private RewardService(TwitchSession session, HttpClient http, bool mock, ModCommandQueue queue, string outputDir, string siteUrl,
+        Func<string?> whyInactive, ILogger log)
+        : this(session, new ChannelPointsApi(session, http), new ChatApi(session, http), queue, mock, outputDir, RewardSettingsStore.FilePath,
+            whyInactive, log, siteUrl) { }
 
     internal RewardService(TwitchSession session, ChannelPointsApi api, ChatApi chat, ModCommandQueue queue, bool mock,
-        string outputDir, string settingsPath, ILogger log, string siteUrl = "")
+        string outputDir, string settingsPath, Func<string?> whyInactive, ILogger log, string siteUrl = "")
     {
+        _whyInactive = whyInactive;
         _siteUrl = siteUrl;
         _session = session;
         _api = api;
@@ -76,7 +82,6 @@ public sealed class RewardService
         _queue = queue;
         _mock = mock;
         _dynamicPath = Path.Combine(outputDir, ExportProcessor.DynamicPath.Replace('/', Path.DirectorySeparatorChar));
-        _metaPath = Path.Combine(outputDir, ExportProcessor.MetaPath.Replace('/', Path.DirectorySeparatorChar));
         _settingsPath = settingsPath;
         _log = log;
         _settings = RewardSettingsStore.Load(settingsPath);
@@ -113,7 +118,45 @@ public sealed class RewardService
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
     }
 
+    /// <summary>Null when rewards may be on: the bridge runs and this run got game data in the last <see cref="GameIdleAfter"/>.</summary>
+    internal static string? WhyInactive(bool bridgeRunning, DateTime? lastDynamicUtc, DateTime nowUtc) =>
+        !bridgeRunning ? "most jest zatrzymany"
+        : lastDynamicUtc is not { } last ? "brak danych z gry (wczytaj zapis)"
+        : nowUtc - last >= GameIdleAfter ? "gra nie wysyła danych od 2 min"
+        : null;
+
     internal async Task TickAsync(CancellationToken ct)
+    {
+        await _tick.WaitAsync(ct);
+        try { await TickLockedAsync(ct); }
+        finally { _tick.Release(); }
+    }
+
+    /// <summary>
+    /// Disables the rewards on Twitch before Tf3Bridge closes, so viewers cannot buy anything while nobody handles it.
+    /// </summary>
+    public async Task DisableAsync(CancellationToken ct)
+    {
+        try
+        {
+            await _tick.WaitAsync(ct);
+        }
+        catch (OperationCanceledException) { return; }
+        try
+        {
+            if (_mock || _syncedFor is null || _active == false) return;
+            await SetActiveAsync(false, ct);
+            _active = false;
+            _log.LogInformation("Rewards disabled on Twitch (closing)");
+        }
+        catch (Exception ex) when (ex is TwitchAuthException or HttpRequestException or OperationCanceledException)
+        {
+            _log.LogWarning("Could not disable rewards on Twitch: {Message}", ex.Message);
+        }
+        finally { _tick.Release(); }
+    }
+
+    private async Task TickLockedAsync(CancellationToken ct)
     {
         if (_mock)
         {
@@ -133,24 +176,25 @@ public sealed class RewardService
         }
         try
         {
-            var paused = !GameRunning();
+            var why = _whyInactive();
+            var active = why is null;
             if (_syncedFor != userId)
             {
-                await SyncAsync(userId, paused, ct);
+                await SyncAsync(userId, active, ct);
                 _syncedFor = userId;
-                _paused = paused;
+                _active = active;
                 await ProcessBacklogAsync(ct);
             }
-            else if (_paused != paused)
+            else if (_active != active)
             {
-                await SetPausedAsync(paused, ct);
-                _paused = paused;
-                _log.LogInformation("Rewards {State}", paused ? "paused (no game data for 2 min)" : "resumed");
+                await SetActiveAsync(active, ct);
+                _active = active;
+                _log.LogInformation("Rewards {State}", active ? "enabled on Twitch (game data arrives)" : $"disabled on Twitch: {why}");
             }
             var enabled = Settings.Rewards.Count(r => r.Enabled);
-            _status = paused
-                ? new(RewardState.Paused, $"wstrzymane na Twitchu, bo gra nie wysyła danych ({enabled} nagród)")
-                : new(RewardState.Ok, $"aktywne: {enabled} z {Settings.Rewards.Count}");
+            _status = active
+                ? new(RewardState.Ok, $"aktywne: {enabled} z {Settings.Rewards.Count}")
+                : new(RewardState.Inactive, $"wyłączone na Twitchu, bo {why} ({enabled} nagród)");
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
@@ -182,6 +226,12 @@ public sealed class RewardService
     {
         var kind = KindOf(r.RewardId);
         if (kind is null) return Task.CompletedTask; // nie nasza nagroda
+        // Kupione tuż przed wyłączeniem nagród albo czekające od poprzedniego uruchomienia: gra i tak by tego nie wykonała.
+        if (!_mock && _whyInactive() is { } why)
+        {
+            Refuse(r, kind.Value, "gra nie działa: " + why);
+            return Task.CompletedTask;
+        }
         Process(kind.Value, r.UserInput, r.UserName.Length > 0 ? r.UserName : r.UserLogin,
             r.RedeemedAt, new Origin(new Redemption(r.RewardId, r.Id), r.UserLogin.Length > 0 ? r.UserLogin : r.UserName, Chat: true), r.Id);
         return Task.CompletedTask;
@@ -303,23 +353,31 @@ public sealed class RewardService
         {
             foreach (var r in await _api.GetUnfulfilledAsync(rewardId, ct))
             {
+                var redemption = new ChannelPointsRedemption(r.Id, rewardId, "", 0, "", r.UserLogin, r.UserName, r.UserInput, r.RedeemedAt);
                 if (DateTimeOffset.UtcNow - r.RedeemedAt > MaxRedemptionAge)
                 {
                     _log.LogWarning("Refunding old redemption of {Kind} by {User} from {At:g}", kind, r.UserName, r.RedeemedAt.ToLocalTime());
-                    const string why = "gra nie działała, gdy nagroda została kupiona";
-                    Complete(new Origin(new Redemption(rewardId, r.Id), r.UserLogin, Chat: true),
-                        new RewardOutcome(r.Id, kind, r.UserName, r.UserInput, false, why,
-                            ChatText: RewardMessages.Text(Settings.Get(kind), r.UserLogin, null, ok: false, until: null, reason: why)));
+                    Refuse(redemption, kind, "gra nie działała, gdy nagroda została kupiona");
                     continue;
                 }
-                await HandleRedemptionAsync(new ChannelPointsRedemption(r.Id, rewardId, "", 0, "", r.UserLogin, r.UserName, r.UserInput, r.RedeemedAt));
+                await HandleRedemptionAsync(redemption);
             }
         }
     }
 
+    // Zwrot punktów bez wysyłania do gry.
+    private void Refuse(ChannelPointsRedemption r, RewardKind kind, string why)
+    {
+        var login = r.UserLogin.Length > 0 ? r.UserLogin : r.UserName;
+        _log.LogWarning("Reward {Kind} by {User} ({Input}): refunding, {Why}", kind, r.UserName, r.UserInput, why);
+        Complete(new Origin(new Redemption(r.RewardId, r.Id), login, Chat: true),
+            new RewardOutcome(r.Id, kind, r.UserName.Length > 0 ? r.UserName : login, r.UserInput, false, why,
+                ChatText: RewardMessages.Text(Settings.Get(kind), login, null, ok: false, until: null, reason: why)));
+    }
+
     // ------------------------------------------------------------------ nagrody na Twitchu
 
-    private async Task SyncAsync(string userId, bool paused, CancellationToken ct)
+    private async Task SyncAsync(string userId, bool active, CancellationToken ct)
     {
         var s = Settings;
         var ids = s.ChannelUserId == userId ? new Dictionary<RewardKind, string>(s.TwitchIds) : [];
@@ -329,7 +387,7 @@ public sealed class RewardService
             var id = ids.TryGetValue(config.Kind, out var known) && existing.Any(e => e.Id == known)
                 ? known
                 : existing.FirstOrDefault(e => e.Title == config.Title)?.Id; // np. po utracie rewards.json
-            var body = Body(config, paused);
+            var body = Body(config, active);
             if (id is null)
             {
                 if (!config.Enabled) { ids.Remove(config.Kind); continue; }
@@ -347,24 +405,25 @@ public sealed class RewardService
         _log.LogInformation("Rewards synced with Twitch ({Count} enabled)", s.Rewards.Count(r => r.Enabled));
     }
 
-    private async Task SetPausedAsync(bool paused, CancellationToken ct)
+    private async Task SetActiveAsync(bool active, CancellationToken ct)
     {
         foreach (var config in Settings.Rewards.Where(r => r.Enabled))
         {
             if (Settings.TwitchIds.TryGetValue(config.Kind, out var id))
-                await _api.UpdateRewardAsync(id, new JsonObject { ["is_paused"] = paused }, ct);
+                await _api.UpdateRewardAsync(id, new JsonObject { ["is_enabled"] = active }, ct);
         }
     }
 
-    internal static JsonObject Body(RewardConfig c, bool paused)
+    /// <param name="active">false = hidden from viewers (is_enabled), so nobody buys while the game cannot handle it.</param>
+    internal static JsonObject Body(RewardConfig c, bool active)
     {
         var body = new JsonObject
         {
             ["title"] = c.Title,
             ["prompt"] = c.TwitchPrompt,
             ["cost"] = c.Cost,
-            ["is_enabled"] = c.Enabled,
-            ["is_paused"] = paused,
+            ["is_enabled"] = c.Enabled && active,
+            ["is_paused"] = false, // starsze wersje pauzowały zamiast wyłączać
             ["is_user_input_required"] = true,
             ["should_redemptions_skip_request_queue"] = false,
             ["is_global_cooldown_enabled"] = c.CooldownSec > 0,
@@ -376,9 +435,6 @@ public sealed class RewardService
         if (c.MaxPerUserPerStream > 0) body["max_per_user_per_stream"] = c.MaxPerUserPerStream;
         return body;
     }
-
-    private bool GameRunning() =>
-        File.Exists(_metaPath) && DateTime.UtcNow - File.GetLastWriteTimeUtc(_metaPath) < GameIdleAfter;
 
     private void SaveLocked()
     {
