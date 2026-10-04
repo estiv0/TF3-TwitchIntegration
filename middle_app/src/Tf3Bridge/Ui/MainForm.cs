@@ -28,11 +28,11 @@ public sealed class MainForm : Form
     private readonly UiLogProvider _log;
 
     private readonly Label _status = new() { AutoSize = true, Font = new Font("Segoe UI", 11f, FontStyle.Bold) };
-    private readonly Label _lastUpdate = new() { AutoSize = true, ForeColor = SystemColors.GrayText };
-    private readonly Label _azure = new() { AutoSize = true };
-    private readonly Label _twitchStatus = new() { AutoSize = true };
-    private readonly Label _eventSubStatus = new() { AutoSize = true };
-    private readonly Label _rewardStatus = new() { AutoSize = true };
+    private readonly Label _lastUpdate = StatusLine();
+    private readonly Label _azure = StatusLine();
+    private readonly Label _twitchStatus = StatusLine();
+    private readonly Label _eventSubStatus = StatusLine();
+    private readonly Label _rewardStatus = StatusLine();
     private readonly Button _toggle = new() { AutoSize = true, MinimumSize = new Size(110, 30) };
     private readonly TextBox _logBox = new()
     {
@@ -58,22 +58,25 @@ public sealed class MainForm : Form
         _log = log;
 
         Text = "Tf3Bridge";
-        ClientSize = new Size(900, 460);
-        MinimumSize = new Size(900, 320);
+        ClientSize = new Size(900, 480);
+        MinimumSize = new Size(560, 400);
         StartPosition = FormStartPosition.CenterScreen;
         Font = new Font("Segoe UI", 9f);
 
-        var header = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false, Margin = new Padding(0) };
-        var statusBox = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, Margin = new Padding(0, 0, 16, 0) };
-        statusBox.Controls.AddRange([_status, _lastUpdate, _azure, _twitchStatus, _eventSubStatus, _rewardStatus]);
-        var openOutput = new Button { Text = "Folder wyjściowy", AutoSize = true, MinimumSize = new Size(0, 30) };
-        var openInput = new Button { Text = "Folder moda", AutoSize = true, MinimumSize = new Size(0, 30) };
-        var azure = new Button { Text = "Azure…", AutoSize = true, MinimumSize = new Size(0, 30) };
-        var twitchButton = new Button { Text = "Twitch…", AutoSize = true, MinimumSize = new Size(0, 30) };
-        var rewardsButton = new Button { Text = "Nagrody…", AutoSize = true, MinimumSize = new Size(0, 30) };
-        var commandTest = new Button { Text = "Test akcji…", AutoSize = true, MinimumSize = new Size(0, 30) };
-        var modSettings = new Button { Text = "Ustawienia moda…", AutoSize = true, MinimumSize = new Size(0, 30) };
-        header.Controls.AddRange([statusBox, _toggle, openOutput, openInput, azure, twitchButton, rewardsButton, commandTest, modSettings]);
+        // Przyciski w rzędzie, który się zawija (wąskie okno = dwa rzędy), pod nimi linie stanu na całą
+        // szerokość; za długi stan kończy się "…", a pełny tekst jest w podpowiedzi (AutoEllipsis).
+        var openOutput = ToolButton("Folder wyjściowy");
+        var openInput = ToolButton("Folder moda");
+        var modSettings = ToolButton("Ustawienia moda…");
+        var azure = ToolButton("Azure…", groupStart: true);
+        var twitchButton = ToolButton("Twitch…");
+        var rewardsButton = ToolButton("Nagrody…");
+        var commandTest = ToolButton("Test akcji…");
+        _lastUpdate.ForeColor = SystemColors.GrayText;
+        _toggle.Margin = new Padding(0, 3, 3, 3);
+        openOutput.Margin = GroupMargin;
+        var toolbar = Toolbar(_toggle, openOutput, openInput, modSettings, azure, twitchButton, rewardsButton, commandTest);
+        var statusBox = StatusPanel(_status, _lastUpdate, _azure, _twitchStatus, _eventSubStatus, _rewardStatus);
 
         var paths = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, Margin = new Padding(0, 8, 0, 8) };
         paths.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -84,14 +87,7 @@ public sealed class MainForm : Form
         AddPathRow(paths, "Wyjście (strona):", _options.OutputDir);
         AddPathRow(paths, "Mod w grze:", ModText(mod));
 
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12), RowCount = 3, ColumnCount = 1 };
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.Controls.Add(header, 0, 0);
-        root.Controls.Add(paths, 0, 1);
-        root.Controls.Add(_logBox, 0, 2);
-        Controls.Add(root);
+        Controls.Add(Root(toolbar, statusBox, paths, _logBox));
 
         _toggle.Click += async (_, _) =>
         {
@@ -337,6 +333,58 @@ public sealed class MainForm : Form
             : ago.TotalMinutes < 60 ? $"{(int)ago.TotalMinutes} min temu"
             : at.ToString("d MMM HH:mm");
         return $"Ostatnia aktualizacja: {at:HH:mm:ss} ({agoText})";
+    }
+
+    // ---------------------------------------------------------------- układ (osobno, żeby dało się go przetestować)
+
+    private static readonly Padding GroupMargin = new(16, 3, 3, 3); // odstęp przed grupą przycisków
+
+    internal static Button ToolButton(string text, bool groupStart = false) =>
+        new() { Text = text, AutoSize = true, MinimumSize = new Size(0, 30), Margin = groupStart ? GroupMargin : new Padding(3) };
+
+    internal static FlowLayoutPanel Toolbar(params Control[] buttons)
+    {
+        var bar = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            WrapContents = true, Margin = new Padding(0, 0, 0, 6),
+        };
+        bar.Controls.AddRange(buttons);
+        return bar;
+    }
+
+    internal static Label StatusLine() =>
+        new() { AutoSize = false, AutoEllipsis = true, Dock = DockStyle.Fill, Margin = new Padding(0), TextAlign = ContentAlignment.MiddleLeft };
+
+    /// <summary>Title (bold) and status lines, one fixed-height row each, full width.</summary>
+    internal static TableLayoutPanel StatusPanel(Label title, params Label[] lines)
+    {
+        var panel = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, Margin = new Padding(0) };
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        title.Margin = new Padding(0, 0, 0, 2);
+        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        panel.Controls.Add(title, 0, 0);
+        foreach (var line in lines)
+        {
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, line.Font.Height + 4));
+            panel.Controls.Add(line, 0, panel.RowStyles.Count - 1);
+        }
+        return panel;
+    }
+
+    internal static TableLayoutPanel Root(Control toolbar, Control status, Control paths, Control log)
+    {
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12), RowCount = 4, ColumnCount = 1 };
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        root.Controls.Add(toolbar, 0, 0);
+        root.Controls.Add(status, 0, 1);
+        root.Controls.Add(paths, 0, 2);
+        root.Controls.Add(log, 0, 3);
+        return root;
     }
 
     private static void AddPathRow(TableLayoutPanel table, string label, string path)
