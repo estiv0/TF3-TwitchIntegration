@@ -23,6 +23,22 @@ public sealed record ModCommand(
         new(NewId(), "setName", DateTimeOffset.UtcNow,
             new Dictionary<string, object> { ["entity"] = entity, ["name"] = name }, source, user);
 
+    /// <summary>"Name" → "Name | owner"; the mod refuses when the object already has an owner.</summary>
+    public static ModCommand Adopt(long entity, string owner, CommandSource source, string user, DateTimeOffset? created = null) =>
+        new(NewId(), "adopt", created ?? DateTimeOffset.UtcNow,
+            new Dictionary<string, object> { ["entity"] = entity, ["owner"] = owner }, source, user);
+
+    /// <summary>
+    /// Timed effect (effects.lua): townBoost/industryBoost (with factor), lineStop/lineHold.
+    /// <paramref name="created"/> = when the viewer asked; the mod drops commands older than 300 s.
+    /// </summary>
+    public static ModCommand Effect(string effect, long entity, int days, double? factor, CommandSource source, string user, DateTimeOffset? created = null)
+    {
+        var args = new Dictionary<string, object> { ["effect"] = effect, ["entity"] = entity, ["days"] = (long)days };
+        if (factor is { } f) args["factor"] = f;
+        return new(NewId(), "effect", created ?? DateTimeOffset.UtcNow, args, source, user);
+    }
+
     private static string NewId() => Guid.NewGuid().ToString("N")[..12];
 
     public override string ToString() =>

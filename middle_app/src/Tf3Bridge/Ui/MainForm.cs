@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using Tf3Bridge.Cloud;
 using Tf3Bridge.Commands;
 using Tf3Bridge.Processing;
+using Tf3Bridge.Rewards;
 using Tf3Bridge.Twitch;
 
 namespace Tf3Bridge.Ui;
@@ -21,6 +22,7 @@ public sealed class MainForm : Form
     private readonly TwitchSession _twitch;
     private readonly EventSubClient _eventSub;
     private readonly ModCommandQueue _commands;
+    private readonly RewardService _rewards;
     private readonly CancellationTokenSource _backgroundCts = new();
     private readonly BridgeOptions _options;
     private readonly UiLogProvider _log;
@@ -30,6 +32,7 @@ public sealed class MainForm : Form
     private readonly Label _azure = new() { AutoSize = true };
     private readonly Label _twitchStatus = new() { AutoSize = true };
     private readonly Label _eventSubStatus = new() { AutoSize = true };
+    private readonly Label _rewardStatus = new() { AutoSize = true };
     private readonly Button _toggle = new() { AutoSize = true, MinimumSize = new Size(110, 30) };
     private readonly TextBox _logBox = new()
     {
@@ -43,13 +46,14 @@ public sealed class MainForm : Form
     private readonly List<string> _lines = [];
     private bool _closing;
 
-    public MainForm(BridgeRunner runner, AzureMirror mirror, TwitchSession twitch, EventSubClient eventSub, ModCommandQueue commands, BridgeOptions options, ModInstallResult mod, UiLogProvider log)
+    public MainForm(BridgeRunner runner, AzureMirror mirror, TwitchSession twitch, EventSubClient eventSub, ModCommandQueue commands, RewardService rewards, BridgeOptions options, ModInstallResult mod, UiLogProvider log)
     {
         _runner = runner;
         _mirror = mirror;
         _twitch = twitch;
         _eventSub = eventSub;
         _commands = commands;
+        _rewards = rewards;
         _options = options;
         _log = log;
 
@@ -61,14 +65,15 @@ public sealed class MainForm : Form
 
         var header = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false, Margin = new Padding(0) };
         var statusBox = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, Margin = new Padding(0, 0, 16, 0) };
-        statusBox.Controls.AddRange([_status, _lastUpdate, _azure, _twitchStatus, _eventSubStatus]);
+        statusBox.Controls.AddRange([_status, _lastUpdate, _azure, _twitchStatus, _eventSubStatus, _rewardStatus]);
         var openOutput = new Button { Text = "Folder wyjściowy", AutoSize = true, MinimumSize = new Size(0, 30) };
         var openInput = new Button { Text = "Folder moda", AutoSize = true, MinimumSize = new Size(0, 30) };
         var azure = new Button { Text = "Azure…", AutoSize = true, MinimumSize = new Size(0, 30) };
         var twitchButton = new Button { Text = "Twitch…", AutoSize = true, MinimumSize = new Size(0, 30) };
+        var rewardsButton = new Button { Text = "Nagrody…", AutoSize = true, MinimumSize = new Size(0, 30) };
         var commandTest = new Button { Text = "Test akcji…", AutoSize = true, MinimumSize = new Size(0, 30) };
         var modSettings = new Button { Text = "Ustawienia moda…", AutoSize = true, MinimumSize = new Size(0, 30) };
-        header.Controls.AddRange([statusBox, _toggle, openOutput, openInput, azure, twitchButton, commandTest, modSettings]);
+        header.Controls.AddRange([statusBox, _toggle, openOutput, openInput, azure, twitchButton, rewardsButton, commandTest, modSettings]);
 
         var paths = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, Margin = new Padding(0, 8, 0, 8) };
         paths.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -101,6 +106,7 @@ public sealed class MainForm : Form
         modSettings.Click += (_, _) => EditModSettings();
         twitchButton.Click += (_, _) => EditTwitch();
         commandTest.Click += (_, _) => TestCommand();
+        rewardsButton.Click += (_, _) => EditRewards();
 
         var menu = new ContextMenuStrip();
         menu.Items.Add("Pokaż", null, (_, _) => RestoreFromTray());
@@ -121,6 +127,7 @@ public sealed class MainForm : Form
         _ = _twitch.RunAsync(_backgroundCts.Token); // walidacja tokenu przy starcie i co godzinę
         _ = _commands.RunAsync(_backgroundCts.Token); // wyniki komend z gry
         _ = _eventSub.RunAsync(_backgroundCts.Token); // czat i punkty kanału
+        _ = _rewards.RunAsync(_backgroundCts.Token); // nagrody na Twitchu
         UpdateState();
     }
 
@@ -238,7 +245,7 @@ public sealed class MainForm : Form
                 + "Uruchom grę raz albo ustaw --Bridge:InputDir=…", "Tf3Bridge", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
-        using var dialog = new CommandTestDialog(_commands, _options.OutputDir);
+        using var dialog = new CommandTestDialog(_commands, _rewards, _options.OutputDir);
         dialog.ShowDialog(this);
     }
 
@@ -263,6 +270,24 @@ public sealed class MainForm : Form
             EventSubState.Connecting => ($"{where}: {e.Message}", Color.DarkOrange),
             _ => ($"{where}: {e.Message}", SystemColors.GrayText),
         };
+
+        var r = _rewards.Status;
+        _rewardStatus.Visible = _twitch.IsConfigured;
+        (_rewardStatus.Text, _rewardStatus.ForeColor) = r.State switch
+        {
+            RewardState.Ok => ($"Nagrody: {r.Message}", Color.FromArgb(46, 160, 67)),
+            RewardState.Error => ($"Nagrody: błąd: {r.Message}", Color.Firebrick),
+            RewardState.Paused or RewardState.NotAffiliate => ($"Nagrody: {r.Message}", Color.DarkOrange),
+            _ => ($"Nagrody: {r.Message}", SystemColors.GrayText),
+        };
+    }
+
+    private void EditRewards()
+    {
+        using var dialog = new RewardsDialog(_rewards.Settings.Rewards, _rewards.Status.Message);
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        _rewards.UpdateSettings(_rewards.Settings with { Rewards = dialog.Rewards });
+        _log.CreateLogger(nameof(MainForm)).LogInformation("Reward settings saved");
     }
 
     private void EditModSettings()

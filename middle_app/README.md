@@ -94,7 +94,7 @@ Nowy token (np. gdy stary wygasa): `.\infra\azure-setup.ps1 -Name <nazwa> -SasOn
 
 ## Twitch (logowanie)
 
-Integracja z Twitchem ([../docs/twitch-channel-points.md](../docs/twitch-channel-points.md)): logowanie streamera i EventSub (opis niżej). Nagród za punkty i obsługi komend z czatu jeszcze nie ma. Grę zmieniają tylko punkty kanału; czat jest wyłącznie informacyjny.
+Integracja z Twitchem ([../docs/twitch-channel-points.md](../docs/twitch-channel-points.md)): logowanie streamera, EventSub i nagrody za punkty kanału (opis niżej). Komend z czatu jeszcze nie ma. Grę zmieniają tylko punkty kanału; czat jest wyłącznie informacyjny.
 
 - Aplikacja na dev.twitch.tv jest typu **Public**, bez client secret. `Twitch:ClientId` w `appsettings.json` jest jawny i wspólny dla wszystkich streamerów.
 - **Twitch…** → **Zaloguj przez Twitch**: okno pokazuje kod i otwiera `twitch.tv/activate`, a streamer zatwierdza tam dostęp (Device Code Grant Flow). Uprawnienia: `channel:read:redemptions`, `channel:manage:redemptions`, `user:read:chat`. Gdy aplikacja potrzebuje nowego uprawnienia, zapisane konto jest zapominane i trzeba zalogować się ponownie.
@@ -131,6 +131,24 @@ W Visual Studio/Riderze jest do tego profil uruchomienia „Tf3Bridge (Twitch CL
 - `channel.chat.message` nie jest obsługiwane przez serwer testowy: subskrypcja kończy się błędem 400, a `trigger` odmawia. Czat trzeba testować na prawdziwym kanale.
 - `trigger` nie ma opcji portu, więc serwer musi działać na domyślnym 8080.
 - Konto Twitch musi być zalogowane, ale serwer testowy nie sprawdza tokenu.
+
+## Nagrody za punkty kanału
+
+Jedyna droga zmian w grze od widzów (`RewardService`). Pięć nagród, każdą da się wyłączyć i zbalansować w oknie **Nagrody…**: tytuł, opis, koszt, cooldown, limity na stream i na widza, dni gry i mnożnik.
+
+| Nagroda | Cel (tekst od widza) | Komenda dla moda |
+|---|---|---|
+| Adopcja miasta | miasto bez właściciela | `adopt`: „Nazwa \| widz”; miasto z właścicielem = zwrot punktów |
+| Boost miasta | miasto | `effect townBoost` (dni, mnożnik) |
+| Boost przemysłu | zakład | `effect industryBoost` (dni, mnożnik) |
+| Stop linii (od razu) | linia | `effect lineStop` (dni) |
+| Linia czeka na stacjach | linia | `effect lineHold` (dni) |
+
+- **Na Twitchu:** Tf3Bridge sam tworzy nagrody (tylko te może potem zmieniać i rozliczać), zapamiętuje ich ID w `%LOCALAPPDATA%\Tf3Bridge\rewards.json` i aktualizuje je po zapisaniu ustawień. Gdy przez 2 minuty nie ma nowego eksportu z gry, nagrody są pauzowane. Wymaga kanału Affiliate/Partner; bez tego nic nie trafia na Twitcha.
+- **Wykupienie:** tekst od widza jest dopasowywany do nazw z ostatniego `dynamic.json` (`TargetResolver`). Wielkość liter, polskie znaki, spacje i „\| właściciel” nie mają znaczenia. Wygrywa dokładne dopasowanie, potem jednoznaczny początek nazwy, potem jednoznaczny fragment.
+- **Rozliczenie:** gdy gra potwierdzi, wykupienie dostaje FULFILLED. Gdy celu nie ma, cel jest niejednoznaczny, nagroda jest wyłączona albo gra odmówi lub nie zdąży, wykupienie dostaje CANCELED i Twitch zwraca punkty.
+- **Wykupienia z czasu, gdy Tf3Bridge był wyłączony:** świeższe niż 5 minut są wykonywane, starsze zwracane.
+- **Test bez Twitcha:** **Test akcji…** → „Nagroda za punkty kanału (symulacja)”. Ta sama droga co prawdziwe wykupienie, z wynikiem i informacją, czy byłby zwrot. W trybie Twitch CLI `twitch event trigger channel.channel_points_custom_reward_redemption.add --transport=websocket -i AdoptTown` wskazuje nagrodę po nazwie rodzaju, ale CLI zawsze wysyła tekst „Test Input From CLI”, więc kończy się zwrotem.
 
 ## Komendy dla moda (akcje widzów)
 
@@ -191,7 +209,12 @@ middle_app/
     Commands/ModCommand.cs        komenda dla moda i jej zapis jako Lua (escapowanie tekstu widzów)
     Commands/ModCommandQueue.cs   kolejka queue.lua, odczyt wyników z results.lua, wygasanie
     Commands/GameObjects.cs       cele akcji z dynamic.json, nazwy „Nazwa | Właściciel”
-    Ui/CommandTestDialog.cs       ręczny test akcji widza bez Twitcha
+    Ui/CommandTestDialog.cs       test bez Twitcha: symulacja nagrody i ręczna zmiana nazwy
+    Rewards/RewardSettings.cs     nagrody (rodzaje, koszty, dni, mnożniki), zapis rewards.json
+    Rewards/TargetResolver.cs     dopasowanie tekstu od widza do miasta, zakładu albo linii
+    Rewards/RewardService.cs      nagrody na Twitchu, wykupienia -> komendy, FULFILLED/CANCELED, pauza bez gry
+    Twitch/ChannelPointsApi.cs    Helix: nagrody i status wykupień
+    Ui/RewardsDialog.cs           ustawienia nagród (balans)
     Input/LuaUserdataReader.cs    wyciąganie JSON z plików .lua
     Input/ExportFile.cs           parsowanie nazw plików
     Processing/ExportProcessor.cs jeden przebieg: sesje, sieć, dynamic, publikacja
@@ -199,7 +222,7 @@ middle_app/
     Processing/JsonRead.cs        bezpieczne odczyty liczb i stringów z JsonNode
     Output/IPublisher.cs          interfejs celu publikacji
     Output/LocalFolderPublisher.cs
-  tests/Tf3Bridge.Tests/          xUnit: reader, składanie sieci, przebieg procesora, ustawienia Azure i moda, logowanie Twitcha, EventSub, kolejka komend
+  tests/Tf3Bridge.Tests/          xUnit: reader, składanie sieci, przebieg procesora, ustawienia Azure i moda, logowanie Twitcha, EventSub, kolejka komend, nagrody
 ```
 
 Skrypt zakładający zasoby w Azure: [../infra/azure-setup.ps1](../infra/azure-setup.ps1).

@@ -106,7 +106,7 @@ Rzeczy poza samymi nagrodami:
 2. ✅ Kanał `queue.lua` → mod → `results.lua` z komendą `setName` i przyciskiem **Test akcji…** w Tf3Bridge (adopcja obiektu bez Twitcha). Sprawdzone w grze: `api.cmd.sendCommand` działa z wątku GUI.
 3. ✅ EventSub przez WebSocket. Wykupienia sprawdzone na Twitch CLI 1.1.24; czatu Twitch CLI nie obsługuje, więc testujemy go na prawdziwym kanale.
 4. Informacyjne komendy z czatu, bez zmian w grze (`channel.chat.message`, uprawnienie `user:read:chat`; odpowiedzi na czacie wymagają `user:write:chat`): np. kto jest właścicielem miasta, ile zarabia linia, link do mapy. Działa bez statusu Affiliate.
-5. Punkty kanału: jedyne źródło zmian w grze (adopcja, boosty fabryk itd.). Tworzenie nagród, rozliczanie wykupień (FULFILLED/CANCELED) i auto-pauza. Na żywo da się to sprawdzić dopiero na kanale Affiliate (np. u znajomego), wcześniej przez Twitch CLI.
+5. ⏳ Punkty kanału: jedyne źródło zmian w grze. Napisane: adopcja miasta, boost miasta, boost przemysłu, stop linii (od razu) i linia czeka na stacjach ([opis](../middle_app/README.md#nagrody-za-punkty-kanału)), wraz z tworzeniem nagród, rozliczaniem wykupień (FULFILLED/CANCELED) i auto-pauzą. Do sprawdzenia w grze przez „Symuluj nagrodę”; na żywo dopiero na kanale Affiliate (np. u znajomego). Wartości (koszty, dni, mnożniki) są startowe, do zbalansowania na streamie.
 6. Kolejne akcje, a potem feed i ranking na stronie.
 
 ## Źródła

@@ -4,6 +4,7 @@ using Tf3Bridge.Cloud;
 using Tf3Bridge.Commands;
 using Tf3Bridge.Output;
 using Tf3Bridge.Processing;
+using Tf3Bridge.Rewards;
 using Tf3Bridge.Twitch;
 using Tf3Bridge.Ui;
 
@@ -45,6 +46,7 @@ internal static class Program
         builder.Services.AddSingleton<TwitchSession>();
         builder.Services.AddSingleton<EventSubClient>();
         builder.Services.AddSingleton<ModCommandQueue>();
+        builder.Services.AddSingleton<RewardService>();
         builder.Services.AddSingleton<LocalFolderPublisher>();
         builder.Services.AddSingleton<AzureMirror>();
         builder.Services.AddSingleton<IPublisher, MirroringPublisher>();
@@ -60,6 +62,6 @@ internal static class Program
         ModSettingsStore.EnsureExists(options.InputDir);
 
         Application.Run(new MainForm(runner, mirror, host.Services.GetRequiredService<TwitchSession>(), host.Services.GetRequiredService<EventSubClient>(),
-            host.Services.GetRequiredService<ModCommandQueue>(), options, mod, uiLog));
+            host.Services.GetRequiredService<ModCommandQueue>(), host.Services.GetRequiredService<RewardService>(), options, mod, uiLog));
     }
 }

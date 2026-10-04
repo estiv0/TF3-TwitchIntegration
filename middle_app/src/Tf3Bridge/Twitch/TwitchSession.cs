@@ -46,6 +46,9 @@ public sealed class TwitchSession
     /// <summary>Twitch ID of the logged-in streamer (EventSub conditions), or null.</summary>
     public string? UserId => _account?.UserId;
 
+    /// <summary>Affiliate/Partner: the channel can have custom channel points rewards.</summary>
+    public bool CanUseChannelPoints => _account?.CanUseChannelPoints == true;
+
     public string ClientId => Client.ClientId;
 
     /// <summary>Validation loop for the lifetime of the app.</summary>
