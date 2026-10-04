@@ -21,6 +21,7 @@ local writer = ug_require "writer.lua"
 local bench = ug_require "bench.lua"
 local terrain = ug_require "terrain.lua"
 local commands = ug_require "commands.lua"
+local effects = ug_require "effects.lua"
 
 local cfg = {
 	dynamicEveryDays = 2,          -- eksport miast, przemysłu, stacji, linii i pojazdów (czas gry)...
@@ -110,6 +111,7 @@ local function newSession(now)
 	S.lineStats, S.lineStatsKey, S.prevYear = {}, nil, nil
 	S.vehiclePos, S.vehiclePosMs, S.dyn = cfg.vehiclePositions, {}, nil
 	S.company, S.companyKey = nil, nil
+	commands.reset()
 	util.log(string.format("new session %s (writer mode '%s')", S.session, writer.mode()))
 end
 
@@ -556,17 +558,25 @@ local script = {
 	-- (np. tylko z onPostBuildProposal) dostały nowy zestaw.
 	update = function(_userParams, state, _dt)
 		local s = state:get() or {}
-		if s.subsVersion ~= 2 then
+		if s.subsVersion ~= 3 then
 			state:subscribeToEvent("onPreBuildProposal")  -- wyburzenia (encje jeszcze istnieją)
 			state:subscribeToEvent("onPostBuildProposal") -- budowa (encje wynikowe już istnieją)
-			s.subsVersion = 2
+			state:subscribeToEvent(effects.EVENT)         -- efekty z nagród (effects.lua), wysyłane z wątku GUI
+			s.subsVersion = 3
 			state:set(s)
 		end
 	end,
 
 	-- Wątki symulacji: propozycja budowy/wyburzenia dotykająca sieci (gracz albo miasto)
 	-- podbija licznik, który guiUpdate odczytuje ze wspólnego stanu.
-	handleEvent = function(_userParams, state, _src, _id, name, param)
+	handleEvent = function(_userParams, state, _src, id, name, param)
+		if name == effects.EVENT and id == effects.SCRIPT_ID then
+			-- wątek GUI nie może pisać stanu: lista aktywnych efektów przychodzi zdarzeniem i trafia do save'a
+			local s = state:get() or {}
+			s.effects = (type(param) == "table" and param.effects) or {}
+			state:set(s)
+			return
+		end
 		if name == "onPreBuildProposal" or name == "onPostBuildProposal" then
 			local ok, touches = pcall(touchesNetwork, name, param)
 			if not ok or touches then -- przy błędzie lepiej przebudować niż przegapić
@@ -590,7 +600,7 @@ local script = {
 		-- komendy od Tf3Bridge: błąd nie może zatrzymać eksportu
 		if S.commandsWall == nil or wall - S.commandsWall >= cfg.commandsEveryWallSec then
 			S.commandsWall = wall
-			local okCmd, errCmd = pcall(commands.poll, wall)
+			local okCmd, errCmd = pcall(commands.poll, wall, now, state:get() or {})
 			if not okCmd then util.log("commands failed: " .. tostring(errCmd)) end
 		end
 

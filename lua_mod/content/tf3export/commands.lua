@@ -2,6 +2,8 @@
 --
 --   Tf3Bridge -> local\tf3export_cmd\queue.lua    (format app.saveUserdata, pisany przez Tf3Bridge)
 --     { commands = { { id = "...", kind = "setName", created = <unix s>, entity = 123, name = "..." }, ... } }
+--     rodzaje: setName { entity, name }, adopt { entity, owner },
+--              effect { effect = townBoost|industryBoost|lineStop|lineHold, entity, days, factor } (effects.lua)
 --   mod      -> local\tf3export_cmd\results.lua  (app.saveUserdata)
 --     { json = '{"results":[{"id":"...","status":"ok|failed|invalid|expired","error":"..."}]}',
 --       done = "id1\nid2\n..." }
@@ -15,6 +17,7 @@
 
 local json = ug_require "json.lua"
 local util = ug_require "util.lua"
+local effects = ug_require "effects.lua"
 
 local M = {}
 
@@ -72,6 +75,28 @@ function KINDS.setName(c)
 	return function() return util.name(entity) == name end
 end
 
+-- Adopcja: "Nazwa" -> "Nazwa | właściciel", tylko gdy obiekt nie ma jeszcze właściciela.
+-- Sprawdzane tutaj, w chwili wykonania, żeby dwie adopcje tuż po sobie nie nadpisały się nawzajem.
+function KINDS.adopt(c)
+	local entity, owner = tonumber(c.entity), c.owner
+	if not entity or type(owner) ~= "string" or owner == "" or owner:find("|", 1, true) then return nil, "bad arguments" end
+	local name = util.name(entity)
+	if name == nil then return nil, "entity not found" end
+	local current = name:match("|%s*(.-)%s*$")
+	if current and current ~= "" then return nil, "already adopted by " .. current end
+	local base = (name:match("^(.-)%s*|") or name):match("^%s*(.-)%s*$")
+	local newName = base .. " | " .. owner
+	if #newName > 200 then return nil, "name too long" end
+	api.cmd.sendCommand(api.cmd.makeEntitySetNameCmd(entity, newName))
+	return function() return util.name(entity) == newName end
+end
+
+local now, shared = nil, nil -- czas gry i stan game scriptu z bieżącego poll
+
+function KINDS.effect(c)
+	return effects.start(c, now)
+end
+
 ---------------------------------------------------------------- pętla
 local function start(c, wall)
 	local id = c.id
@@ -83,7 +108,7 @@ local function start(c, wall)
 	local ok, verify, err = pcall(kind, c)
 	if not ok then return finish(id, "failed", tostring(verify)) end
 	if not verify then return finish(id, "invalid", err) end
-	pending[id] = { sent = wall, verify = verify }
+	pending[id] = { sent = wall, verify = verify, cmd = c }
 	util.log(string.format("command %s: sent %s", id, c.kind))
 end
 
@@ -92,17 +117,26 @@ local function check(wall)
 		local ok, visible = pcall(p.verify)
 		if ok and visible then
 			finish(id, "ok")
-		elseif p.callback == false then
-			finish(id, "failed", "game rejected the command")
-		elseif wall - p.sent >= VERIFY_SEC then
-			finish(id, "failed", string.format("no effect after %d s (callback: %s)", VERIFY_SEC, tostring(p.callback)))
+		elseif p.callback == false or wall - p.sent >= VERIFY_SEC then
+			-- nieudany efekt cofamy, bo Tf3Bridge zwróci widzowi punkty
+			if p.cmd.kind == "effect" then pcall(effects.abort, p.cmd) end
+			finish(id, "failed", p.callback == false and "game rejected the command"
+				or string.format("no effect after %d s (callback: %s)", VERIFY_SEC, tostring(p.callback)))
 		end
 	end
 end
 
--- Wołane z guiUpdate co commandsEveryWallSec.
-function M.poll(wall)
+-- Nowa sesja (wczytana inna gra): efekty trzeba wczytać od nowa z jej stanu.
+function M.reset()
+	effects.reset()
+end
+
+-- Wołane z guiUpdate co commandsEveryWallSec; gameTime i stan game scriptu (state:get()) dla efektów.
+function M.poll(wall, gameTime, sharedState)
+	now, shared = gameTime, sharedState
 	if done == nil then loadDone() end
+	local okE, errE = pcall(effects.update, now, shared)
+	if not okE then util.log("effects update failed: " .. tostring(errE)) end
 	check(wall)
 	if not util.userdataExists(DIR, QUEUE) then return end
 	local ok, t = pcall(function() return app.loadUserdata(DIR, QUEUE) end)
