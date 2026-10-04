@@ -1,8 +1,10 @@
 using Microsoft.Extensions.Options;
 using Tf3Bridge;
 using Tf3Bridge.Cloud;
+using Tf3Bridge.Commands;
 using Tf3Bridge.Output;
 using Tf3Bridge.Processing;
+using Tf3Bridge.Twitch;
 using Tf3Bridge.Ui;
 
 internal static class Program
@@ -39,6 +41,10 @@ internal static class Program
             o.InputDir = BridgeOptions.ResolveInputDir(o.InputDir);
             o.OutputDir = BridgeOptions.ResolveOutputDir(o.OutputDir);
         });
+        builder.Services.Configure<TwitchOptions>(builder.Configuration.GetSection(TwitchOptions.Section));
+        builder.Services.AddSingleton<TwitchSession>();
+        builder.Services.AddSingleton<EventSubClient>();
+        builder.Services.AddSingleton<ModCommandQueue>();
         builder.Services.AddSingleton<LocalFolderPublisher>();
         builder.Services.AddSingleton<AzureMirror>();
         builder.Services.AddSingleton<IPublisher, MirroringPublisher>();
@@ -53,6 +59,7 @@ internal static class Program
         var mod = ModInstaller.Sync(options.InputDir, host.Services.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(ModInstaller)));
         ModSettingsStore.EnsureExists(options.InputDir);
 
-        Application.Run(new MainForm(runner, mirror, options, mod, uiLog));
+        Application.Run(new MainForm(runner, mirror, host.Services.GetRequiredService<TwitchSession>(), host.Services.GetRequiredService<EventSubClient>(),
+            host.Services.GetRequiredService<ModCommandQueue>(), options, mod, uiLog));
     }
 }

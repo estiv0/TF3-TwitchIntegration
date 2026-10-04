@@ -2,7 +2,9 @@ using System.Diagnostics;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using Tf3Bridge.Cloud;
+using Tf3Bridge.Commands;
 using Tf3Bridge.Processing;
+using Tf3Bridge.Twitch;
 
 namespace Tf3Bridge.Ui;
 
@@ -16,12 +18,18 @@ public sealed class MainForm : Form
 
     private readonly BridgeRunner _runner;
     private readonly AzureMirror _mirror;
+    private readonly TwitchSession _twitch;
+    private readonly EventSubClient _eventSub;
+    private readonly ModCommandQueue _commands;
+    private readonly CancellationTokenSource _backgroundCts = new();
     private readonly BridgeOptions _options;
     private readonly UiLogProvider _log;
 
     private readonly Label _status = new() { AutoSize = true, Font = new Font("Segoe UI", 11f, FontStyle.Bold) };
     private readonly Label _lastUpdate = new() { AutoSize = true, ForeColor = SystemColors.GrayText };
     private readonly Label _azure = new() { AutoSize = true };
+    private readonly Label _twitchStatus = new() { AutoSize = true };
+    private readonly Label _eventSubStatus = new() { AutoSize = true };
     private readonly Button _toggle = new() { AutoSize = true, MinimumSize = new Size(110, 30) };
     private readonly TextBox _logBox = new()
     {
@@ -35,10 +43,13 @@ public sealed class MainForm : Form
     private readonly List<string> _lines = [];
     private bool _closing;
 
-    public MainForm(BridgeRunner runner, AzureMirror mirror, BridgeOptions options, ModInstallResult mod, UiLogProvider log)
+    public MainForm(BridgeRunner runner, AzureMirror mirror, TwitchSession twitch, EventSubClient eventSub, ModCommandQueue commands, BridgeOptions options, ModInstallResult mod, UiLogProvider log)
     {
         _runner = runner;
         _mirror = mirror;
+        _twitch = twitch;
+        _eventSub = eventSub;
+        _commands = commands;
         _options = options;
         _log = log;
 
@@ -50,12 +61,14 @@ public sealed class MainForm : Form
 
         var header = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false, Margin = new Padding(0) };
         var statusBox = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, Margin = new Padding(0, 0, 16, 0) };
-        statusBox.Controls.AddRange([_status, _lastUpdate, _azure]);
+        statusBox.Controls.AddRange([_status, _lastUpdate, _azure, _twitchStatus, _eventSubStatus]);
         var openOutput = new Button { Text = "Folder wyjściowy", AutoSize = true, MinimumSize = new Size(0, 30) };
         var openInput = new Button { Text = "Folder moda", AutoSize = true, MinimumSize = new Size(0, 30) };
         var azure = new Button { Text = "Azure…", AutoSize = true, MinimumSize = new Size(0, 30) };
+        var twitchButton = new Button { Text = "Twitch…", AutoSize = true, MinimumSize = new Size(0, 30) };
+        var commandTest = new Button { Text = "Test akcji…", AutoSize = true, MinimumSize = new Size(0, 30) };
         var modSettings = new Button { Text = "Ustawienia moda…", AutoSize = true, MinimumSize = new Size(0, 30) };
-        header.Controls.AddRange([statusBox, _toggle, openOutput, openInput, azure, modSettings]);
+        header.Controls.AddRange([statusBox, _toggle, openOutput, openInput, azure, twitchButton, commandTest, modSettings]);
 
         var paths = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, Margin = new Padding(0, 8, 0, 8) };
         paths.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -86,6 +99,8 @@ public sealed class MainForm : Form
         openInput.Click += (_, _) => OpenFolder(_options.InputDir);
         azure.Click += (_, _) => EditAzure();
         modSettings.Click += (_, _) => EditModSettings();
+        twitchButton.Click += (_, _) => EditTwitch();
+        commandTest.Click += (_, _) => TestCommand();
 
         var menu = new ContextMenuStrip();
         menu.Items.Add("Pokaż", null, (_, _) => RestoreFromTray());
@@ -103,6 +118,9 @@ public sealed class MainForm : Form
         _tray.Visible = true;
         _timer.Start();
         _runner.Start(); // most ma działać od razu po uruchomieniu
+        _ = _twitch.RunAsync(_backgroundCts.Token); // walidacja tokenu przy starcie i co godzinę
+        _ = _commands.RunAsync(_backgroundCts.Token); // wyniki komend z gry
+        _ = _eventSub.RunAsync(_backgroundCts.Token); // czat i punkty kanału
         UpdateState();
     }
 
@@ -130,6 +148,7 @@ public sealed class MainForm : Form
             return;
         }
         _closing = true;
+        _backgroundCts.Cancel();
         _timer.Stop();
         _tray.Visible = false;
         base.OnFormClosing(e);
@@ -141,6 +160,7 @@ public sealed class MainForm : Form
         {
             _tray.Dispose();
             _timer.Dispose();
+            _backgroundCts.Dispose();
             _iconOn.Dispose();
             _iconOff.Dispose();
         }
@@ -191,6 +211,7 @@ public sealed class MainForm : Form
 
         _lastUpdate.Text = LastUpdateText();
         UpdateAzure();
+        UpdateTwitch();
     }
 
     private void EditAzure()
@@ -200,6 +221,48 @@ public sealed class MainForm : Form
         AzureSettingsStore.Save(dialog.Settings);
         _mirror.Configure(dialog.Settings);
         UpdateAzure();
+    }
+
+    private void EditTwitch()
+    {
+        using var dialog = new TwitchDialog(_twitch);
+        dialog.ShowDialog(this);
+        UpdateTwitch();
+    }
+
+    private void TestCommand()
+    {
+        if (!_commands.IsAvailable)
+        {
+            MessageBox.Show("Nie znaleziono folderu TF3 w Steam, więc nie ma gdzie zapisać kolejki komend.\n"
+                + "Uruchom grę raz albo ustaw --Bridge:InputDir=…", "Tf3Bridge", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        using var dialog = new CommandTestDialog(_commands, _options.OutputDir);
+        dialog.ShowDialog(this);
+    }
+
+    private void UpdateTwitch()
+    {
+        var s = _twitch.Status;
+        (_twitchStatus.Text, _twitchStatus.ForeColor) = s.State switch
+        {
+            TwitchState.Ok => ($"Twitch: {s.Message}", Color.FromArgb(46, 160, 67)),
+            TwitchState.Warning => ($"Twitch: {s.Message}", Color.DarkOrange),
+            TwitchState.Error => ($"Twitch: błąd: {s.Message}", Color.Firebrick),
+            _ => ($"Twitch: {s.Message}", SystemColors.GrayText),
+        };
+
+        var e = _eventSub.Status;
+        var where = _eventSub.IsMock ? $"EventSub (test: {_eventSub.Url})" : "EventSub";
+        _eventSubStatus.Visible = _twitch.IsConfigured;
+        (_eventSubStatus.Text, _eventSubStatus.ForeColor) = e.State switch
+        {
+            EventSubState.Connected => ($"{where}: {e.Message}", Color.FromArgb(46, 160, 67)),
+            EventSubState.Error => ($"{where}: błąd: {e.Message}", Color.Firebrick),
+            EventSubState.Connecting => ($"{where}: {e.Message}", Color.DarkOrange),
+            _ => ($"{where}: {e.Message}", SystemColors.GrayText),
+        };
     }
 
     private void EditModSettings()

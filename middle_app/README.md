@@ -92,6 +92,56 @@ Nowy token (np. gdy stary wygasa): `.\infra\azure-setup.ps1 -Name <nazwa> -SasOn
 - `meta.json` idzie zawsze na końcu i tylko gdy reszta się udała, bo strona po zmianie seq w meta od razu pobiera pozostałe pliki.
 - Błąd (brak sieci, wygasły token) nie zatrzymuje lokalnego zapisu. Pliki zostają w kolejce i są dosyłane co 10 s; stan widać w oknie („Azure: błąd: …”).
 
+## Twitch (logowanie)
+
+Integracja z Twitchem ([../docs/twitch-channel-points.md](../docs/twitch-channel-points.md)): logowanie streamera i EventSub (opis niżej). Nagród za punkty i obsługi komend z czatu jeszcze nie ma.
+
+- Aplikacja na dev.twitch.tv jest typu **Public**, bez client secret. `Twitch:ClientId` w `appsettings.json` jest jawny i wspólny dla wszystkich streamerów.
+- **Twitch…** → **Zaloguj przez Twitch**: okno pokazuje kod i otwiera `twitch.tv/activate`, a streamer zatwierdza tam dostęp (Device Code Grant Flow). Uprawnienia: `channel:read:redemptions`, `channel:manage:redemptions`, `user:read:chat`. Gdy aplikacja potrzebuje nowego uprawnienia, zapisane konto jest zapominane i trzeba zalogować się ponownie.
+- Używany jest tylko user access token. App access token nie jest potrzebny: EventSub przez WebSocket i endpointy punktów kanału go nie przyjmują.
+- Tokeny są w `%LOCALAPPDATA%\Tf3Bridge\twitch.json`, zaszyfrowane DPAPI. Login, ID i uprawnienia są jawne.
+- `TwitchSession` sprawdza token przy starcie i co godzinę (`/oauth2/validate`, Twitch tego wymaga) i odświeża go przed wygaśnięciem. Refresh token public clienta jest jednorazowy i ważny 30 dni, więc po każdym odświeżeniu nowy jest od razu zapisywany. Gdy Twitch go odrzuci (dłuższa przerwa, zmiana hasła, odłączenie aplikacji), konto jest zapominane i trzeba zalogować się ponownie. Przy braku sieci konto zostaje.
+- Okno pokazuje też typ kanału. Bez statusu Affiliate/Partner nie da się tworzyć nagród za punkty.
+
+## Twitch EventSub (czat i punkty kanału)
+
+`EventSubClient` łączy się z `wss://eventsub.wss.twitch.tv/ws` tokenem streamera (bez publicznego serwera i webhooków) i subskrybuje:
+
+- `channel.chat.message` (czat kanału): działa na każdym kanale;
+- `channel.channel_points_custom_reward_redemption.add` (wykupienia nagród): ma sens tylko na kanale Affiliate/Partner.
+
+Jak działa:
+- Subskrypcje są tworzone w Helix (`POST /eventsub/subscriptions`) po powitaniu `session_welcome`. Twitch daje na to 10 s.
+- Gdy jedna subskrypcja się nie uda, połączenie zostaje z pozostałymi, a przyczyna jest w logu. Gdy nie uda się żadna, połączenie jest zrywane i ponawiane.
+- Keepalive co 30 s. Brak wiadomości przez keepalive + 10 s oznacza zerwane połączenie. Wtedy klient łączy się ponownie z przerwami 1, 2, 5, 10, 30 i 60 s i zakłada subskrypcje od nowa.
+- `session_reconnect`: przejście na nowy adres bez ponownych subskrypcji (Twitch je przenosi).
+- Zdarzenia są odrzucane jako duplikaty po `message_id`. W logu pojawiają się wykupienia i wiadomości z czatu zaczynające się od `!`.
+- Stan widać w oknie w linii „EventSub: …”.
+
+**Test bez Twitcha (Twitch CLI):**
+
+```
+twitch event websocket start-server
+Tf3Bridge.exe --Twitch:EventSubUrl=ws://127.0.0.1:8080/ws --Twitch:SubscriptionsUrl=http://127.0.0.1:8080/eventsub/subscriptions
+twitch event trigger channel.channel_points_custom_reward_redemption.add --transport=websocket
+```
+
+W Visual Studio/Riderze jest do tego profil uruchomienia „Tf3Bridge (Twitch CLI)”. Sprawdzone z Twitch CLI 1.1.24:
+- wykupienie dochodzi;
+- `channel.chat.message` nie jest obsługiwane przez serwer testowy: subskrypcja kończy się błędem 400, a `trigger` odmawia. Czat trzeba testować na prawdziwym kanale.
+- `trigger` nie ma opcji portu, więc serwer musi działać na domyślnym 8080.
+- Konto Twitch musi być zalogowane, ale serwer testowy nie sprawdza tokenu.
+
+## Komendy dla moda (akcje widzów)
+
+Wspólna droga dla wszystkich źródeł akcji widzów: przycisku testowego, a później komend z czatu i punktów kanału.
+
+- `ModCommandQueue` pisze kolejkę do `local\tf3export_cmd\queue.lua` (format `app.saveUserdata`, zapis przez plik tymczasowy). Mod czyta ją co sekundę i zapisuje wyniki do `results.lua` obok. Szczegóły formatu: [../lua_mod/README.md](../lua_mod/README.md#komendy-od-tf3bridge-akcje-widzów).
+- Komenda zostaje w kolejce, dopóki mod nie zgłosi wyniku. Mod pomija identyfikatory, które już obsłużył, więc przepisywanie kolejki niczego nie wykona dwa razy. Po 320 s bez odpowiedzi (gra wyłączona albo bez moda) komenda jest oznaczana jako `expired`.
+- Tekst od widzów trafia do pliku Lua tylko jako escapowany literał (`ModCommandLua.Str`), a nazwy argumentów muszą być identyfikatorami.
+- Nazwy obiektów mają postać `Nazwa | Właściciel`, tak samo jak na stronie (`OwnerName`).
+- **Test akcji…** w oknie: wybór miasta, zakładu, stacji albo linii z ostatniego `dynamic.json`, widza i akcji (adoptuj, usuń właściciela, nowa nazwa), a potem wysyłka do gry i wynik. Do testu TF3 musi działać z włączonym modem.
+
 ## Co robi jeden przebieg (`ExportProcessor`)
 
 1. Wczytuje pliki `<kind>_<session>_<seq>.lua`. Inne pliki, np. `bench_*`, pomija.
@@ -133,6 +183,15 @@ middle_app/
     Cloud/AzureSettings.cs        adres kontenera + SAS, zapis zaszyfrowany (DPAPI)
     Cloud/AzureMirror.cs          kolejka zmienionych plików i upload do Blob Storage
     Cloud/MirroringPublisher.cs   zapis lokalny + oznaczenie pliku do wysyłki
+    Twitch/TwitchAuthClient.cs    OAuth Twitcha: device code, refresh, validate, revoke, typ kanału
+    Twitch/TwitchAccount.cs       konto streamera + tokeny, zapis zaszyfrowany (DPAPI), TwitchOptions
+    Twitch/TwitchSession.cs       walidacja co godzinę i odświeżanie tokenu, stan dla okna
+    Twitch/EventSubClient.cs      EventSub przez WebSocket: subskrypcje, keepalive, reconnect, zdarzenia czatu i punktów
+    Ui/TwitchDialog.cs            logowanie kodem z twitch.tv/activate, wylogowanie
+    Commands/ModCommand.cs        komenda dla moda i jej zapis jako Lua (escapowanie tekstu widzów)
+    Commands/ModCommandQueue.cs   kolejka queue.lua, odczyt wyników z results.lua, wygasanie
+    Commands/GameObjects.cs       cele akcji z dynamic.json, nazwy „Nazwa | Właściciel”
+    Ui/CommandTestDialog.cs       ręczny test akcji widza bez Twitcha
     Input/LuaUserdataReader.cs    wyciąganie JSON z plików .lua
     Input/ExportFile.cs           parsowanie nazw plików
     Processing/ExportProcessor.cs jeden przebieg: sesje, sieć, dynamic, publikacja
@@ -140,7 +199,7 @@ middle_app/
     Processing/JsonRead.cs        bezpieczne odczyty liczb i stringów z JsonNode
     Output/IPublisher.cs          interfejs celu publikacji
     Output/LocalFolderPublisher.cs
-  tests/Tf3Bridge.Tests/          xUnit: reader, składanie sieci, przebieg procesora, ustawienia Azure i moda
+  tests/Tf3Bridge.Tests/          xUnit: reader, składanie sieci, przebieg procesora, ustawienia Azure i moda, logowanie Twitcha, EventSub, kolejka komend
 ```
 
 Skrypt zakładający zasoby w Azure: [../infra/azure-setup.ps1](../infra/azure-setup.ps1).
