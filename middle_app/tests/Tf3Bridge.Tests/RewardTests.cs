@@ -193,6 +193,27 @@ public sealed class RewardTests : IDisposable
         Assert.Empty(_helix.Requests); // symulacja nie dotyka Twitcha
     }
 
+    [Fact]
+    public void Old_mod_in_the_game_is_explained()
+    {
+        var service = Service();
+        service.Simulate(RewardKind.HoldLine, "linia 1", "widz", out _);
+
+        ModReports("invalid", "unknown kind effect");
+
+        var o = Assert.Single(_outcomes);
+        Assert.True(o.Refunded);
+        Assert.Contains("uruchom TF3 ponownie", o.Message);
+    }
+
+    [Fact]
+    public void Log_shows_numbers_like_the_game_file()
+    {
+        var c = ModCommand.Effect("townBoost", 1, 30, 1.5, CommandSource.Test, "x");
+
+        Assert.Contains("factor=1.5", c.ToString());
+    }
+
     // ------------------------------------------------------------------ prawdziwe wykupienia
 
     private async Task<RewardService> SyncedService()

@@ -229,6 +229,8 @@ public sealed class RewardService
     private static string Explain(ModCommandResult r) => r.Status switch
     {
         "expired" => "gra nie wykonała komendy na czas",
+        // Gra trzyma skrypty wczytane przy starcie: nowy plik moda działa dopiero po restarcie TF3.
+        _ when r.Error?.StartsWith("unknown kind ", StringComparison.Ordinal) == true => "gra ma starszą wersję moda (uruchom TF3 ponownie)",
         _ when r.Error?.StartsWith("already adopted by ", StringComparison.Ordinal) == true => "ma już właściciela (" + r.Error["already adopted by ".Length..] + ")",
         _ => r.Error ?? r.Status,
     };

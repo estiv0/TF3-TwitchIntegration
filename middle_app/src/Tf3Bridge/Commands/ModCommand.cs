@@ -41,8 +41,9 @@ public sealed record ModCommand(
 
     private static string NewId() => Guid.NewGuid().ToString("N")[..12];
 
-    public override string ToString() =>
-        $"{Kind} {string.Join(", ", Args.Select(a => $"{a.Key}={a.Value}"))} ({Source}, {User}, #{Id})";
+    // Liczby w logu jak w pliku dla gry (1.5, nie 1,5).
+    public override string ToString() => string.Create(CultureInfo.InvariantCulture,
+        $"{Kind} {string.Join(", ", Args.Select(a => string.Create(CultureInfo.InvariantCulture, $"{a.Key}={a.Value}")))} ({Source}, {User}, #{Id})");
 }
 
 /// <summary>Result written by the mod. Statuses: ok, failed, invalid, expired.</summary>
