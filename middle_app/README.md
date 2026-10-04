@@ -134,7 +134,7 @@ W Visual Studio/Riderze jest do tego profil uruchomienia „Tf3Bridge (Twitch CL
 
 ## Nagrody za punkty kanału
 
-Jedyna droga zmian w grze od widzów (`RewardService`). Pięć nagród, każdą da się wyłączyć i zbalansować w oknie **Nagrody…**: tytuł, opis, koszt, cooldown, limity na stream i na widza, czas w miesiącach gry i mnożnik. Czas jest w miesiącach, nie w dniach: dzień gry trwa tylko 2–3 s, więc efekt na kilka dni mijał, zanim było go widać.
+Jedyna droga zmian w grze od widzów (`RewardService`). Siedem nagród, każdą da się wyłączyć i zbalansować w oknie **Nagrody…**: tytuł, opis, koszt, cooldown, limity na stream i na widza, czas w miesiącach gry i mnożnik. Czas jest w miesiącach, nie w dniach: dzień gry trwa tylko 2–3 s, więc efekt na kilka dni mijał, zanim było go widać.
 
 | Nagroda | Cel (tekst od widza) | Komenda dla moda |
 |---|---|---|
@@ -143,6 +143,10 @@ Jedyna droga zmian w grze od widzów (`RewardService`). Pięć nagród, każdą 
 | Boost przemysłu | zakład | `effect industryBoost` (miesiące, mnożnik) |
 | Stop linii (od razu) | linia | `effect lineStop` (miesiące) |
 | Linia czeka na stacjach | linia | `effect lineHold` (miesiące) |
+| Nowe miasto | kod z mapy: `[x, y] Nazwa` | `createTown`: miasto „Nazwa \| widz” w punkcie (x, y) |
+| Nowy zakład | kod z mapy: `[x, y, rodzaj] Nazwa` | `createIndustry`: zakład „Nazwa \| widz” (rodzaj = `coal_mine` itp.) |
+
+- **Nowe miasto i zakład:** Twitch nie ma linku, który otwiera nagrodę z wpisanym tekstem, więc widz bierze kod ze strony: przycisk 🏗 na mapie, kliknięcie miejsca, rodzaj i nazwa, „Kopiuj kod” ([../web/README.md](../web/README.md#budowa-za-punkty-kanału)). `BuildCode` sprawdza kod jeszcze raz na ostatnim eksporcie: nazwa 2–40 znaków i niezajęta, punkt co najmniej 300 m od krawędzi mapy (`terrain.json`), miasto ≥ 1500 m od miast i ≥ 600 m od zakładów, zakład ≥ 800 m od miast i ≥ 600 m od zakładów, rodzaj zakładu tylko spośród tych, które są na mapie (plik `.con` bierzemy z eksportu). Wodę, kolizje z torami, drogami i budynkami sprawdza dopiero gra; wtedy punkty wracają. W opisie nagrody `{site}` zamienia się na adres mapy (`Twitch:SiteUrl`), a odpowiedź na czacie linkuje pinezkę w miejscu budowy (`#pin=x,y&note=Nazwa`), bo id nowego obiektu nie jest jeszcze znane.
 
 - **Na Twitchu:** Tf3Bridge sam tworzy nagrody (tylko te może potem zmieniać i rozliczać), zapamiętuje ich ID w `%LOCALAPPDATA%\Tf3Bridge\rewards.json` i aktualizuje je po zapisaniu ustawień. Nagrody są włączone tylko wtedy, gdy most działa i dostał od startu dane z gry (zapis jest wczytany); przy „Zatrzymaj”, bez nowego eksportu przez 2 minuty (np. pauza w grze) i przy zamykaniu Tf3Bridge są wyłączane (widzowie ich nie widzą). Wykupienia, które mimo to przyjdą, gdy gra nie działa, są od razu zwracane. Wymaga kanału Affiliate/Partner; bez tego nic nie trafia na Twitcha.
 - **Wykupienie:** tekst od widza jest dopasowywany do nazw z ostatniego `dynamic.json` (`TargetResolver`). Wielkość liter, polskie znaki, spacje i „\| właściciel” nie mają znaczenia. Wygrywa dokładne dopasowanie, potem jednoznaczny początek nazwy, potem jednoznaczny fragment.

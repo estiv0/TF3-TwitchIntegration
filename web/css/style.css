@@ -137,6 +137,27 @@ button { font: inherit; color: inherit; }
 }
 .pin-form button:hover { border-color: var(--accent); }
 .pin-form button.primary { background: var(--accent); border-color: var(--accent); color: #1a1405; font-weight: 600; }
+.pin-form button:disabled { opacity: .5; cursor: default; }
+
+.map-tools button[aria-pressed="true"]#build { border-color: var(--accent); }
+
+/* Budowa za punkty kanału (js/build.js): ten sam wygląd co formularz pinezki, kilka pól więcej. */
+.build-form { width: 300px; max-height: calc(100% - 16px); overflow-y: auto; }
+.build-form > strong { font-size: 14px; }
+.build-field { display: grid; gap: 4px; }
+.build-kind { display: flex; gap: 14px; font-size: 13px; }
+.build-kind label { display: flex; align-items: center; gap: 4px; cursor: pointer; color: var(--text); font-weight: 400; font-size: 13px; }
+.build-form select {
+  width: 100%; padding: 6px 8px; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text); font: inherit; font-size: 13px;
+}
+.build-form .pin-link input { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+.build-check, .build-how { margin: 0; font-size: 12px; line-height: 1.4; color: var(--muted); }
+.build-check.neg { color: var(--pin); }
+.build-form .pin-actions { justify-content: space-between; align-items: center; }
+.build-twitch { font-size: 13px; color: var(--accent); }
+.build-twitch[hidden] { display: none; }
+.build-form [data-build-close] { margin-left: auto; }
 
 .legend {
   position: absolute; left: 12px; bottom: 12px;

@@ -53,7 +53,7 @@ export class PinController {
     this.saved = null; // pinezka z linku - wraca po anulowaniu nowej
     this.draft = null;
 
-    button.addEventListener("click", () => map.setPinMode(!map.pinMode));
+    button.addEventListener("click", () => map.setPlaceMode(map.placeMode === "pin" ? null : "pin"));
 
     this.note.addEventListener("input", () => {
       if (!this.draft) return;
@@ -71,7 +71,7 @@ export class PinController {
 
     document.addEventListener("keydown", (e) => {
       if (e.key !== "Escape") return;
-      if (map.pinMode) map.setPinMode(false);
+      if (map.placeMode === "pin") map.setPlaceMode(null);
       else if (!form.hidden) this.cancel();
       else return;
       e.preventDefault(); // obsłużone - main.js nie odznacza już zaznaczenia
@@ -81,7 +81,7 @@ export class PinController {
     this.loadFromHash();
   }
 
-  // Wywoływane przez MapView (onPinMode).
+  // Wywoływane przez MapView (onPlaceMode).
   modeChanged(on) {
     this.button.setAttribute("aria-pressed", String(on));
   }

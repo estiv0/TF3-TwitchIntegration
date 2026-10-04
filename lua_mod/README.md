@@ -128,10 +128,22 @@ end
 - Rodzaje komend:
   - `setName { entity, name }`: zmiana nazwy (`makeEntitySetNameCmd`);
   - `adopt { entity, owner }`: „Nazwa” → „Nazwa | owner”, tylko gdy obiekt nie ma właściciela (sprawdzane w chwili wykonania, inaczej `invalid`, a Tf3Bridge zwraca punkty);
-  - `effect { effect, entity, months, factor }`: efekt czasowy z `effects.lua`, opis niżej.
+  - `effect { effect, entity, months, factor }`: efekt czasowy z `effects.lua`, opis niżej;
+  - `createTown { x, y, name, owner }` i `createIndustry { x, y, file, name, owner }`: nowe miasto albo zakład „name | owner” (`create.lua`, opis niżej).
 - Wynik trafia do `local\tf3export_cmd\results.lua` (`app.saveUserdata`): `json` z listą `{ id, status, error }` (status `ok`, `failed`, `invalid`, `expired`) i `done` z identyfikatorami, z których mod po restarcie gry odtwarza, co już wykonał.
 - Komendy starsze niż 300 s są pomijane (`expired`).
 - Gra wysyła komendy ze swoich skryptów w wątkach symulacji; z wątku GUI to **jeszcze niesprawdzone**. Dlatego mod nie ufa tylko callbackowi `sendCommand`: po wysłaniu przez 15 s sprawdza, czy efekt jest widoczny (dla `setName`: czy encja ma nową nazwę). Log: `command <id>: sent setName`, potem `ok` albo `failed (...)`.
+
+### Nowe miasta i zakłady (`create.lua`)
+
+Tak samo jak edytor mapy gry (`gui/map_editor/map_editor.tl` w `gui.zip`):
+
+- miasto: `api.type.Map.Town` (pozycja, nazwa, `sizeFactors = {1, 1, 1}`, potrzeby ładunkowe najbliższego miasta z `api.engine.terrain.makeMapFromGame`) → `api.engine.mapgen.createTowns` → `makeTownCreateCmd(toAdd)`; gotowe, gdy jest miasto o nowej nazwie;
+- zakład: `api.type.Map.Industry` (plik `.con`, losowy kąt, `onWater` dla platformy wiertniczej, łowiska i pogłębiarki) → `api.engine.mapgen.createIndustries` → `api.engine.util.proposal.createIndustryProposal` → `makeWorldBuildProposalCmd(proposal, context, false, false, true)`. Bez `ignoreErrors`: kolizja z torami, drogą albo stacją kończy się błędem (zwrot punktów), a nie zburzeniem infrastruktury streamera. Gra nazywa nowy zakład sama, więc po jego pojawieniu się (nowa encja `INDUSTRY` do 1,5 km od punktu) mod zmienia nazwę na „name | owner”.
+- `toRemove` z `mapgen` jest pomijane: budowa nigdy nie usuwa istniejących obiektów.
+- Przed wysłaniem: `isValidCoordinate`, woda (`getHeightAt` poniżej `waterLevel`), zajęta nazwa miasta. Błędy (`on water`, `needs water`, `no room ...`) Tf3Bridge tłumaczy na czacie.
+- Na wynik czekamy do 45 s (zamiast 15 s).
+- **Jeszcze niesprawdzone w grze:** pierwszy test przez **Test akcji…** → symulacja nagrody „Nowe miasto” / „Nowy zakład” z kodem skopiowanym ze strony.
 
 ### Efekty czasowe (`effects.lua`)
 

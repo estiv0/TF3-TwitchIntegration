@@ -31,7 +31,9 @@ public static class RewardMessages
             RewardKind.BoostTown => $"{who} boost miasta {target} (+{percent}%) działa {when}.",
             RewardKind.BoostIndustry => $"{who} boost przemysłu {target} (+{percent}%) działa {when}.",
             RewardKind.StopLine => $"{who} linia {target} stoi {when}.",
-            _ => $"{who} pojazdy linii {target} czekają na przystankach {when}.",
+            RewardKind.HoldLine => $"{who} pojazdy linii {target} czekają na przystankach {when}.",
+            RewardKind.CreateTown => $"{who} miasto {target} zostało założone i jest Twoje!",
+            _ => $"{who} zakład {target} został zbudowany i jest Twój!",
         };
         return string.IsNullOrEmpty(link) ? text : $"{text} {link}";
     }
@@ -49,12 +51,26 @@ public static class RewardMessages
         return $"{siteUrl.Trim().TrimEnd('/')}/#{key}={entity.ToString(CultureInfo.InvariantCulture)}";
     }
 
+    /// <summary>"https://site/#pin=x,y&amp;note=Name": a pin where something new was built (its id is not known yet).</summary>
+    public static string? PlaceLink(string siteUrl, double x, double y, string name)
+    {
+        if (string.IsNullOrWhiteSpace(siteUrl)) return null;
+        return string.Create(CultureInfo.InvariantCulture,
+            $"{siteUrl.Trim().TrimEnd('/')}/#pin={Math.Round(x)},{Math.Round(y)}&note={Uri.EscapeDataString(name)}");
+    }
+
+    /// <summary>"gin.estfosoft.com" from "https://gin.estfosoft.com/" (for {site} in reward prompts).</summary>
+    public static string SiteHost(string siteUrl) =>
+        Uri.TryCreate(siteUrl.Trim(), UriKind.Absolute, out var u) ? u.Host + u.AbsolutePath.TrimEnd('/') : siteUrl.Trim();
+
     private static string Label(RewardKind kind) => kind switch
     {
         RewardKind.AdoptTown => "kupno miasta",
         RewardKind.BoostTown => "boost miasta",
         RewardKind.BoostIndustry => "boost przemysłu",
         RewardKind.StopLine => "zatrzymanie linii",
-        _ => "linia czeka na stacjach",
+        RewardKind.HoldLine => "linia czeka na stacjach",
+        RewardKind.CreateTown => "nowe miasto",
+        _ => "nowy zakład",
     };
 }

@@ -4,6 +4,7 @@
 --     { commands = { { id = "...", kind = "setName", created = <unix s>, entity = 123, name = "..." }, ... } }
 --     rodzaje: setName { entity, name }, adopt { entity, owner },
 --              effect { effect = townBoost|industryBoost|lineStop|lineHold, entity, months, factor, user } (effects.lua)
+--              createTown { x, y, name, owner }, createIndustry { x, y, file, name, owner } (create.lua)
 --   wynik efektu ma też until = { year, month, day } (koniec w kalendarzu gry, do wiadomości na czacie)
 --   mod      -> local\tf3export_cmd\results.lua  (app.saveUserdata)
 --     { json = '{"results":[{"id":"...","status":"ok|failed|invalid|expired","error":"..."}]}',
@@ -19,6 +20,7 @@
 local json = ug_require "json.lua"
 local util = ug_require "util.lua"
 local effects = ug_require "effects.lua"
+local create = ug_require "create.lua"
 
 local M = {}
 
@@ -26,6 +28,7 @@ local DIR, QUEUE, RESULTS = "tf3export_cmd", "queue", "results"
 local MAX_RESULTS = 100   -- tyle ostatnich wyników trzymamy w results.lua
 local MAX_AGE_SEC = 300   -- starszych komend nie wykonujemy (np. kolejka sprzed restartu gry)
 local VERIFY_SEC = 15     -- tyle czekamy, aż efekt komendy będzie widoczny
+local VERIFY_CREATE_SEC = 45 -- nowe miasto / zakład: gra buduje dłużej, a zakład potem jeszcze dostaje nazwę
 
 local done = nil          -- id -> true; nil = jeszcze nie wczytane z results.lua
 local results = {}        -- { id, status, error } (najnowsze na końcu)
@@ -99,6 +102,15 @@ function KINDS.effect(c)
 	return effects.start(c, now)
 end
 
+-- Nowe miasto / zakład w miejscu wskazanym przez widza na mapie strony.
+function KINDS.createTown(c)
+	return create.town(c, pending)
+end
+
+function KINDS.createIndustry(c)
+	return create.industry(c, pending)
+end
+
 ---------------------------------------------------------------- pętla
 local function start(c, wall)
 	local id = c.id
@@ -110,7 +122,10 @@ local function start(c, wall)
 	local ok, verify, err, info = pcall(kind, c)
 	if not ok then return finish(id, "failed", tostring(verify)) end
 	if not verify then return finish(id, "invalid", err) end
-	pending[id] = { sent = wall, verify = verify, cmd = c, info = info }
+	local p = pending[id] or {} -- create.lua mógł już zapisać wynik callbacku
+	p.sent, p.verify, p.cmd, p.info = wall, verify, c, info
+	p.timeout = (c.kind == "createTown" or c.kind == "createIndustry") and VERIFY_CREATE_SEC or VERIFY_SEC
+	pending[id] = p
 	util.log(string.format("command %s: sent %s", id, c.kind))
 end
 
@@ -119,11 +134,11 @@ local function check(wall)
 		local ok, visible = pcall(p.verify)
 		if ok and visible then
 			finish(id, "ok", nil, p.info)
-		elseif p.callback == false or wall - p.sent >= VERIFY_SEC then
+		elseif p.callback == false or wall - p.sent >= p.timeout then
 			-- nieudany efekt cofamy, bo Tf3Bridge zwróci widzowi punkty
 			if p.cmd.kind == "effect" then pcall(effects.abort, p.cmd) end
 			finish(id, "failed", p.callback == false and "game rejected the command"
-				or string.format("no effect after %d s (callback: %s)", VERIFY_SEC, tostring(p.callback)))
+				or string.format("no effect after %d s (callback: %s)", p.timeout, tostring(p.callback)))
 		end
 	end
 end

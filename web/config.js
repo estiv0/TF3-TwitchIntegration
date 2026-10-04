@@ -25,4 +25,6 @@ export const config = {
   pollMs: 5000,
   // meta.updatedAtUtc starsze niż to = gra wstrzymana albo Tf3Bridge nie działa
   staleAfterMs: 30000,
+  // Kanał streamera (np. "https://www.twitch.tv/<kanał>"): link w okienku budowy (js/build.js); pusty = bez linku.
+  twitchUrl: "",
 };

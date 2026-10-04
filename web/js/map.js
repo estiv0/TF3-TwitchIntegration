@@ -49,20 +49,21 @@ function readTheme() {
 }
 
 export class MapView {
-  constructor(canvas, { onHover, onSelect, onPlace, onPinMode, onVisibleLines, onLayers, focusAnchorY } = {}) {
+  constructor(canvas, { onHover, onSelect, onPlace, onPlaceMode, onVisibleLines, onLayers, focusAnchorY } = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
     this.onHover = onHover;
     this.onSelect = onSelect;
-    this.onPlace = onPlace;     // kliknięcie w trybie pinezki / prawy przycisk -> { x, y, sx, sy }
-    this.onPinMode = onPinMode;
+    this.onPlace = onPlace;     // kliknięcie w trybie wskazywania / prawy przycisk -> { x, y, sx, sy, mode }
+    this.onPlaceMode = onPlaceMode;
     this.onVisibleLines = onVisibleLines; // Set id linii na ekranie (tylko przy włączonym linesView)
     this.onLayers = onLayers;   // warstwa (stacje, zakłady) włączona sama przez focus() - zsynchronizuj przyciski
     // Wysokość (ułamek mapy), na której focus() stawia obiekt; domyślnie środek. Na telefonie wyżej,
     // bo dół mapy zasłania okienko szczegółów.
     this.focusAnchorY = focusAnchorY ?? (() => 0.5);
     this.pin = null;            // { x, y, note } - pinezka z linku albo właśnie stawiana
-    this.pinMode = false;
+    this.placeMode = null;      // "pin" | "build": następne kliknięcie wskazuje miejsce
+    this.marker = null;         // { x, y, label, radius, ok } - miejsce budowy (js/build.js)
 
     this.view = { x: 0, y: 0, scale: 0.02 };
     this.paths = null;          // { street, streetTunnel, track, trackTunnel }
@@ -376,6 +377,7 @@ export class MapView {
     if (spot?.kind === "industry") this.drawIndustry(spot);
     else if (spot?.kind === "station") this.drawStation(spot);
     else if (spot?.kind === "town") this.drawTown(spot, null);
+    this.drawMarker();
     this.drawPin();
 
     if (this.showVehicles && now < this.animUntil && !this.animTimer) {
@@ -425,10 +427,70 @@ export class MapView {
     this.requestDraw();
   }
 
-  setPinMode(on) {
-    this.pinMode = on;
-    this.canvas.style.cursor = on ? "crosshair" : "grab";
-    this.onPinMode?.(on);
+  // mode: "pin" | "build" | null - co wskaże następne kliknięcie w mapę.
+  setPlaceMode(mode) {
+    this.placeMode = mode;
+    this.canvas.style.cursor = mode ? "crosshair" : "grab";
+    this.onPlaceMode?.(mode);
+  }
+
+  // ---------------------------------------------------------------- miejsce budowy
+  // marker = { x, y, label, radius, ok } we współrzędnych gry; radius (m) = minimalna odległość od innych obiektów.
+  setMarker(marker) {
+    this.marker = marker;
+    this.requestDraw();
+  }
+
+  // Romb w miejscu budowy, przerywany okrąg z minimalną odległością i nazwa obok.
+  drawMarker() {
+    const m = this.marker;
+    if (!m) return;
+    const css = (name) => this.theme[name];
+    const { ctx } = this;
+    const [x, y] = this.toScreen(m.x, -m.y);
+    const r = (m.radius ?? 0) * this.view.scale;
+    if (x < -r - 300 || y < -r - 60 || x > this.w + r + 300 || y > this.h + r + 60) return;
+    const color = m.ok ? css("--accent") : css("--pin");
+
+    if (r > 6) {
+      ctx.save();
+      ctx.setLineDash([6, 5]);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.8;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    ctx.fillStyle = color;
+    ctx.strokeStyle = css("--map-bg");
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x, y - 9);
+    ctx.lineTo(x + 9, y);
+    ctx.lineTo(x, y + 9);
+    ctx.lineTo(x - 9, y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    const label = truncate((m.label ?? "").trim(), 40);
+    if (!label) return;
+    ctx.font = `600 12px ${css("--font")}`;
+    ctx.textBaseline = "middle";
+    const w = ctx.measureText(label).width + 14;
+    const bx = x + 14, by = y - 11;
+    ctx.fillStyle = css("--panel");
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, w, 22, 6);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = css("--town-label");
+    ctx.fillText(label, bx + 7, y);
   }
 
   // Szpilka: główka w kolorze akcentu nad punktem, pod nią opis (skrócony) w dymku.
@@ -901,12 +963,12 @@ export class MapView {
   }
 
   // Miejsce kliknięcia -> współrzędne gry (x, y; y na północ) dla onPlace.
-  place(e) {
+  place(e, mode = this.placeMode ?? "pin") {
     const rect = this.canvas.getBoundingClientRect();
     const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
     const [px, py] = this.toWorld(sx, sy);
-    this.setPinMode(false);
-    this.onPlace?.({ x: Math.round(px), y: Math.round(-py), sx, sy });
+    this.setPlaceMode(null);
+    this.onPlace?.({ x: Math.round(px), y: Math.round(-py), sx, sy, mode });
   }
 
   // Przybliżenie do scale z punktem świata (wx, wy) pod punktem ekranu (sx, sy).
@@ -944,7 +1006,7 @@ export class MapView {
     // Prawy przycisk stawia pinezkę (zamiast menu przeglądarki).
     c.addEventListener("contextmenu", (e) => {
       e.preventDefault();
-      this.place(e);
+      this.place(e, "pin");
     });
 
     c.addEventListener("pointerdown", (e) => {
@@ -977,7 +1039,7 @@ export class MapView {
       const hit = this.hitTest(sx, sy);
       const changed = (hit?.id ?? null) !== (this.hovered?.id ?? null);
       this.hovered = hit ? { kind: hit.kind, id: hit.id, line: hit.line } : null; // line: tylko pojazd
-      c.style.cursor = this.pinMode ? "crosshair" : hit ? "pointer" : "grab";
+      c.style.cursor = this.placeMode ? "crosshair" : hit ? "pointer" : "grab";
       this.onHover?.(hit, sx, sy);
       if (changed) this.requestDraw();
     });
@@ -996,7 +1058,7 @@ export class MapView {
       release(e);
       drag = null;
       if (!wasClick) return;
-      if (this.pinMode) {
+      if (this.placeMode) {
         this.place(e);
         return;
       }

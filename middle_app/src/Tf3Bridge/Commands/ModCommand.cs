@@ -39,6 +39,20 @@ public sealed record ModCommand(
         return new(NewId(), "effect", created ?? DateTimeOffset.UtcNow, args, source, user);
     }
 
+    /// <summary>New town "name | owner" at (x, y), game metres (create.lua).</summary>
+    public static ModCommand CreateTown(double x, double y, string name, string owner, CommandSource source, DateTimeOffset? created = null) =>
+        new(NewId(), "createTown", created ?? DateTimeOffset.UtcNow, new Dictionary<string, object>
+        {
+            ["x"] = (long)Math.Round(x), ["y"] = (long)Math.Round(y), ["name"] = name, ["owner"] = owner,
+        }, source, owner);
+
+    /// <summary>New industry of type <paramref name="file"/> (.con from the export) "name | owner" at (x, y) (create.lua).</summary>
+    public static ModCommand CreateIndustry(double x, double y, string file, string name, string owner, CommandSource source, DateTimeOffset? created = null) =>
+        new(NewId(), "createIndustry", created ?? DateTimeOffset.UtcNow, new Dictionary<string, object>
+        {
+            ["x"] = (long)Math.Round(x), ["y"] = (long)Math.Round(y), ["file"] = file, ["name"] = name, ["owner"] = owner,
+        }, source, owner);
+
     private static string NewId() => Guid.NewGuid().ToString("N")[..12];
 
     // Liczby w logu jak w pliku dla gry (1.5, nie 1,5).

@@ -20,8 +20,8 @@ public sealed class RewardTests : IDisposable
         var latest = Path.Combine(_dir, "out", "latest");
         Directory.CreateDirectory(latest);
         File.WriteAllText(Path.Combine(latest, "dynamic.json"), """
-            {"towns":[{"id":10,"name":"Łódź"},{"id":11,"name":"Kraków | ala"},{"id":12,"name":"Nowy Sącz"},{"id":13,"name":"Nowy Targ"}],
-             "industries":[{"id":20,"name":"Kopalnia węgla Bytom"}],
+            {"towns":[{"id":10,"name":"Łódź","pos":[0,0,5]},{"id":11,"name":"Kraków | ala"},{"id":12,"name":"Nowy Sącz"},{"id":13,"name":"Nowy Targ"}],
+             "industries":[{"id":20,"name":"Kopalnia węgla Bytom","file":"::/industries/coal_mine/coal_mine.con","pos":[5000,5000,5]}],
              "lines":[{"id":30,"name":"Linia 1"}]}
             """);
         File.WriteAllText(Path.Combine(latest, "meta.json"), "{}");
@@ -183,7 +183,65 @@ public sealed class RewardTests : IDisposable
         Assert.Equal(2, (int)body["max_per_user_per_stream"]!);
     }
 
+    [Fact]
+    public void Prompt_gets_the_site_address()
+    {
+        var c = RewardKinds.Defaults.Single(d => d.Kind == RewardKind.CreateTown);
+
+        var prompt = (string)RewardService.Body(c, active: true, RewardMessages.SiteHost("https://gin.estfosoft.com/"))["prompt"]!;
+
+        Assert.StartsWith("Na mapie gin.estfosoft.com kliknij", prompt);
+    }
+
     // ------------------------------------------------------------------ wykupienia (symulacja)
+
+    [Fact]
+    public void New_town_from_a_map_code()
+    {
+        var service = Service();
+
+        Assert.Null(service.Simulate(RewardKind.CreateTown, "[3000, -2000] Nowa Wieś", "widz", false, out _));
+
+        Assert.Contains("kind = \"createTown\"", QueueText);
+        Assert.Contains("x = 3000, y = -2000, name = \"Nowa Wieś\", owner = \"widz\"", QueueText);
+    }
+
+    [Fact]
+    public void New_industry_uses_the_file_from_the_export_and_links_to_a_pin()
+    {
+        var service = Service();
+        service.Simulate(RewardKind.CreateIndustry, "[9000, 9000, coal_mine] Kopalnia Ali", "ala", true, out _);
+
+        Assert.Contains("file = \"::/industries/coal_mine/coal_mine.con\", name = \"Kopalnia Ali\"", QueueText);
+        ModReports("ok");
+
+        var o = Assert.Single(_outcomes);
+        Assert.True(o.Ok);
+        Assert.EndsWith("https://gin.estfosoft.com/#pin=9000,9000&note=Kopalnia%20Ali", o.ChatText);
+    }
+
+    [Fact]
+    public void New_town_too_close_to_another_is_refunded()
+    {
+        var service = Service();
+
+        var outcome = service.Simulate(RewardKind.CreateTown, "[400, 300] Przedmieście", "widz", false, out _);
+
+        Assert.True(outcome!.Refunded);
+        Assert.Contains("za blisko miasta Łódź (500 m", outcome.Message);
+        Assert.Equal(0, _queue.PendingCount);
+    }
+
+    [Fact]
+    public void Game_errors_while_building_are_explained()
+    {
+        var service = Service();
+        service.Simulate(RewardKind.CreateTown, "[3000, -2000] Nowa Wieś", "widz", false, out _);
+
+        ModReports("invalid", "on water");
+
+        Assert.Contains("na wodzie", Assert.Single(_outcomes).Message);
+    }
 
     [Fact]
     public void Adoption_sends_an_adopt_command_from_channel_points()
@@ -290,9 +348,9 @@ public sealed class RewardTests : IDisposable
         await service.TickAsync(default);
 
         var creates = _helix.Requests.Where(r => r.Method == "POST").ToList();
-        Assert.Equal(5, creates.Count);
+        Assert.Equal(RewardKinds.Defaults.Count, creates.Count);
         Assert.All(creates, r => Assert.Contains("broadcaster_id=42", r.Url));
-        Assert.Equal(5, service.Settings.TwitchIds.Count);
+        Assert.Equal(RewardKinds.Defaults.Count, service.Settings.TwitchIds.Count);
         Assert.Equal("42", RewardSettingsStore.Load(Path.Combine(_dir, "rewards.json")).ChannelUserId);
     }
 
@@ -306,7 +364,7 @@ public sealed class RewardTests : IDisposable
 
         Assert.Equal("old", service.Settings.TwitchIds[RewardKind.AdoptTown]);
         Assert.Contains(_helix.Requests, r => r.Method == "PATCH" && r.Url.Contains("id=old"));
-        Assert.Equal(4, _helix.Requests.Count(r => r.Method == "POST"));
+        Assert.Equal(RewardKinds.Defaults.Count - 1, _helix.Requests.Count(r => r.Method == "POST"));
     }
 
     [Fact]
@@ -336,9 +394,9 @@ public sealed class RewardTests : IDisposable
         await service.TickAsync(default);
         var on = _helix.Requests.Where(r => r.Method == "PATCH").ToList();
 
-        Assert.Equal(5, off.Count);
+        Assert.Equal(RewardKinds.Defaults.Count, off.Count);
         Assert.All(off, r => Assert.Equal("""{"is_enabled":false}""", r.Body));
-        Assert.Equal(5, on.Count);
+        Assert.Equal(RewardKinds.Defaults.Count, on.Count);
         Assert.All(on, r => Assert.Equal("""{"is_enabled":true}""", r.Body));
         Assert.Equal(RewardState.Ok, service.Status.State);
     }
@@ -352,7 +410,7 @@ public sealed class RewardTests : IDisposable
         await service.DisableAsync(default); // drugi raz nic nie wysyła
 
         var patches = _helix.Requests.Where(r => r.Method == "PATCH").ToList();
-        Assert.Equal(5, patches.Count);
+        Assert.Equal(RewardKinds.Defaults.Count, patches.Count);
         Assert.All(patches, r => Assert.Equal("""{"is_enabled":false}""", r.Body));
     }
 

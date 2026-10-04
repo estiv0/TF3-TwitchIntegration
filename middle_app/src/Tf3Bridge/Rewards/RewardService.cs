@@ -41,6 +41,7 @@ public sealed class RewardService
     private readonly ModCommandQueue _queue;
     private readonly bool _mock;
     private readonly string _dynamicPath;
+    private readonly string _terrainPath;
     private readonly Func<string?> _whyInactive; // null = gra działa i wysyła dane
     private readonly string _settingsPath;
     private readonly string _siteUrl;
@@ -82,6 +83,7 @@ public sealed class RewardService
         _queue = queue;
         _mock = mock;
         _dynamicPath = Path.Combine(outputDir, ExportProcessor.DynamicPath.Replace('/', Path.DirectorySeparatorChar));
+        _terrainPath = Path.Combine(outputDir, ExportProcessor.TerrainInfoPath.Replace('/', Path.DirectorySeparatorChar));
         _settingsPath = settingsPath;
         _log = log;
         _settings = RewardSettingsStore.Load(settingsPath);
@@ -220,7 +222,8 @@ public sealed class RewardService
     /// <summary>Where a redemption came from: Twitch (with <see cref="Redemption"/>) or a simulation.</summary>
     private sealed record Origin(Redemption? Redemption, string Login, bool Chat);
 
-    private sealed record Pending(string Token, RewardKind Kind, string User, string Input, string Target, long Entity, Origin Origin);
+    /// <param name="Link">Where the object is on the site (for the chat answer).</param>
+    private sealed record Pending(string Token, RewardKind Kind, string User, string Input, string Target, string? Link, Origin Origin);
 
     private Task HandleRedemptionAsync(ChannelPointsRedemption r)
     {
@@ -265,18 +268,35 @@ public sealed class RewardService
         var owner = OwnerName.Clean(user).Replace("|", "");
         if (owner.Length == 0) return Reject("pusta nazwa widza");
 
-        var resolved = TargetResolver.Resolve(GameObjects.Load(_dynamicPath), RewardKinds.Target(kind), input);
-        if (resolved.Target is not { } target) return Reject(resolved.Error!);
-        if (kind == RewardKind.AdoptTown && target.Owner is { } current) return Reject($"{target.Name} ma już właściciela ({current})");
-
+        var objects = GameObjects.Load(_dynamicPath);
         var created = redeemedAt > DateTimeOffset.UtcNow ? DateTimeOffset.UtcNow : redeemedAt;
-        var command = RewardKinds.Effect(kind) is { } effect
-            ? ModCommand.Effect(effect, target.Entity, config.Months, RewardKinds.HasFactor(kind) ? config.Factor : null,
-                CommandSource.ChannelPoints, owner, created)
-            : ModCommand.Adopt(target.Entity, owner, CommandSource.ChannelPoints, owner, created);
-        lock (_gate) _pending[command.Id] = new Pending(token, kind, owner, input, target.Name, target.Entity, origin);
+        ModCommand command;
+        string targetName;
+        string? link;
+        if (RewardKinds.Creates(kind))
+        {
+            if (objects.Count == 0) return Reject("brak danych z gry (czy TF3 działa?)");
+            var parsed = BuildCode.Parse(input, kind == RewardKind.CreateIndustry, objects, MapBounds.Load(_terrainPath));
+            if (parsed.Place is not { } place) return Reject(parsed.Error!);
+            command = place.File is { } file
+                ? ModCommand.CreateIndustry(place.X, place.Y, file, place.Name, owner, CommandSource.ChannelPoints, created)
+                : ModCommand.CreateTown(place.X, place.Y, place.Name, owner, CommandSource.ChannelPoints, created);
+            (targetName, link) = (place.Name, RewardMessages.PlaceLink(_siteUrl, place.X, place.Y, place.Name));
+        }
+        else
+        {
+            var resolved = TargetResolver.Resolve(objects, RewardKinds.Target(kind), input);
+            if (resolved.Target is not { } target) return Reject(resolved.Error!);
+            if (kind == RewardKind.AdoptTown && target.Owner is { } current) return Reject($"{target.Name} ma już właściciela ({current})");
+            command = RewardKinds.Effect(kind) is { } effect
+                ? ModCommand.Effect(effect, target.Entity, config.Months, RewardKinds.HasFactor(kind) ? config.Factor : null,
+                    CommandSource.ChannelPoints, owner, created)
+                : ModCommand.Adopt(target.Entity, owner, CommandSource.ChannelPoints, owner, created);
+            (targetName, link) = (target.Name, RewardMessages.Link(_siteUrl, kind, target.Entity));
+        }
+        lock (_gate) _pending[command.Id] = new Pending(token, kind, owner, input, targetName, link, origin);
         _queue.Enqueue(command);
-        _log.LogInformation("Reward \"{Title}\" by {User}: {Target}", config.Title, owner, target.Name);
+        _log.LogInformation("Reward \"{Title}\" by {User}: {Target}", config.Title, owner, targetName);
         return null;
     }
 
@@ -291,8 +311,7 @@ public sealed class RewardService
         var message = result.Ok
             ? $"wykonano: {p.Target}{(result.Until is { } u ? $", do {RewardMessages.Date(u)}" : "")}"
             : reason!;
-        var chat = RewardMessages.Text(Settings.Get(p.Kind), p.Origin.Login, p.Target, result.Ok, result.Until, reason,
-            RewardMessages.Link(_siteUrl, p.Kind, p.Entity));
+        var chat = RewardMessages.Text(Settings.Get(p.Kind), p.Origin.Login, p.Target, result.Ok, result.Until, reason, p.Link);
         var outcome = new RewardOutcome(p.Token, p.Kind, p.User, p.Input, result.Ok, message, p.Target, result.Until, chat);
         if (result.Ok) _log.LogInformation("Reward {Kind} by {User}: {Message}", p.Kind, p.User, message);
         else _log.LogWarning("Reward {Kind} by {User}: {Message}, refunding", p.Kind, p.User, message);
@@ -328,6 +347,13 @@ public sealed class RewardService
         // Gra trzyma skrypty wczytane przy starcie: nowy plik moda działa dopiero po restarcie TF3.
         _ when r.Error?.StartsWith("unknown kind ", StringComparison.Ordinal) == true => "gra ma starszą wersję moda (uruchom TF3 ponownie)",
         _ when r.Error?.StartsWith("already adopted by ", StringComparison.Ordinal) == true => "ma już właściciela (" + r.Error["already adopted by ".Length..] + ")",
+        // create.lua
+        "invalid" when r.Error == "on water" => "to miejsce jest na wodzie",
+        "invalid" when r.Error == "needs water" => "ten zakład stawia się tylko na wodzie",
+        "invalid" when r.Error == "outside of the map" => "to miejsce jest poza mapą",
+        "invalid" when r.Error?.StartsWith("no room", StringComparison.Ordinal) == true => "gra nie znalazła tu miejsca",
+        "invalid" when r.Error == "town with this name already exists" => "miasto o tej nazwie już jest",
+        "failed" when r.Error == "game rejected the command" => "gra odrzuciła budowę (coś stoi na drodze: tory, droga albo budynki?)",
         _ => r.Error ?? r.Status,
     };
 
@@ -387,7 +413,7 @@ public sealed class RewardService
             var id = ids.TryGetValue(config.Kind, out var known) && existing.Any(e => e.Id == known)
                 ? known
                 : existing.FirstOrDefault(e => e.Title == config.Title)?.Id; // np. po utracie rewards.json
-            var body = Body(config, active);
+            var body = Body(config, active, RewardMessages.SiteHost(_siteUrl));
             if (id is null)
             {
                 if (!config.Enabled) { ids.Remove(config.Kind); continue; }
@@ -415,12 +441,14 @@ public sealed class RewardService
     }
 
     /// <param name="active">false = hidden from viewers (is_enabled), so nobody buys while the game cannot handle it.</param>
-    internal static JsonObject Body(RewardConfig c, bool active)
+    /// <param name="site">Fills {site} in the prompt.</param>
+    internal static JsonObject Body(RewardConfig c, bool active, string site = "")
     {
+        var prompt = c.TwitchPrompt.Replace("{site}", site);
         var body = new JsonObject
         {
             ["title"] = c.Title,
-            ["prompt"] = c.TwitchPrompt,
+            ["prompt"] = prompt.Length <= RewardConfig.MaxPrompt ? prompt : prompt[..RewardConfig.MaxPrompt],
             ["cost"] = c.Cost,
             ["is_enabled"] = c.Enabled && active,
             ["is_paused"] = false, // starsze wersje pauzowały zamiast wyłączać

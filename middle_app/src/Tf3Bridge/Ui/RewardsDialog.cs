@@ -42,8 +42,8 @@ public sealed class RewardsDialog : Form
         {
             AutoSize = true, MaximumSize = new Size(1060, 0), ForeColor = SystemColors.GrayText,
             Text = "Tylko te nagrody mogą zmieniać grę (czat jest wyłącznie informacyjny). Tf3Bridge tworzy je na Twitchu sam "
-                 + "i pauzuje, gdy gra nie wysyła danych. Widz wpisuje nazwę miasta, zakładu albo linii; gdy jej nie ma, cel jest "
-                 + "niejednoznaczny albo gra nie wykona akcji, punkty wracają. W opisie można użyć {months} i {percent}. "
+                 + "i pauzuje, gdy gra nie wysyła danych. Widz wpisuje nazwę miasta, zakładu albo linii (przy nowym mieście i zakładzie: wkleja kod z mapy); "
+                 + "gdy jej nie ma, cel jest niejednoznaczny, miejsce się nie nadaje albo gra nie wykona akcji, punkty wracają. W opisie można użyć {months}, {percent} i {site} (adres mapy). "
                  + "Limit 0 = bez limitu. Czas efektów jest w miesiącach gry (miesiąc to ok. 1–1,5 min przy prędkości 1×; na pauzie efekt stoi).\n\nStan: " + status,
         };
 
@@ -154,6 +154,8 @@ public sealed class RewardsDialog : Form
         RewardKind.BoostTown => "Boost miasta",
         RewardKind.BoostIndustry => "Boost przemysłu",
         RewardKind.StopLine => "Stop linii (od razu)",
-        _ => "Linia czeka na stacjach",
+        RewardKind.HoldLine => "Linia czeka na stacjach",
+        RewardKind.CreateTown => "Nowe miasto (kod z mapy)",
+        _ => "Nowy zakład (kod z mapy)",
     };
 }

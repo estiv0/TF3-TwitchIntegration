@@ -42,7 +42,37 @@
         <button id="industries" type="button" title="Zakłady przemysłowe" data-i18n-title="map.industries" aria-pressed="true">🏭</button>
         <button id="vehicles" type="button" title="Pojazdy (przybliżone położenie: na przystanku albo w drodze do niego)" data-i18n-title="map.vehicles" aria-pressed="true"><span class="ico" style="-webkit-mask-image:url('img/stations/vehicle_bus_front_32.png');mask-image:url('img/stations/vehicle_bus_front_32.png')"></span></button>
         <button id="pin" type="button" title="Pinezka z linkiem – kliknij miejsce na mapie (albo prawy przycisk myszy)" data-i18n-title="map.pin" aria-pressed="false">📍</button>
+        <button id="build" type="button" title="Zbuduj na streamie: nowe miasto albo zakład (za punkty kanału na Twitchu)" data-i18n-title="map.build" aria-pressed="false">🏗</button>
       </div>
+      <!-- Budowa za punkty kanału (js/build.js): kod do wklejenia w nagrodę na Twitchu. -->
+      <form id="build-form" class="pin-form build-form" hidden>
+        <strong data-i18n="build.title">Zbuduj za punkty kanału</strong>
+        <div class="build-kind" role="radiogroup">
+          <label><input type="radio" name="build-kind" value="town" checked> <span data-i18n="build.town">Miasto</span></label>
+          <label><input type="radio" name="build-kind" value="industry"> <span data-i18n="build.industry">Zakład</span></label>
+        </div>
+        <div class="build-field" data-build-type hidden>
+          <label for="build-type" data-i18n="build.type">Rodzaj zakładu</label>
+          <select id="build-type"></select>
+        </div>
+        <div class="build-field">
+          <label for="build-name" data-i18n="build.name">Nazwa</label>
+          <input id="build-name" type="text" maxlength="40" autocomplete="off">
+        </div>
+        <p class="build-check" data-build-check></p>
+        <div class="build-field">
+          <label for="build-code" data-i18n="build.code">Kod do nagrody</label>
+          <div class="pin-link">
+            <input id="build-code" type="text" readonly>
+            <button type="submit" class="primary" data-build-copy data-i18n="build.copy">Kopiuj kod</button>
+          </div>
+        </div>
+        <p class="build-how" data-build-how></p>
+        <div class="pin-actions">
+          <a class="build-twitch" data-build-twitch target="_blank" rel="noopener" data-i18n="build.twitch">Otwórz Twitcha</a>
+          <button type="button" data-build-close data-i18n="build.close">Zamknij</button>
+        </div>
+      </form>
       <form id="pin-form" class="pin-form" hidden>
         <label for="pin-note" data-i18n="pin.note">Opis pinezki</label>
         <textarea id="pin-note" maxlength="200" rows="3" placeholder="np. Tu powstanie nowy port" data-i18n-placeholder="pin.placeholder"></textarea>

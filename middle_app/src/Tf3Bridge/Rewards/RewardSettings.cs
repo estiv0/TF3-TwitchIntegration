@@ -6,11 +6,12 @@ using Tf3Bridge.Commands;
 namespace Tf3Bridge.Rewards;
 
 /// <summary>Channel points rewards Tf3Bridge manages. The only way viewers can change the game.</summary>
-public enum RewardKind { AdoptTown, BoostTown, BoostIndustry, StopLine, HoldLine }
+public enum RewardKind { AdoptTown, BoostTown, BoostIndustry, StopLine, HoldLine, CreateTown, CreateIndustry }
 
 /// <summary>
 /// One reward as the streamer configured it. <see cref="Months"/> (game months) and <see cref="Factor"/>
-/// only matter for timed effects (see <see cref="RewardKinds"/>). Prompts may use {months} and {percent}.
+/// only matter for timed effects (see <see cref="RewardKinds"/>). Prompts may use {months}, {percent}
+/// and {site} (the map site, filled in when the reward is sent to Twitch).
 /// Months, not days: a game day lasts only 2-3 s, so effects of a few days were over before anyone saw them.
 /// </summary>
 public sealed record RewardConfig(
@@ -48,10 +49,16 @@ public static class RewardKinds
 {
     public static GameObjectKind Target(RewardKind kind) => kind switch
     {
-        RewardKind.AdoptTown or RewardKind.BoostTown => GameObjectKind.Town,
-        RewardKind.BoostIndustry => GameObjectKind.Industry,
+        RewardKind.AdoptTown or RewardKind.BoostTown or RewardKind.CreateTown => GameObjectKind.Town,
+        RewardKind.BoostIndustry or RewardKind.CreateIndustry => GameObjectKind.Industry,
         _ => GameObjectKind.Line,
     };
+
+    /// <summary>
+    /// Builds something new where the viewer pointed on the site map: the input is a code from the site
+    /// (<see cref="BuildCode"/>), not the name of an existing object.
+    /// </summary>
+    public static bool Creates(RewardKind kind) => kind is RewardKind.CreateTown or RewardKind.CreateIndustry;
 
     /// <summary>Effect name in the mod (effects.lua); null for adoption (not timed).</summary>
     public static string? Effect(RewardKind kind) => kind switch
@@ -85,6 +92,12 @@ public static class RewardKinds
         new(RewardKind.HoldLine, true, "TF3: linia czeka na stacjach",
             "Wpisz nazwę linii. Jej pojazdy czekają na przystankach przez {months} mies. gry.",
             8000, 600, 0, 1, 1, 1),
+        new(RewardKind.CreateTown, true, "TF3: załóż miasto",
+            "Na mapie {site} kliknij 🏗, wskaż miejsce, nadaj nazwę i wklej tu kod. Powstanie nowe miasto, a Ty będziesz jego właścicielem.",
+            20000, 900, 0, 1, 0, 1),
+        new(RewardKind.CreateIndustry, true, "TF3: zbuduj zakład",
+            "Na mapie {site} kliknij 🏗, wskaż miejsce, wybierz zakład, nadaj nazwę i wklej tu kod. Zakład powstanie i będzie Twój.",
+            15000, 600, 0, 1, 0, 1),
     ];
 }
 

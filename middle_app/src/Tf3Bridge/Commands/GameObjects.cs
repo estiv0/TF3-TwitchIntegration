@@ -39,9 +39,11 @@ public enum GameObjectKind { Town, Industry, Station, Line }
 
 /// <summary>
 /// Something a viewer can target. <see cref="Entity"/> is the entity that carries the name
-/// (for stations: the station group, like the name in the export).
+/// (for stations: the station group, like the name in the export). <see cref="Pos"/>: position on the
+/// map (game coordinates, y to the north) when the export has it; <see cref="File"/>: construction file
+/// of an industry (its type, e.g. "::/industries/coal_mine/coal_mine.con").
 /// </summary>
-public sealed record GameObject(GameObjectKind Kind, long Entity, string FullName)
+public sealed record GameObject(GameObjectKind Kind, long Entity, string FullName, (double X, double Y)? Pos = null, string? File = null)
 {
     public string Name => OwnerName.Split(FullName).Name;
     public string? Owner => OwnerName.Split(FullName).Owner;
@@ -72,9 +74,13 @@ public static class GameObjects
                 if (x.ValueKind != JsonValueKind.Object) continue;
                 var name = x.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String ? n.GetString() : null;
                 if (string.IsNullOrWhiteSpace(name) || entity(x) is not { } id) continue;
-                list.Add(new GameObject(kind, id, name));
+                var file = x.TryGetProperty("file", out var f) && f.ValueKind == JsonValueKind.String ? f.GetString() : null;
+                list.Add(new GameObject(kind, id, name, Pos(x), file));
             }
         }
+        static (double, double)? Pos(JsonElement x) =>
+            x.TryGetProperty("pos", out var p) && p.ValueKind == JsonValueKind.Array && p.GetArrayLength() >= 2
+                && p[0].TryGetDouble(out var px) && p[1].TryGetDouble(out var py) ? (px, py) : null;
         static long? Id(JsonElement x) => x.TryGetProperty("id", out var v) && v.TryGetInt64(out var id) ? id : null;
         static long? StationGroup(JsonElement x) =>
             x.TryGetProperty("groups", out var g) && g.ValueKind == JsonValueKind.Array && g.GetArrayLength() > 0 && g[0].TryGetInt64(out var id)

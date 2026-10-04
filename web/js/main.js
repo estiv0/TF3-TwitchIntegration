@@ -11,6 +11,7 @@ import { readSelection, writeSelection } from "./hash.js";
 import { LANGS, applyStatic, lang, locale, onLangChange, setLang, t } from "./i18n.js";
 import { MapView } from "./map.js";
 import { PinController, readPinHash } from "./pin.js";
+import { BuildController } from "./build.js";
 import { initFloatingPanel } from "./float.js";
 import { initSidebarResize } from "./resize.js";
 import { Sidebar, townSupply } from "./sidebar.js";
@@ -46,10 +47,12 @@ const map = new MapView($("#map"), {
     writeSelection(item);
   },
   onPlace(place) {
-    pins.place(place);
+    if (place.mode === "build") build.place(place);
+    else pins.place(place);
   },
-  onPinMode(on) {
-    pins.modeChanged(on);
+  onPlaceMode(mode) {
+    pins.modeChanged(mode === "pin");
+    build.modeChanged(mode === "build");
   },
   onVisibleLines(ids) {
     sidebar.setVisibleLines(ids);
@@ -59,6 +62,7 @@ const map = new MapView($("#map"), {
 });
 
 const pins = new PinController(map, { form: $("#pin-form"), button: $("#pin"), wrap: $(".map-wrap") });
+const build = new BuildController(map, { form: $("#build-form"), button: $("#build"), wrap: $(".map-wrap"), getDynamic: () => lastDynamic });
 
 const sidebar = new Sidebar($("#sidebar"), $("#detail"), {
   onPick(kind, id) {
@@ -157,7 +161,7 @@ let industryLines = new Map(); // id zakładu -> linie jego stacji
 let linesById = new Map();     // id linii -> linia (tooltip pojazdu)
 
 // Podgląd stanu z konsoli przeglądarki (debug).
-window.tf3 = { map, sidebar, pins };
+window.tf3 = { map, sidebar, pins, build };
 
 function tooltipHtml(item) {
   const d = item.data;
@@ -252,6 +256,7 @@ onLangChange(() => {
   setSheet(sheetToggle.getAttribute("aria-expanded") === "true");
   if (lastDynamic) renderHeader(lastDynamic);
   sidebar.render();
+  build.refresh();
   tooltip.hidden = true;
 });
 renderLangSwitch();
@@ -278,6 +283,7 @@ new DataFeed({
     map.setDynamic(dynamic);
     sidebar.setDynamic(dynamic);
     lastDynamic = dynamic;
+    build.refresh();
     renderHeader(dynamic);
     applyPendingSelection();
   },

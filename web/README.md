@@ -35,6 +35,8 @@ web/
   js/api.js         DataFeed: polling meta.json, pobieranie dynamic/network przy zmianie seq
   js/map.js         MapView: canvas, sieć jako krzywe Béziera (z tangensów TF), pan/zoom/hover/wybór
   js/sidebar.js     listy miast, przemysłu i linii, szczegóły zaznaczenia
+  js/pin.js         pinezka z linkiem (#pin=x,y,skala&note=opis)
+  js/build.js       budowa za punkty kanału: kod do nagrody na Twitchu
   js/company.js     zakładka Firma (finanse wg lat, wykresy historii) i sparkline salda w górnym pasku
   js/format.js      formatowanie liczb i dat, polskie nazwy ładunków i środków transportu
 ```
@@ -50,6 +52,14 @@ web/
 - Trasa linii: przystanek dociągany jest do węzła sieci w tym samym spójnym kawałku co sąsiedni przystanek, bo eksport ma odcięte fragmenty dróg (dojazdy do stacji).
 - Zaznaczenie jest w adresie (`#line=<id>`, `#town=`, `#industry=`, `#station=`), obok pinezki: `#pin=...&note=...&line=<id>`.
 - Na dotyku: przesuwanie jednym palcem, przybliżanie szczypaniem.
+
+## Budowa za punkty kanału
+
+Przycisk 🏗 na mapie (`build.js`): widz klika miejsce, wybiera miasto albo zakład (rodzaje: te, które są w `dynamic.json`), wpisuje nazwę i kopiuje kod `[x, y] Nazwa` albo `[x, y, coal_mine] Nazwa`. Kod wkleja w nagrodę „TF3: załóż miasto” / „TF3: zbuduj zakład” na Twitchu (Twitch nie ma linku, który wypełnia tekst nagrody). Tf3Bridge buduje to w grze ([../middle_app/README.md](../middle_app/README.md#nagrody-za-punkty-kanału)).
+
+- Strona od razu ostrzega o tym, co Tf3Bridge odrzuci: za blisko miasta albo zakładu, przy krawędzi mapy, zajęta nazwa. Liczby są te same co w `BuildCode.cs`; na mapie przerywany okrąg pokazuje minimalną odległość od miast.
+- Wody i kolizji z torami strona nie sprawdza; robi to gra.
+- `twitchUrl` w `config.js` (adres kanału) dodaje w okienku link „Otwórz Twitcha”.
 
 ## Efekty od widzów
 
