@@ -2,7 +2,7 @@
 
 **Stan (2026-10-04):** w Tf3Bridge działa logowanie streamera ([opis](../middle_app/README.md#twitch-logowanie)), kanał Tf3Bridge → mod działa w grze ([opis](../middle_app/README.md#komendy-dla-moda-akcje-widzów)), a EventSub odbiera czat i wykupienia ([opis](../middle_app/README.md#twitch-eventsub-czat-i-punkty-kanału)). Kanał autora nie ma statusu Affiliate, więc zmiany w grze sprawdzamy na razie przyciskiem **Test akcji…** i Twitch CLI.
 
-**Zasada (2026-10-04): grę zmieniają tylko punkty kanału.** Adopcje, boosty fabryk i podobne akcje są wyłącznie nagrodami za punkty, bo nad nimi streamer ma kontrolę: koszt, cooldown, limity, pauza. Komendy z czatu są tylko informacyjne (np. kto jest właścicielem miasta, stan linii) i nigdy nie trafiają do kolejki komend gry. Streamer nie kontroluje, kto i jak często ich używa, a mogłyby popsuć balans. W kodzie pilnuje tego `CommandSource`: komenda dla moda może pochodzić tylko z punktów kanału albo z ręcznego testu w oknie.
+**Zasada (2026-10-04): grę zmieniają tylko punkty kanału.** Kupno miast, boosty fabryk i podobne akcje są wyłącznie nagrodami za punkty, bo nad nimi streamer ma kontrolę: koszt, cooldown, limity, pauza. Komendy z czatu są tylko informacyjne (np. kto jest właścicielem miasta, stan linii) i nigdy nie trafiają do kolejki komend gry. Streamer nie kontroluje, kto i jak często ich używa, a mogłyby popsuć balans. W kodzie pilnuje tego `CommandSource`: komenda dla moda może pochodzić tylko z punktów kanału albo z ręcznego testu w oknie.
 
 W skrócie: integrację da się zrobić bez nowej infrastruktury w Azure. Tf3Bridge odbiera wykupienia z Twitcha i przekazuje je do moda tą samą drogą, którą dziś wysyła ustawienia moda. Gra ma gotowe komendy na większość sensownych nagród.
 
@@ -106,8 +106,8 @@ Rzeczy poza samymi nagrodami:
 2. ✅ Kanał `queue.lua` → mod → `results.lua` z komendą `setName` i przyciskiem **Test akcji…** w Tf3Bridge (adopcja obiektu bez Twitcha). Sprawdzone w grze: `api.cmd.sendCommand` działa z wątku GUI.
 3. ✅ EventSub przez WebSocket. Wykupienia sprawdzone na Twitch CLI 1.1.24; czatu Twitch CLI nie obsługuje, więc testujemy go na prawdziwym kanale.
 4. Informacyjne komendy z czatu, bez zmian w grze (`channel.chat.message`, uprawnienie `user:read:chat`; odpowiedzi na czacie wymagają `user:write:chat`): np. kto jest właścicielem miasta, ile zarabia linia, link do mapy. Działa bez statusu Affiliate.
-5. ✅ Punkty kanału: jedyne źródło zmian w grze. Adopcja miasta, boost miasta, boost przemysłu, stop linii (od razu) i linia czeka na stacjach ([opis](../middle_app/README.md#nagrody-za-punkty-kanału)), z tworzeniem nagród, rozliczaniem wykupień (FULFILLED/CANCELED) i auto-pauzą. Sprawdzone w grze przez „Symuluj nagrodę” (2026-10-04); czas efektów w miesiącach gry, bo dzień gry trwa 2–3 s. Na żywo na Twitchu jeszcze nie (kanał bez Affiliate). Koszty, czasy i mnożniki są startowe, do zbalansowania na streamie.
-6. ✅ Efekty na stronie (znaczki na liście, szczegóły z datą końca i kupującym) i odpowiedź dla widza na czacie po każdym wykupieniu (efekt z datą końca w grze albo powód zwrotu punktów).
+5. ✅ Punkty kanału: jedyne źródło zmian w grze. Kupno miasta (wcześniej „adopcja”), boost miasta, boost przemysłu, stop linii (od razu) i linia czeka na stacjach ([opis](../middle_app/README.md#nagrody-za-punkty-kanału)), z tworzeniem nagród, rozliczaniem wykupień (FULFILLED/CANCELED) i auto-pauzą. Sprawdzone w grze przez „Symuluj nagrodę” (2026-10-04); czas efektów w miesiącach gry, bo dzień gry trwa 2–3 s. Na żywo na Twitchu jeszcze nie (kanał bez Affiliate). Koszty, czasy i mnożniki są startowe, do zbalansowania na streamie.
+6. ✅ Efekty na stronie (znaczki na liście, szczegóły z datą końca i kupującym) i odpowiedź dla widza na czacie po każdym wykupieniu (efekt z datą końca w grze i linkiem do obiektu na gin.estfosoft.com albo powód zwrotu punktów).
 7. Kolejne akcje, feed i ranking na stronie.
 
 ## Źródła

@@ -26,7 +26,7 @@ public sealed class CommandTestDialog : Form
     private readonly ComboBox _kind = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 120 };
     private readonly ComboBox _object = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 340 };
     private readonly TextBox _viewer = new() { Text = "test_widz", Width = 200 };
-    private readonly RadioButton _adopt = new() { Text = "Adoptuj (widz zostaje właścicielem)", AutoSize = true, Checked = true };
+    private readonly RadioButton _adopt = new() { Text = "Ustaw właściciela (widz)", AutoSize = true, Checked = true };
     private readonly RadioButton _release = new() { Text = "Usuń właściciela", AutoSize = true };
     private readonly RadioButton _rename = new() { Text = "Nowa nazwa:", AutoSize = true };
     private readonly TextBox _newName = new() { Width = 260, Enabled = false };

@@ -43,6 +43,7 @@ public sealed class RewardService
     private readonly string _dynamicPath;
     private readonly string _metaPath;
     private readonly string _settingsPath;
+    private readonly string _siteUrl;
     private readonly ILogger _log;
     private readonly Lock _gate = new();
     private readonly Dictionary<string, Pending> _pending = []; // id komendy -> wykupienie
@@ -55,19 +56,20 @@ public sealed class RewardService
     public event Action<RewardOutcome>? Finished;
 
     public RewardService(TwitchSession session, EventSubClient eventSub, ModCommandQueue queue,
-        IOptions<BridgeOptions> options, ILogger<RewardService> log)
-        : this(session, new HttpClient { Timeout = TimeSpan.FromSeconds(20) }, eventSub.IsMock, queue, options.Value.OutputDir, log)
+        IOptions<BridgeOptions> options, IOptions<TwitchOptions> twitch, ILogger<RewardService> log)
+        : this(session, new HttpClient { Timeout = TimeSpan.FromSeconds(20) }, eventSub.IsMock, queue, options.Value.OutputDir, twitch.Value.SiteUrl, log)
     {
         eventSub.RedemptionReceived += r => _ = HandleRedemptionAsync(r);
     }
 
     // Jeden HttpClient dla API nagród i czatu.
-    private RewardService(TwitchSession session, HttpClient http, bool mock, ModCommandQueue queue, string outputDir, ILogger log)
-        : this(session, new ChannelPointsApi(session, http), new ChatApi(session, http), queue, mock, outputDir, RewardSettingsStore.FilePath, log) { }
+    private RewardService(TwitchSession session, HttpClient http, bool mock, ModCommandQueue queue, string outputDir, string siteUrl, ILogger log)
+        : this(session, new ChannelPointsApi(session, http), new ChatApi(session, http), queue, mock, outputDir, RewardSettingsStore.FilePath, log, siteUrl) { }
 
     internal RewardService(TwitchSession session, ChannelPointsApi api, ChatApi chat, ModCommandQueue queue, bool mock,
-        string outputDir, string settingsPath, ILogger log)
+        string outputDir, string settingsPath, ILogger log, string siteUrl = "")
     {
+        _siteUrl = siteUrl;
         _session = session;
         _api = api;
         _chat = chat;
@@ -174,7 +176,7 @@ public sealed class RewardService
     /// <summary>Where a redemption came from: Twitch (with <see cref="Redemption"/>) or a simulation.</summary>
     private sealed record Origin(Redemption? Redemption, string Login, bool Chat);
 
-    private sealed record Pending(string Token, RewardKind Kind, string User, string Input, string Target, Origin Origin);
+    private sealed record Pending(string Token, RewardKind Kind, string User, string Input, string Target, long Entity, Origin Origin);
 
     private Task HandleRedemptionAsync(ChannelPointsRedemption r)
     {
@@ -222,7 +224,7 @@ public sealed class RewardService
             ? ModCommand.Effect(effect, target.Entity, config.Months, RewardKinds.HasFactor(kind) ? config.Factor : null,
                 CommandSource.ChannelPoints, owner, created)
             : ModCommand.Adopt(target.Entity, owner, CommandSource.ChannelPoints, owner, created);
-        lock (_gate) _pending[command.Id] = new Pending(token, kind, owner, input, target.Name, origin);
+        lock (_gate) _pending[command.Id] = new Pending(token, kind, owner, input, target.Name, target.Entity, origin);
         _queue.Enqueue(command);
         _log.LogInformation("Reward \"{Title}\" by {User}: {Target}", config.Title, owner, target.Name);
         return null;
@@ -239,7 +241,8 @@ public sealed class RewardService
         var message = result.Ok
             ? $"wykonano: {p.Target}{(result.Until is { } u ? $", do {RewardMessages.Date(u)}" : "")}"
             : reason!;
-        var chat = RewardMessages.Text(Settings.Get(p.Kind), p.Origin.Login, p.Target, result.Ok, result.Until, reason);
+        var chat = RewardMessages.Text(Settings.Get(p.Kind), p.Origin.Login, p.Target, result.Ok, result.Until, reason,
+            RewardMessages.Link(_siteUrl, p.Kind, p.Entity));
         var outcome = new RewardOutcome(p.Token, p.Kind, p.User, p.Input, result.Ok, message, p.Target, result.Until, chat);
         if (result.Ok) _log.LogInformation("Reward {Kind} by {User}: {Message}", p.Kind, p.User, message);
         else _log.LogWarning("Reward {Kind} by {User}: {Message}, refunding", p.Kind, p.User, message);

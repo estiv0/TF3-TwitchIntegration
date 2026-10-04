@@ -39,7 +39,7 @@ public sealed class RewardTests : IDisposable
         TwitchAccountStore.Save(new TwitchAccount("42", "streamer", broadcasterType, TwitchAuthClient.Scopes, "ACCESS", "REFRESH", DateTimeOffset.UtcNow.AddHours(3)), store);
         var session = new TwitchSession(new TwitchAuthClient(new HttpClient(), "cid"), store, NullLogger.Instance);
         var service = new RewardService(session, new ChannelPointsApi(session, new HttpClient(_helix)), new ChatApi(session, new HttpClient(_helix)), _queue, mock,
-            Path.Combine(_dir, "out"), Path.Combine(_dir, "rewards.json"), NullLogger.Instance);
+            Path.Combine(_dir, "out"), Path.Combine(_dir, "rewards.json"), NullLogger.Instance, "https://gin.estfosoft.com/");
         service.Finished += _outcomes.Enqueue;
         return service;
     }
@@ -121,6 +121,42 @@ public sealed class RewardTests : IDisposable
 
         Assert.Equal(777, stop.Cost);
         Assert.Equal(RewardKinds.Defaults.Single(d => d.Kind == RewardKind.StopLine).Months, stop.Months);
+    }
+
+    [Fact]
+    public void Old_adoption_texts_become_buying()
+    {
+        var path = Path.Combine(_dir, "rewards-adopt.json");
+        File.WriteAllText(path, """
+            {"Rewards":[{"Kind":"AdoptTown","Enabled":true,"Title":"TF3: adoptuj miasto","Prompt":"Wpisz nazwę miasta bez właściciela. Zostaniesz jego właścicielem (pokaże się w grze i na mapie).","Cost":4321,"CooldownSec":0,"MaxPerStream":0,"MaxPerUserPerStream":0,"Months":1,"Factor":1},
+                         {"Kind":"BoostTown","Enabled":true,"Title":"Mój boost","Prompt":"mój opis","Cost":1,"CooldownSec":0,"MaxPerStream":0,"MaxPerUserPerStream":0,"Months":1,"Factor":2}],
+             "ChannelUserId":"","TwitchIds":{}}
+            """);
+
+        var s = RewardSettingsStore.Load(path);
+
+        Assert.Equal(("TF3: kup miasto", 4321), (s.Get(RewardKind.AdoptTown).Title, s.Get(RewardKind.AdoptTown).Cost));
+        Assert.StartsWith("Wpisz nazwę miasta bez właściciela. Kupujesz je", s.Get(RewardKind.AdoptTown).Prompt);
+        Assert.Equal(("Mój boost", "mój opis"), (s.Get(RewardKind.BoostTown).Title, s.Get(RewardKind.BoostTown).Prompt)); // własne teksty zostają
+    }
+
+    [Theory]
+    [InlineData(RewardKind.AdoptTown, 10, "https://gin.estfosoft.com/#town=10")]
+    [InlineData(RewardKind.BoostIndustry, 20, "https://gin.estfosoft.com/#industry=20")]
+    [InlineData(RewardKind.HoldLine, 30, "https://gin.estfosoft.com/#line=30")]
+    public void Links_open_the_object_on_the_site(RewardKind kind, long entity, string link) =>
+        Assert.Equal(link, RewardMessages.Link("https://gin.estfosoft.com", kind, entity));
+
+    [Fact]
+    public async Task Buying_a_town_links_to_it_in_chat()
+    {
+        var service = Service();
+        service.Simulate(RewardKind.AdoptTown, "łódź", "widz", true, out _);
+
+        ModReports("ok");
+
+        var chat = await _helix.WaitFor(r => r.Url.EndsWith("/chat/messages"));
+        Assert.Equal("@widz miasto Łódź jest teraz Twoje! https://gin.estfosoft.com/#town=10", Message(chat));
     }
 
     [Fact]
@@ -260,7 +296,7 @@ public sealed class RewardTests : IDisposable
     [Fact]
     public async Task Sync_reuses_existing_rewards()
     {
-        _helix.Rewards = """{"data":[{"id":"old","title":"TF3: adoptuj miasto","is_enabled":true,"is_paused":false}]}""";
+        _helix.Rewards = """{"data":[{"id":"old","title":"TF3: kup miasto","is_enabled":true,"is_paused":false}]}""";
         var service = Service();
 
         await service.TickAsync(default);
@@ -374,7 +410,7 @@ public sealed class RewardTests : IDisposable
         var chat = await _helix.WaitFor(r => r.Url.EndsWith("/chat/messages"));
         Assert.Contains("\"broadcaster_id\":\"42\"", chat.Body);
         Assert.Contains("\"sender_id\":\"42\"", chat.Body);
-        Assert.Equal("@widz linia Linia 1 stoi do 12 maja 1922 (data w grze).", Message(chat));
+        Assert.Equal("@widz linia Linia 1 stoi do 12 maja 1922 (data w grze). https://gin.estfosoft.com/#line=30", Message(chat));
         Assert.Equal(new GameDate(1922, 5, 12), _outcomes.Last().Until);
     }
 

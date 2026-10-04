@@ -138,7 +138,7 @@ Jedyna droga zmian w grze od widzów (`RewardService`). Pięć nagród, każdą 
 
 | Nagroda | Cel (tekst od widza) | Komenda dla moda |
 |---|---|---|
-| Adopcja miasta | miasto bez właściciela | `adopt`: „Nazwa \| widz”; miasto z właścicielem = zwrot punktów |
+| Kupno miasta | miasto bez właściciela | `adopt`: „Nazwa \| widz”; miasto z właścicielem = zwrot punktów |
 | Boost miasta | miasto | `effect townBoost` (miesiące, mnożnik) |
 | Boost przemysłu | zakład | `effect industryBoost` (miesiące, mnożnik) |
 | Stop linii (od razu) | linia | `effect lineStop` (miesiące) |
@@ -149,8 +149,9 @@ Jedyna droga zmian w grze od widzów (`RewardService`). Pięć nagród, każdą 
 - **Rozliczenie:** gdy gra potwierdzi, wykupienie dostaje FULFILLED. Gdy celu nie ma, cel jest niejednoznaczny, nagroda jest wyłączona albo gra odmówi lub nie zdąży, wykupienie dostaje CANCELED i Twitch zwraca punkty.
 - **Wykupienia z czasu, gdy Tf3Bridge był wyłączony:** świeższe niż 5 minut są wykonywane, starsze zwracane.
 - **Odpowiedź na czacie** (`RewardMessages`, `ChatApi`, Helix `POST /chat/messages` jako streamer). Wyłącznik jest w **Nagrody…**. Przykłady:
-  - „@widz boost miasta Szczecin (+50%) działa do 12 maja 1922 (data w grze).” Datę końca w kalendarzu gry podaje mod w wyniku komendy (`until`).
-  - „@widz miasto Kraków jest teraz Twoje!”
+  - „@widz boost miasta Szczecin (+50%) działa do 12 maja 1922 (data w grze). https://gin.estfosoft.com/#town=225799” Datę końca w kalendarzu gry podaje mod w wyniku komendy (`until`).
+  - „@widz miasto Kraków jest teraz Twoje! https://gin.estfosoft.com/#town=…”
+  - Link prowadzi do obiektu na stronie (`#town=`, `#industry=`, `#line=`). Adres strony: `Twitch:SiteUrl` w `appsettings.json`; pusty = bez linków.
   - Przy zwrocie: „@widz boost miasta: nie znaleziono „gdańsk”. Punkty wróciły do Ciebie.”
 - **Efekty na stronie:** mod eksportuje aktywne efekty w `dynamic.json` (`effects`), a strona pokazuje je przy mieście, zakładzie i linii ([../web/README.md](../web/README.md#efekty-od-widzów)).
 - **Test bez Twitcha:** **Test akcji…** → „Nagroda za punkty kanału (symulacja)”. Ta sama droga co prawdziwe wykupienie, z wynikiem, informacją, czy byłby zwrot, i treścią odpowiedzi na czacie. Po zaznaczeniu „Wyślij też odpowiedź na czat” odpowiedź naprawdę trafia na czat kanału, więc działa to także bez statusu Affiliate. W trybie Twitch CLI `twitch event trigger channel.channel_points_custom_reward_redemption.add --transport=websocket -i AdoptTown` wskazuje nagrodę po nazwie rodzaju, ale CLI zawsze wysyła tekst „Test Input From CLI”, więc kończy się zwrotem.
@@ -163,7 +164,7 @@ Droga zmian w grze od widzów. Źródła (`CommandSource`): punkty kanału i rę
 - Komenda zostaje w kolejce, dopóki mod nie zgłosi wyniku. Mod pomija identyfikatory, które już obsłużył, więc przepisywanie kolejki niczego nie wykona dwa razy. Po 320 s bez odpowiedzi (gra wyłączona albo bez moda) komenda jest oznaczana jako `expired`.
 - Tekst od widzów trafia do pliku Lua tylko jako escapowany literał (`ModCommandLua.Str`), a nazwy argumentów muszą być identyfikatorami.
 - Nazwy obiektów mają postać `Nazwa | Właściciel`, tak samo jak na stronie (`OwnerName`).
-- **Test akcji…** w oknie: wybór miasta, zakładu, stacji albo linii z ostatniego `dynamic.json`, widza i akcji (adoptuj, usuń właściciela, nowa nazwa), a potem wysyłka do gry i wynik. Do testu TF3 musi działać z włączonym modem.
+- **Test akcji…** w oknie: wybór miasta, zakładu, stacji albo linii z ostatniego `dynamic.json`, widza i akcji (ustaw właściciela, usuń właściciela, nowa nazwa), a potem wysyłka do gry i wynik. Do testu TF3 musi działać z włączonym modem.
 
 ## Co robi jeden przebieg (`ExportProcessor`)
 

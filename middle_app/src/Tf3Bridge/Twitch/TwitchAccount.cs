@@ -11,6 +11,9 @@ public sealed class TwitchOptions
 
     public string ClientId { get; set; } = "";
 
+    /// <summary>Public site; chat answers link to the object there (#town=…, #industry=…, #line=…). Empty = no links.</summary>
+    public string SiteUrl { get; set; } = "";
+
     /// <summary>EventSub WebSocket; empty = Twitch. For the Twitch CLI mock server: ws://127.0.0.1:8080/ws.</summary>
     public string EventSubUrl { get; set; } = "";
 

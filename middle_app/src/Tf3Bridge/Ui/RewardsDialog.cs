@@ -150,7 +150,7 @@ public sealed class RewardsDialog : Form
 
     public static string KindLabel(RewardKind kind) => kind switch
     {
-        RewardKind.AdoptTown => "Adopcja miasta",
+        RewardKind.AdoptTown => "Kupno miasta",
         RewardKind.BoostTown => "Boost miasta",
         RewardKind.BoostIndustry => "Boost przemysłu",
         RewardKind.StopLine => "Stop linii (od razu)",

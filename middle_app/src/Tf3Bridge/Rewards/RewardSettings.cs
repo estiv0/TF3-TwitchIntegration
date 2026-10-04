@@ -70,8 +70,8 @@ public static class RewardKinds
     /// <summary>Starting values; costs and durations are guesses to be balanced on stream.</summary>
     public static IReadOnlyList<RewardConfig> Defaults { get; } =
     [
-        new(RewardKind.AdoptTown, true, "TF3: adoptuj miasto",
-            "Wpisz nazwę miasta bez właściciela. Zostaniesz jego właścicielem (pokaże się w grze i na mapie).",
+        new(RewardKind.AdoptTown, true, "TF3: kup miasto",
+            "Wpisz nazwę miasta bez właściciela. Kupujesz je: zostaniesz jego właścicielem (widać to w grze i na mapie).",
             5000, 60, 0, 1, 0, 1),
         new(RewardKind.BoostTown, true, "TF3: boost miasta",
             "Wpisz nazwę miasta. Przez {months} mies. gry jego docelowa wielkość rośnie o {percent}% (miasto się rozbudowuje).",
@@ -98,15 +98,25 @@ public sealed record RewardSettings(IReadOnlyList<RewardConfig> Rewards, string 
 
     public RewardConfig Get(RewardKind kind) => Rewards.First(r => r.Kind == kind);
 
+    // Dawne domyślne teksty "adopcji" (przed zmianą na kupno miasta); zmienione przez streamera zostają.
+    private const string OldAdoptTitle = "TF3: adoptuj miasto";
+    private const string OldAdoptPrompt = "Wpisz nazwę miasta bez właściciela. Zostaniesz jego właścicielem (pokaże się w grze i na mapie).";
+
     /// <summary>Every kind exactly once (missing ones from defaults), values normalized.</summary>
     public RewardSettings Normalized() => this with
     {
         Rewards = [.. RewardKinds.Defaults.Select(d => Rewards.FirstOrDefault(r => r.Kind == d.Kind) switch
         {
             null => d,
-            { Months: <= 0 } r => r with { Months = d.Months }, // plik sprzed zmiany dni -> miesiące
-            var r => r,
+            { Months: <= 0 } r => Migrate(r with { Months = d.Months }, d), // plik sprzed zmiany dni -> miesiące
+            var r => Migrate(r, d),
         }).Select(r => r.Normalized())],
+    };
+
+    private static RewardConfig Migrate(RewardConfig r, RewardConfig d) => r with
+    {
+        Title = r.Title == OldAdoptTitle ? d.Title : r.Title,
+        Prompt = r.Prompt == OldAdoptPrompt ? d.Prompt : r.Prompt,
     };
 }
 

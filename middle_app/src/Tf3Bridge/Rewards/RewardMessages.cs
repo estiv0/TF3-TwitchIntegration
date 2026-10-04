@@ -17,26 +17,41 @@ public static class RewardMessages
     /// <param name="target">Object name, or null when the reward was refused before a target was found.</param>
     /// <param name="until">End of a timed effect in the game calendar (from the mod), if known.</param>
     /// <param name="reason">Why the points were refunded (only when <paramref name="ok"/> is false).</param>
-    public static string Text(RewardConfig config, string login, string? target, bool ok, GameDate? until, string? reason)
+    /// <param name="link">Link to the object on the site, added after a successful redemption.</param>
+    public static string Text(RewardConfig config, string login, string? target, bool ok, GameDate? until, string? reason, string? link = null)
     {
         var who = "@" + login.TrimStart('@');
         if (!ok) return $"{who} {Label(config.Kind)}: {reason ?? "nie udało się"}. Punkty wróciły do Ciebie.";
 
         var when = until is { } d ? $"do {Date(d)} (data w grze)" : $"przez {config.Months} mies. gry";
         var percent = Math.Round((config.Factor - 1) * 100).ToString(CultureInfo.InvariantCulture);
-        return config.Kind switch
+        var text = config.Kind switch
         {
-            RewardKind.AdoptTown => $"{who} miasto {target} jest teraz Twoje! Widać to w grze i na mapie.",
+            RewardKind.AdoptTown => $"{who} miasto {target} jest teraz Twoje!",
             RewardKind.BoostTown => $"{who} boost miasta {target} (+{percent}%) działa {when}.",
             RewardKind.BoostIndustry => $"{who} boost przemysłu {target} (+{percent}%) działa {when}.",
             RewardKind.StopLine => $"{who} linia {target} stoi {when}.",
             _ => $"{who} pojazdy linii {target} czekają na przystankach {when}.",
         };
+        return string.IsNullOrEmpty(link) ? text : $"{text} {link}";
+    }
+
+    /// <summary>"https://site/#town=123": the site opens the object from the address (web/js/hash.js).</summary>
+    public static string? Link(string siteUrl, RewardKind kind, long entity)
+    {
+        if (string.IsNullOrWhiteSpace(siteUrl)) return null;
+        var key = RewardKinds.Target(kind) switch
+        {
+            GameObjectKind.Town => "town",
+            GameObjectKind.Industry => "industry",
+            _ => "line",
+        };
+        return $"{siteUrl.Trim().TrimEnd('/')}/#{key}={entity.ToString(CultureInfo.InvariantCulture)}";
     }
 
     private static string Label(RewardKind kind) => kind switch
     {
-        RewardKind.AdoptTown => "adopcja miasta",
+        RewardKind.AdoptTown => "kupno miasta",
         RewardKind.BoostTown => "boost miasta",
         RewardKind.BoostIndustry => "boost przemysłu",
         RewardKind.StopLine => "zatrzymanie linii",
