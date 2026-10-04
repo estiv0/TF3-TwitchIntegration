@@ -7,6 +7,14 @@
       "environmentVariables": {
         "DOTNET_ENVIRONMENT": "Development"
       }
+    },
+    "Tf3Bridge (Twitch CLI)": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "commandLineArgs": "--Twitch:EventSubUrl=ws://127.0.0.1:8080/ws --Twitch:SubscriptionsUrl=http://127.0.0.1:8080/eventsub/subscriptions",
+      "environmentVariables": {
+        "DOTNET_ENVIRONMENT": "Development"
+      }
     }
   }
 }
