@@ -31,7 +31,7 @@ lua_mod/                              → w grze: staging_area/estiv0_tf3export 
     commands.lua          komendy od Tf3Bridge (akcje widzów): local\tf3export_cmd\queue.lua -> api.cmd -> results.lua
     effects.lua           efekty czasowe z nagród (boost miasta/przemysłu, zatrzymanie linii), cofane po X miesiącach gry
     twitch_notification.res.lua / .script.lua   typ powiadomienia w grze „Twitch” (komenda notify)
-    icons/twitch*.tga     ikona powiadomienia (maska; generuje ../../tools/make_icon.ps1 z ../../assets/twitch_logo.png)
+    icons/twitch*.tga     ikona powiadomienia (maska; generuje infra/make_icon.ps1 z infra/twitch_logo.png)
 ```
 
 Moduły ładuje się względnie przez `ug_require "util.lua"`. Wszystkie leżą w jednym folderze.

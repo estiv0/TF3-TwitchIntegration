@@ -194,8 +194,8 @@ lua_mod/content/tf3export/
   twitch_notification.script.lua   -- useDataState: title/description/icon/onClick z params
   icons/twitch@2x.tga              -- 48×48, 8-bit grayscale (maska)
   icons/twitch_32@2x.tga           -- 64×64, 8-bit grayscale (maska)
-lua_mod/assets/twitch_logo.png     -- źródło ikony
-lua_mod/tools/make_icon.ps1        -- logo -> TGA
+infra/twitch_logo.png              -- źródło ikony
+infra/make_icon.ps1                -- logo -> TGA
 ```
 
 `pack.ps1` wpisuje do `_content.json` także pliki `.tga` (jak mody z gry), a Tf3Bridge osadza je
@@ -223,7 +223,7 @@ Ikony powiadomień w grze to **maski w skali szarości**, nie kolorowe obrazki: 
 `nazwa_32@2x.tga` 64×64 (sprawdzone na `building_town_arrow_up*`). Kolor nadaje gra według `guiType`.
 
 - `make_icon.ps1` bierze z logo piksele fioletu (dymek), oczy i wnętrze zostają dziurami;
-  marginesy jak w ikonach gry. Po zmianie logo: `pwsh lua_mod/tools/make_icon.ps1`
+  marginesy jak w ikonach gry. Po zmianie logo: `pwsh infra/make_icon.ps1`
   (skrypt sam przełącza się na Windows PowerShell 5.1, bo tam `System.Drawing` działa bez kłopotów).
 - TGA są w repo (Tf3Bridge osadza mod przy budowaniu, bez `pack.ps1`).
 - Do sprawdzenia: czy kolorowe RGBA TGA też się wyświetli (wtedy można dać fioletowe logo 1:1).

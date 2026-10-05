@@ -1,10 +1,10 @@
-# Ikona powiadomienia w grze z logo (lua_mod\assets\twitch_logo.png) -> content\tf3export\icons\twitch*.tga.
+# Ikona powiadomienia w grze z logo (infra\twitch_logo.png) -> lua_mod\content\tf3export\icons\twitch*.tga.
 # Ikony powiadomień gry to maski: TGA typ 3 (8-bit grayscale, wiersze od dołu), biały glif na czarnym,
 # kolor nadaje gra według guiType. Dwa rozmiary jak w grze: nazwa@2x.tga 48×48 i nazwa_32@2x.tga 64×64.
 # Glif = piksele logo wyraźnie ciemniejsze od białego tła (fiolet), oczy i wnętrze dymka zostają dziurami.
 param(
-    [string]$Source = (Join-Path $PSScriptRoot "..\assets\twitch_logo.png"),
-    [string]$OutDir = (Join-Path $PSScriptRoot "..\content\tf3export\icons"),
+    [string]$Source = (Join-Path $PSScriptRoot "twitch_logo.png"),
+    [string]$OutDir = (Join-Path $PSScriptRoot "..\lua_mod\content\tf3export\icons"),
     [string]$Name = "twitch"
 )
 
