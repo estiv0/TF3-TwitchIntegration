@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Tf3Bridge.Output;
 using Tf3Bridge.Processing;
+using Tf3Bridge.Rewards;
 
 namespace Tf3Bridge.Tests;
 
@@ -96,6 +97,8 @@ public sealed class TerrainTests : IDisposable
         await processor.ProcessOnceAsync(CancellationToken.None);
 
         Assert.True(File.Exists(Path.Combine(output, "latest", "terrain.png")));
+        Assert.True(File.Exists(Path.Combine(output, "latest", "terrain-site.png")));
+        Assert.NotNull(processor.TownSites);
         var info = JsonNode.Parse(File.ReadAllText(Path.Combine(output, "latest", "terrain.json")))!;
         Assert.Equal(3, info["width"]!.GetValue<int>());
         Assert.Null(info["waterLevel"]);
@@ -103,5 +106,54 @@ public sealed class TerrainTests : IDisposable
         Assert.Equal(1, meta["terrainSeq"]!.GetValue<long>());
         Assert.Null(meta["networkSeq"]);
         Assert.Empty(Directory.GetFiles(input, "*.lua"));
+    }
+
+    // 60 x 30 samples, 32 m apart: west third sea (-5 m), middle third flat land (10 m), east third a 30% slope.
+    private static TownSites ThreeStrips()
+    {
+        var heights = new double[60 * 30];
+        for (var j = 0; j < 30; j++)
+            for (var i = 0; i < 60; i++)
+                heights[j * 60 + i] = i < 20 ? -5 : i < 40 ? 10 : 10 + (i - 39) * 32 * 0.3;
+        return TownSites.Compute(TerrainGrid.Parse(JsonNode.Parse(TerrainJson(60, 30, heights))!.AsObject()));
+    }
+
+    private static double X(int i) => -64 + i * 32;
+    private static double Y(int j) => -32 + j * 32;
+
+    [Fact]
+    public void TownSitesMeasureWaterAndSlopesAround()
+    {
+        var sites = ThreeStrips();
+
+        var sea = sites.At(X(5), Y(15))!.Value;
+        Assert.True(sea.OnWater);
+        Assert.Equal(1, sea.Water, 0.01);
+        var flat = sites.At(X(30), Y(15))!.Value;
+        Assert.Equal((0, 0, false), (flat.Water, flat.Steep, flat.OnWater));
+        var shore = sites.At(X(22), Y(15))!.Value; // window i = 14..30: 6 of 17 columns are sea
+        Assert.False(shore.OnWater);
+        Assert.Equal(6 / 17.0, shore.Water, 0.01);
+        var hill = sites.At(X(52), Y(15))!.Value;
+        Assert.Equal(1, hill.Steep, 0.01);
+        Assert.Null(sites.At(X(-5), Y(15)));
+
+        Assert.Contains("na wodzie", TownSites.TownProblem(sea));
+        Assert.Contains("na wodzie", TownSites.TownProblem(shore)); // 35% wody > 30%
+        Assert.Contains("za stromy (100% zboczy", TownSites.TownProblem(hill));
+        Assert.Null(TownSites.TownProblem(flat));
+    }
+
+    [Fact]
+    public void BuildCodeRefusesTownsOnWaterAndSlopesButNotIndustries()
+    {
+        var sites = ThreeStrips();
+        Tf3Bridge.Commands.GameObject[] objects =
+            [new(Tf3Bridge.Commands.GameObjectKind.Industry, 2, "Kopalnia", (-50000, 0), "::/industries/coal_mine/coal_mine.con")];
+
+        Assert.NotNull(BuildCode.Parse($"[{X(30)}, {Y(15)}] Równina", false, objects, null, sites).Place);
+        Assert.Contains("za stromy", BuildCode.Parse($"[{X(52)}, {Y(15)}] Szczyt", false, objects, null, sites).Error);
+        Assert.Contains("na wodzie", BuildCode.Parse($"[{X(5)}, {Y(15)}] Atlantyda", false, objects, null, sites).Error);
+        Assert.NotNull(BuildCode.Parse($"[{X(52)}, {Y(15)}, coal_mine] Kopalnia Jasia", true, objects, null, sites).Place);
     }
 }

@@ -59,7 +59,8 @@ web/
 Przycisk 🏗 na mapie (`build.js`): widz klika miejsce, wybiera miasto albo zakład (rodzaje: te, które są w `dynamic.json`), wpisuje nazwę i kopiuje kod `[x, y] Nazwa` albo `[x, y, coal_mine] Nazwa`. Kod wkleja w nagrodę „TF3: załóż miasto” / „TF3: zbuduj zakład” na Twitchu (Twitch nie ma linku, który wypełnia tekst nagrody). Tf3Bridge buduje to w grze ([../middle_app/README.md](../middle_app/README.md#nagrody-za-punkty-kanału)).
 
 - Strona od razu ostrzega o tym, co Tf3Bridge odrzuci: za blisko miasta albo zakładu, przy krawędzi mapy, zajęta nazwa. Liczby są te same co w `BuildCode.cs`; na mapie przerywany okrąg pokazuje minimalną odległość od miast.
-- Wody i kolizji z torami strona nie sprawdza; robi to gra.
+- Woda i góry: Tf3Bridge z heightmapy liczy dla każdego punktu, jaka część obszaru miasta (kwadrat ±250 m) to woda, a jaka to zbocza bardziej strome niż 15%, i publikuje to jako `terrain-site.png` (R = woda, G = zbocza, B = 255 pod wodą; piksel = próbka jak w `terrain.png`). Miasto ma być na lądzie, wokół najwyżej 30% wody i 50% zboczy (te same progi co w `TownSites.cs`), inaczej gra je zakłada, ale nie stawia ani ulicy, ani domu. Przy wybieraniu miejsca takie obszary są na mapie czerwone, a strona nie daje kodu. Zakład: platforma wiertnicza, łowisko i pogłębiarka tylko na wodzie, reszta tylko na lądzie.
+- Kolizji z torami, drogami i budynkami strona nie sprawdza; robi to gra.
 - `twitchUrl` w `config.js` (adres kanału) dodaje w okienku link „Otwórz Twitcha”.
 
 ## Efekty od widzów

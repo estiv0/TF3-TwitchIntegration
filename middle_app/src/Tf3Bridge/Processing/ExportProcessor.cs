@@ -12,7 +12,7 @@ namespace Tf3Bridge.Processing;
 /// <item>files of older sessions are retired (a new game start / loaded save makes them obsolete),</item>
 /// <item>network files of the current session are applied in seq order (full snapshot, then deltas),</item>
 /// <item>only the newest dynamic snapshot is published, older ones are retired,</item>
-/// <item>the newest terrain heightmap is rendered to latest/terrain.png + latest/terrain.json,</item>
+/// <item>the newest terrain heightmap is rendered to latest/terrain.png + latest/terrain-site.png + latest/terrain.json,</item>
 /// <item>latest/network.json, latest/dynamic.json and latest/meta.json are published when something changed.</item>
 /// </list>
 /// Files that cannot be parsed yet are assumed to be mid-write and retried on the next pass.
@@ -24,6 +24,7 @@ public sealed class ExportProcessor(IOptions<BridgeOptions> options, IPublisher 
     public const string MetaPath = "latest/meta.json";
     public const string TerrainPngPath = "latest/terrain.png";
     public const string TerrainInfoPath = "latest/terrain.json";
+    public const string TownSitesPath = "latest/terrain-site.png";
 
     private readonly BridgeOptions _options = options.Value;
     private readonly NetworkState _network = new();
@@ -38,6 +39,11 @@ public sealed class ExportProcessor(IOptions<BridgeOptions> options, IPublisher 
     private JsonSerializerOptions JsonOptions => new() { WriteIndented = _options.IndentOutput };
 
     public NetworkState Network => _network;
+
+    private volatile TownSites? _townSites;
+
+    /// <summary>Ground around every point of the newest heightmap (for build rewards); null until the first terrain export.</summary>
+    public TownSites? TownSites => _townSites;
 
     private long _lastDynamicTicks;
 
@@ -84,7 +90,7 @@ public sealed class ExportProcessor(IOptions<BridgeOptions> options, IPublisher 
             await publisher.PublishAsync(MetaPath, BuildMeta().ToJsonString(JsonOptions), ct);
     }
 
-    /// <summary>Newest terrain file -> PNG + placement JSON (PNG first, so meta never points at a missing image).</summary>
+    /// <summary>Newest terrain file -> PNGs + placement JSON (PNGs first, so meta never points at a missing image).</summary>
     private async Task<bool> ProcessTerrainAsync(List<ExportFile> files, CancellationToken ct)
     {
         var terrains = files.Where(f => f.Kind == ExportKind.Terrain).OrderByDescending(f => f.Seq).ToList();
@@ -109,6 +115,9 @@ public sealed class ExportProcessor(IOptions<BridgeOptions> options, IPublisher 
         var started = DateTime.UtcNow;
         var png = TerrainRenderer.RenderPng(grid);
         await publisher.PublishBytesAsync(TerrainPngPath, png, ct);
+        var sites = TownSites.Compute(grid);
+        await publisher.PublishBytesAsync(TownSitesPath, sites.RenderPng(), ct);
+        _townSites = sites;
         await publisher.PublishAsync(TerrainInfoPath,
             TerrainRenderer.Info(grid, newest.Session, newest.Seq).ToJsonString(JsonOptions), ct);
 

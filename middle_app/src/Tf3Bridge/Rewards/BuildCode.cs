@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Tf3Bridge.Commands;
+using Tf3Bridge.Processing;
 
 namespace Tf3Bridge.Rewards;
 
@@ -58,7 +59,8 @@ public static partial class BuildCode
         return name.Length > 0 ? name : null;
     }
 
-    public static Result Parse(string input, bool industry, IReadOnlyCollection<GameObject> objects, MapBounds? bounds)
+    /// <param name="sites">Ground from the newest heightmap; null = not known yet (towns are then not checked for water and slopes).</param>
+    public static Result Parse(string input, bool industry, IReadOnlyCollection<GameObject> objects, MapBounds? bounds, TownSites? sites = null)
     {
         var m = Code().Match(input);
         if (!m.Success) return Error("to nie jest kod z mapy (skopiuj go ze strony: przycisk 🏗)");
@@ -74,6 +76,7 @@ public static partial class BuildCode
 
         if (bounds is { } b && (x < b.MinX + MapMargin || x > b.MaxX - MapMargin || y < b.MinY + MapMargin || y > b.MaxY - MapMargin))
             return Error("to miejsce jest poza mapą albo przy samej krawędzi");
+        if (!industry && sites?.At(x, y) is { } site && TownSites.TownProblem(site) is { } ground) return Error(ground);
 
         string? file = null;
         if (type is not null)
@@ -96,6 +99,7 @@ public static partial class BuildCode
     {
         var nearest = objects.Where(o => o.Kind == kind && o.Pos is not null)
             .Select(o => (Object: o, Dist: Math.Sqrt(Math.Pow(o.Pos!.Value.X - x, 2) + Math.Pow(o.Pos!.Value.Y - y, 2))))
+            .DefaultIfEmpty() // MinBy throws on an empty sequence of tuples (e.g. a map without industries)
             .MinBy(o => o.Dist);
         if (nearest.Object is null || nearest.Dist >= min) return null;
         var what = kind == GameObjectKind.Town ? "miasta" : "zakładu";

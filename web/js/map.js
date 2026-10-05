@@ -93,6 +93,7 @@ export class MapView {
     this.listHover = null;      // { kind, id } obiektu wskazanego myszą na liście w panelu
     this.terrain = null;        // { image, x, y, w, h } - tło z heightmapy, prostokąt w układzie ścieżki
     this.showTerrain = true;
+    this.overlay = null;        // canvas na prostokącie terenu: miejsca, gdzie miasto się nie zbuduje (js/build.js)
     this.selected = null;       // { kind, id }
     this.focusedStop = null;    // { x, y } przystanku zaznaczonej linii wybranego w panelu
     this.hovered = null;
@@ -177,6 +178,12 @@ export class MapView {
       this.bbox = { minX: info.minX, minY: -info.maxY, maxX: info.maxX, maxY: -info.minY };
       if (!this.fitted) this.fit();
     }
+    this.requestDraw();
+  }
+
+  setOverlay(canvas) {
+    if (this.overlay === canvas) return;
+    this.overlay = canvas;
     this.requestDraw();
   }
 
@@ -327,12 +334,13 @@ export class MapView {
     ctx.fillStyle = css("--map-bg");
     ctx.fillRect(0, 0, w, h);
 
-    if (this.terrain && this.showTerrain) {
+    if (this.terrain && (this.showTerrain || this.overlay)) {
       const s = view.scale, t = this.terrain;
       ctx.setTransform(s * dpr, 0, 0, s * dpr, (w / 2 - view.x * s) * dpr, (h / 2 - view.y * s) * dpr);
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = "high";
-      ctx.drawImage(t.image, t.x, t.y, t.w, t.h);
+      if (this.showTerrain) ctx.drawImage(t.image, t.x, t.y, t.w, t.h);
+      if (this.overlay) ctx.drawImage(this.overlay, t.x, t.y, t.w, t.h);
     }
 
     if (this.paths) {

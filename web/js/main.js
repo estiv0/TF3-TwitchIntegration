@@ -273,6 +273,7 @@ new DataFeed({
   },
   onTerrain(terrain) {
     map.setTerrain(terrain);
+    build.setSites(terrain);
   },
   onNetwork(network) {
     map.setNetwork(network);

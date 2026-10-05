@@ -1,4 +1,4 @@
-// Pobieranie danych opublikowanych przez Tf3Bridge (latest/meta.json, dynamic.json, network.json, terrain.*).
+// Pobieranie danych opublikowanych przez Tf3Bridge (latest/meta.json, dynamic.json, network.json, terrain.*, terrain-site.png).
 // Polling: co pollMs pobieramy mały meta.json; dynamic/network/terrain tylko gdy zmienił się ich seq.
 // W ukrytej karcie polling stoi.
 
@@ -17,6 +17,14 @@ function loadImage(url) {
     img.onerror = () => reject(new Error(`${url}: image load failed`));
     img.src = url;
   });
+}
+
+// Obrazek z danymi (piksele czytane w JS): fetch zamiast <img>, żeby obrazek z innej domeny (Blob Storage,
+// CORS) nie "skaził" canvasu, i bez konwersji kolorów, żeby wartości kanałów zostały dokładnie takie jak w pliku.
+async function loadBitmap(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+  return createImageBitmap(await res.blob(), { colorSpaceConversion: "none", premultiplyAlpha: "none" });
 }
 
 export class DataFeed {
@@ -85,9 +93,12 @@ export class DataFeed {
     if (meta.terrainSeq != null && terrainKey !== this.terrainKey) {
       await step(async () => {
         const info = await fetchJson("terrain.json");
-        const image = await loadImage(`${config.dataBaseUrl}terrain.png?v=${encodeURIComponent(terrainKey)}`);
+        const v = `?v=${encodeURIComponent(terrainKey)}`;
+        const image = await loadImage(`${config.dataBaseUrl}terrain.png${v}`);
+        // Woda i zbocza wokół każdego punktu (dla budowy miast); starszy Tf3Bridge go nie publikuje.
+        const sites = await loadBitmap(`${config.dataBaseUrl}terrain-site.png${v}`).catch(() => null);
         this.terrainKey = terrainKey;
-        this.handlers.onTerrain?.({ info, image });
+        this.handlers.onTerrain?.({ info, image, sites });
       });
     }
 
