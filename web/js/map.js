@@ -922,11 +922,22 @@ export class MapView {
     ctx.font = `600 12px ${css("--font")}`;
     ctx.textBaseline = "middle";
     const text = t.data.name ?? "";
-    const box = { x: x + t.r + 4, y: y - 8, w: ctx.measureText(text).width + 6, h: 16 };
+    // Właściciel (widz, splitAllOwners) w drugiej linii pod nazwą: mniejszy, żółty.
+    const owner = t.data.owner ?? "";
+    const nameW = ctx.measureText(text).width;
+    ctx.font = `600 10px ${css("--font")}`;
+    const ownerW = owner ? ctx.measureText(owner).width : 0;
+    const box = { x: x + t.r + 4, y: y - 8, w: Math.max(nameW, ownerW) + 6, h: owner ? 28 : 16 };
     if (labels && !marked && labels.some((b) => overlaps(b, box))) return;
     labels?.push(box);
     ctx.lineWidth = 3;
     ctx.strokeStyle = css("--map-bg");
+    if (owner) {
+      ctx.strokeText(owner, box.x, y + 12);
+      ctx.fillStyle = css("--accent");
+      ctx.fillText(owner, box.x, y + 12);
+    }
+    ctx.font = `600 12px ${css("--font")}`;
     ctx.strokeText(text, box.x, y);
     ctx.fillStyle = marked ? css("--accent") : css("--town-label");
     ctx.fillText(text, box.x, y);
