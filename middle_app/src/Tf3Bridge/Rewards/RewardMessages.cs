@@ -40,6 +40,31 @@ public static class RewardMessages
         return string.IsNullOrEmpty(link) ? text : $"{text} {link}";
     }
 
+    /// <summary>Title of the in-game notification after a redemption.</summary>
+    public static string NotificationTitle(string user, bool test) => (test ? "[TEST] " : "") + "Twitch: " + user;
+
+    /// <summary>
+    /// Text of the in-game notification after a successful redemption ("kupił(a)": gender is not guessed from the nick).
+    /// <paramref name="until"/>: end of a timed effect in the game calendar, if known.
+    /// </summary>
+    public static string Notification(RewardConfig config, string user, string target, GameDate? until)
+    {
+        var when = until is { } d ? $"do {Date(d)}" : $"na {config.Months} mies.";
+        var percent = Math.Round((config.Factor - 1) * 100).ToString(CultureInfo.InvariantCulture);
+        return config.Kind switch
+        {
+            RewardKind.AdoptTown => $"{user} kupił(a) miasto {target}.",
+            RewardKind.BuyIndustry => $"{user} kupił(a) zakład {target}.",
+            RewardKind.BoostTown => $"{user} przyspieszył(a) wzrost miasta {target} o +{percent}% {when}.",
+            RewardKind.BoostIndustry => $"{user} zwiększył(a) produkcję zakładu {target} o +{percent}% {when}.",
+            RewardKind.StopLine => $"{user} zatrzymał(a) linię {target} {when}.",
+            RewardKind.HoldLine => $"{user} kazał(a) pojazdom linii {target} czekać na przystankach {when}.",
+            RewardKind.CreateTown => $"{user} założył(a) miasto {target}.",
+            RewardKind.CreateIndustry => $"{user} zbudował(a) zakład {target}.",
+            _ => throw new ArgumentOutOfRangeException(nameof(config)),
+        };
+    }
+
     /// <summary>"https://site/#town=123": the site opens the object from the address (web/js/hash.js).</summary>
     public static string? Link(string siteUrl, RewardKind kind, long entity)
     {
@@ -53,7 +78,10 @@ public static class RewardMessages
         return $"{siteUrl.Trim().TrimEnd('/')}/#{key}={entity.ToString(CultureInfo.InvariantCulture)}";
     }
 
-    /// <summary>"https://site/#pin=x,y&amp;note=Name": a pin where something new was built (its id is not known yet).</summary>
+    /// <summary>
+    /// "https://site/#pin=x,y&amp;note=Name": a pin where something new is being built. Fallback for the chat answer
+    /// when the mod did not report the id of the new object (older mod); otherwise <see cref="Link"/>.
+    /// </summary>
     public static string? PlaceLink(string siteUrl, double x, double y, string name)
     {
         if (string.IsNullOrWhiteSpace(siteUrl)) return null;

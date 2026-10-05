@@ -21,6 +21,10 @@ public sealed class RewardsDialog : Form
     {
         AutoSize = true, Text = "Odpowiadaj widzom na czacie (np. „@widz boost miasta Szczecin działa do 12 maja 1922”, albo dlaczego punkty wróciły)",
     };
+    private readonly CheckBox _notify = new()
+    {
+        AutoSize = true, Text = "Powiadomienie w grze z logo Twitcha po wykonanej nagrodzie (gdy punkty zostały pobrane)",
+    };
     private readonly DataGridView _zonesGrid = new()
     {
         Width = 420, Height = 230, AllowUserToAddRows = false, AllowUserToDeleteRows = false,
@@ -45,15 +49,19 @@ public sealed class RewardsDialog : Form
     public bool ChatMessages { get; private set; }
 
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool GameNotifications { get; private set; }
+
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public IReadOnlyDictionary<string, IndustryZone> Zones { get; private set; }
 
     /// <summary>The streamer's own TF3 rewards; only <see cref="ExtraReward.Enabled"/> changes here.</summary>
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public IReadOnlyList<ExtraReward> Extras { get; private set; }
 
-    public RewardsDialog(IReadOnlyList<RewardConfig> rewards, bool chatMessages, IReadOnlyDictionary<string, IndustryZone>? zones,
-        IReadOnlyList<ExtraReward> extras, string status)
+    public RewardsDialog(IReadOnlyList<RewardConfig> rewards, bool chatMessages, bool gameNotifications,
+        IReadOnlyDictionary<string, IndustryZone>? zones, IReadOnlyList<ExtraReward> extras, string status)
     {
+        GameNotifications = _notify.Checked = gameNotifications;
         Extras = extras;
         Zones = IndustryZones.Normalize(zones);
         _original = Rewards = rewards;
@@ -152,7 +160,7 @@ public sealed class RewardsDialog : Form
         CancelButton = cancel;
 
         var root = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, Padding = new Padding(14), Dock = DockStyle.Fill };
-        root.Controls.AddRange([hint, _grid, _chat, zonesRow, extrasHint, _extrasGrid, _error, buttons]);
+        root.Controls.AddRange([hint, _grid, _chat, _notify, zonesRow, extrasHint, _extrasGrid, _error, buttons]);
         Controls.Add(root);
 
         ok.Click += (_, _) =>
@@ -161,6 +169,7 @@ public sealed class RewardsDialog : Form
             {
                 Rewards = list;
                 ChatMessages = _chat.Checked;
+                GameNotifications = _notify.Checked;
                 Zones = ReadZones();
                 Extras = ReadExtras();
                 DialogResult = DialogResult.OK;
@@ -171,6 +180,7 @@ public sealed class RewardsDialog : Form
         {
             Rewards = RewardKinds.Defaults;
             ChatMessages = true;
+            GameNotifications = true;
             Zones = IndustryZones.Normalize(null);
             DialogResult = DialogResult.OK;
         };

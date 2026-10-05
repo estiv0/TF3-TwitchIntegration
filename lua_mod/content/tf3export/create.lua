@@ -113,7 +113,11 @@ function C.town(c, pending)
 	local toAdd = result and util.field(result, "toAdd")
 	if #util.list(toAdd) == 0 then return nil, "no room for a town here" end
 	api.cmd.sendCommand(api.cmd.makeTownCreateCmd(toAdd), remember(pending, c.id)) -- jak edytor: lista z mapgen bez zmian
-	return function() return townNamed(p.full) ~= nil end
+	local info = {} -- info.entity: id nowego miasta (do linku na czacie i powiadomienia)
+	return function()
+		info.entity = townNamed(p.full)
+		return info.entity ~= nil
+	end, nil, info
 end
 
 ---------------------------------------------------------------- zakład
@@ -175,16 +179,20 @@ function C.industry(c, pending)
 
 	-- Najpierw czekamy na nowy zakład, potem nadajemy mu nazwę (gra nazywa go sama: "Miasto Kopalnia").
 	local found, renamed = nil, false
+	local info = {} -- info.entity: id nowego zakładu (do linku na czacie i powiadomienia)
 	return function()
 		found = found or newIndustryNear(before, p.x, p.y)
 		if not found then return false end
-		if util.name(found) == p.full then return true end
+		if util.name(found) == p.full then
+			info.entity = found
+			return true
+		end
 		if not renamed then
 			renamed = true
 			api.cmd.sendCommand(api.cmd.makeEntitySetNameCmd(found, p.full))
 		end
 		return false
-	end
+	end, nil, info
 end
 
 return C

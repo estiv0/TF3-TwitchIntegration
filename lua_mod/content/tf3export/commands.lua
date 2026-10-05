@@ -5,7 +5,9 @@
 --     rodzaje: setName { entity, name }, adopt { entity, owner },
 --              effect { effect = townBoost|industryBoost|lineStop|lineHold, entity, months, factor, user } (effects.lua)
 --              createTown { x, y, name, owner }, createIndustry { x, y, file, name, owner } (create.lua)
---   wynik efektu ma też until = { year, month, day } (koniec w kalendarzu gry, do wiadomości na czacie)
+--              notify { title, text, entity?, dismissMs? } (powiadomienie w grze, twitch_notification.script.lua)
+--   wynik efektu ma też until = { year, month, day } (koniec w kalendarzu gry, do wiadomości na czacie),
+--   a wynik createTown / createIndustry: entity = id nowej encji (link na czacie)
 --   mod      -> local\tf3export_cmd\results.lua  (app.saveUserdata)
 --     { json = '{"results":[{"id":"...","status":"ok|failed|invalid|expired","error":"..."}]}',
 --       done = "id1\nid2\n..." }
@@ -46,7 +48,8 @@ end
 local function finish(id, status, err, info)
 	pending[id] = nil
 	done[id] = true
-	results[#results + 1] = { id = id, status = status, error = err, ["until"] = info and info["until"] or nil }
+	results[#results + 1] = { id = id, status = status, error = err, ["until"] = info and info["until"] or nil,
+		entity = info and info.entity or nil }
 	while #results > MAX_RESULTS do table.remove(results, 1) end
 	util.log(string.format("command %s: %s%s", id, status, err and (" (" .. err .. ")") or ""))
 	save()
@@ -100,6 +103,52 @@ local now, shared = nil, nil -- czas gry i stan game scriptu z bieżącego poll
 
 function KINDS.effect(c)
 	return effects.start(c, now)
+end
+
+-- Powiadomienie w grze (po rozliczonej nagrodzie za punkty kanału). Teksty są gotowe z Tf3Bridge.
+-- Stanu powiadomień nie sprawdzamy (żyje w game scripcie gry), więc wysłanie = sukces.
+local NOTIFICATION_TYPE = "estiv0_tf3export::/tf3export/twitch_notification.script"
+-- W bajtach (Tf3Bridge tnie już po znakach: 100 / 300); tu tylko zabezpieczenie, które nie rozcina liter UTF-8.
+local MAX_TITLE, MAX_TEXT = 400, 1200
+
+local function clip(s, max)
+	if #s <= max then return s end
+	s = s:sub(1, max)
+	-- urwany znak wielobajtowy na końcu: cofamy się po bajtach kontynuacji (10xxxxxx) do bajtu początkowego
+	local lead = #s
+	while lead > 1 and s:byte(lead) >= 128 and s:byte(lead) < 192 do lead = lead - 1 end
+	local b = s:byte(lead)
+	if b >= 192 then
+		local need = b >= 240 and 4 or b >= 224 and 3 or 2
+		if #s - lead + 1 < need then s = s:sub(1, lead - 1) end
+	end
+	return s
+end
+
+-- { entity, revision } jak entity_util.makeEntityAndRevision z gry: kliknięcie działa, póki encja się nie zmieni
+-- (np. nie zostanie usunięta); nil, gdy encji nie ma.
+local function entityAndRevision(entity)
+	local ok, res = pcall(function()
+		if not api.engine.entityExists(entity) then return nil end
+		local rev = api.engine.getRevision(entity)
+		return { entity = entity, revision = { num = { rev.num[1], rev.num[2], rev.num[3] } } }
+	end)
+	if not ok then util.log("notify: no revision for " .. tostring(entity) .. ": " .. tostring(res)) end
+	return ok and res or nil
+end
+
+function KINDS.notify(c)
+	local title, text = c.title, c.text
+	if type(title) ~= "string" or title == "" or type(text) ~= "string" then return nil, "bad arguments" end
+	local params = { title = clip(title, MAX_TITLE), text = clip(text, MAX_TEXT) }
+	local entity = tonumber(c.entity)
+	if entity then params.entity = entityAndRevision(entity) end
+	api.cmd.sendCommand(api.cmd.makeScriptingSendEventCmd("", "Notifications", "add", {
+		type = NOTIFICATION_TYPE,
+		params = params,
+		autoDismissDuration = math.floor(tonumber(c.dismissMs) or 10000), -- tylko chowa okienko; wpis zostaje w dzienniku
+	}))
+	return function() return true end
 end
 
 -- Nowe miasto / zakład w miejscu wskazanym przez widza na mapie strony.

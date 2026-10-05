@@ -53,6 +53,28 @@ public sealed class ModCommandTests : IDisposable
     }
 
     [Fact]
+    public void Notification_texts_are_one_line_and_trimmed()
+    {
+        var c = ModCommand.Notify("Twitch:\r\nwidz", new string('a', 400), 55, 10_000, CommandSource.ChannelPoints, "widz");
+
+        Assert.Equal("notify", c.Kind);
+        Assert.Equal("Twitch: widz", c.Args["title"]);
+        var text = (string)c.Args["text"];
+        Assert.Equal(ModCommand.MaxNotifyText, text.Length);
+        Assert.EndsWith("…", text);
+        Assert.Equal(55L, c.Args["entity"]);
+        Assert.Contains("dismissMs = 10000", ModCommandLua.ToLua([c]));
+    }
+
+    [Fact]
+    public void Notification_without_an_entity_has_no_entity_argument()
+    {
+        var c = ModCommand.Notify("Twitch: widz", "tekst", null, 10_000, CommandSource.Test, "widz");
+
+        Assert.False(c.Args.ContainsKey("entity"));
+    }
+
+    [Fact]
     public void Rejects_argument_names_that_are_not_identifiers()
     {
         var c = new ModCommand("abc", "setName", DateTimeOffset.UtcNow,

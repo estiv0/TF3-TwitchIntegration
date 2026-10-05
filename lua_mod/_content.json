@@ -3,13 +3,17 @@
     "files": [
         "tf3export/tf3export.gs.lua",
         "tf3export/tf3export.script.lua",
+        "tf3export/twitch_notification.script.lua",
         "tf3export/bench.lua",
         "tf3export/collectors.lua",
         "tf3export/commands.lua",
         "tf3export/create.lua",
         "tf3export/effects.lua",
+        "tf3export/icons/twitch_32@2x.tga",
+        "tf3export/icons/twitch@2x.tga",
         "tf3export/json.lua",
         "tf3export/terrain.lua",
+        "tf3export/twitch_notification.res.lua",
         "tf3export/util.lua",
         "tf3export/writer.lua"
     ]

@@ -33,6 +33,8 @@ public sealed class RewardService
 {
     /// <summary>Redemptions waiting longer than this (e.g. while Tf3Bridge was off) are refunded.</summary>
     internal static readonly TimeSpan MaxRedemptionAge = TimeSpan.FromMinutes(5);
+    /// <summary>How long the in-game notification stays on screen (it stays in the game's notification log).</summary>
+    internal const int NotificationDismissMs = 10_000;
     /// <summary>No export for this long = game not running: rewards are disabled on Twitch.</summary>
     internal static readonly TimeSpan GameIdleAfter = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan LoopEvery = TimeSpan.FromSeconds(15);
@@ -242,7 +244,8 @@ public sealed class RewardService
     private sealed record Origin(Redemption? Redemption, string Login, bool Chat);
 
     /// <param name="Link">Where the object is on the site (for the chat answer).</param>
-    private sealed record Pending(string Token, RewardKind Kind, string User, string Input, string Target, string? Link, Origin Origin);
+    /// <param name="Entity">The target in the game; null for something new (the mod reports its id).</param>
+    private sealed record Pending(string Token, RewardKind Kind, string User, string Input, string Target, string? Link, Origin Origin, long? Entity);
 
     private Task HandleRedemptionAsync(ChannelPointsRedemption r)
     {
@@ -292,6 +295,7 @@ public sealed class RewardService
         ModCommand command;
         string targetName;
         string? link;
+        long? entity = null;
         if (RewardKinds.Creates(kind))
         {
             if (objects.Count == 0) return Reject("brak danych z gry (czy TF3 działa?)");
@@ -311,9 +315,9 @@ public sealed class RewardService
                 ? ModCommand.Effect(effect, target.Entity, config.Months, RewardKinds.HasFactor(kind) ? config.Factor : null,
                     CommandSource.ChannelPoints, owner, created)
                 : ModCommand.Adopt(target.Entity, owner, CommandSource.ChannelPoints, owner, created);
-            (targetName, link) = (target.Name, RewardMessages.Link(_siteUrl, kind, target.Entity));
+            (targetName, link, entity) = (target.Name, RewardMessages.Link(_siteUrl, kind, target.Entity), target.Entity);
         }
-        lock (_gate) _pending[command.Id] = new Pending(token, kind, owner, input, targetName, link, origin);
+        lock (_gate) _pending[command.Id] = new Pending(token, kind, owner, input, targetName, link, origin, entity);
         _queue.Enqueue(command);
         _log.LogInformation("Reward \"{Title}\" by {User}: {Target}", config.Title, owner, targetName);
         return null;
@@ -321,6 +325,11 @@ public sealed class RewardService
 
     private void OnCommandCompleted(ModCommand command, ModCommandResult result)
     {
+        if (command.Kind == "notify")
+        {
+            if (!result.Ok) _log.LogWarning("Game notification not shown: {Error}", Explain(result));
+            return;
+        }
         Pending? p;
         lock (_gate)
         {
@@ -330,19 +339,43 @@ public sealed class RewardService
         var message = result.Ok
             ? $"wykonano: {p.Target}{(result.Until is { } u ? $", do {RewardMessages.Date(u)}" : "")}"
             : reason!;
-        var chat = RewardMessages.Text(Settings.Get(p.Kind), p.Origin.Login, p.Target, result.Ok, result.Until, reason, p.Link);
+        // Nowe miasto / zakład: link do obiektu po id z gry; pinezka w miejscu budowy tylko gdy mod go nie podał.
+        var link = result.Entity is { } built && RewardKinds.Creates(p.Kind) ? RewardMessages.Link(_siteUrl, p.Kind, built) : p.Link;
+        var chat = RewardMessages.Text(Settings.Get(p.Kind), p.Origin.Login, p.Target, result.Ok, result.Until, reason, link);
         var outcome = new RewardOutcome(p.Token, p.Kind, p.User, p.Input, result.Ok, message, p.Target, result.Until, chat);
         if (result.Ok) _log.LogInformation("Reward {Kind} by {User}: {Message}", p.Kind, p.User, message);
         else _log.LogWarning("Reward {Kind} by {User}: {Message}, refunding", p.Kind, p.User, message);
-        Complete(p.Origin, outcome);
+        Complete(p.Origin, outcome, result.Entity ?? p.Entity);
     }
 
-    // Koniec wykupienia: zdarzenie dla okna, rozliczenie na Twitchu i odpowiedź na czacie.
-    private void Complete(Origin origin, RewardOutcome outcome)
+    // Koniec wykupienia: zdarzenie dla okna, rozliczenie na Twitchu, odpowiedź na czacie i powiadomienie w grze
+    // (tylko po sukcesie; przy prawdziwym wykupieniu dopiero, gdy Twitch przyjął FULFILLED, czyli punkty są pobrane).
+    private void Complete(Origin origin, RewardOutcome outcome, long? entity = null)
     {
         Finished?.Invoke(outcome);
-        if (origin.Redemption is { } r) _ = CloseAsync(r, outcome);
+        if (origin.Redemption is { } r) _ = CloseAndNotifyAsync(r, outcome, entity);
+        else if (outcome.Ok) Notify(outcome, entity, test: true);
         if (origin.Chat && Settings.ChatMessages) _ = SayAsync(outcome.ChatText);
+    }
+
+    private async Task CloseAndNotifyAsync(Redemption r, RewardOutcome outcome, long? entity)
+    {
+        if (await CloseAsync(r, outcome) && outcome.Ok) Notify(outcome, entity, test: false);
+    }
+
+    private void Notify(RewardOutcome outcome, long? entity, bool test)
+    {
+        if (!Settings.GameNotifications || outcome.Target is not { } target || !_queue.IsAvailable) return;
+        var text = RewardMessages.Notification(Settings.Get(outcome.Kind), outcome.User, target, outcome.Until);
+        try
+        {
+            _queue.Enqueue(ModCommand.Notify(RewardMessages.NotificationTitle(outcome.User, test), text, entity, NotificationDismissMs,
+                test ? CommandSource.Test : CommandSource.ChannelPoints, outcome.User));
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        {
+            _log.LogWarning("Game notification not queued: {Message}", ex.Message);
+        }
     }
 
     private async Task SayAsync(string text)
@@ -376,18 +409,21 @@ public sealed class RewardService
         _ => r.Error ?? r.Status,
     };
 
-    private async Task CloseAsync(Redemption r, RewardOutcome outcome)
+    /// <returns>True when Twitch took the new status (for FULFILLED: the points are taken).</returns>
+    private async Task<bool> CloseAsync(Redemption r, RewardOutcome outcome)
     {
-        if (_mock) return; // serwer testowy nie ma prawdziwych wykupień
+        if (_mock) return true; // serwer testowy nie ma prawdziwych wykupień
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             await _api.SetRedemptionStatusAsync(r.RewardId, r.Id, outcome.Ok, cts.Token);
+            return true;
         }
         catch (Exception ex) when (ex is TwitchAuthException or HttpRequestException or OperationCanceledException)
         {
             // Zostaje w kolejce wykupień na Twitchu; streamer może je rozliczyć ręcznie w panelu.
             _log.LogWarning("Could not mark redemption {Id} as {Status}: {Message}", r.Id, outcome.Ok ? "fulfilled" : "canceled", ex.Message);
+            return false;
         }
     }
 

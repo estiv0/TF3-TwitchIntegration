@@ -139,7 +139,8 @@ public sealed class ModCommandQueue
                     if (r.ValueKind != JsonValueKind.Object || r.GetProperty("id").GetString() is not { } id) continue;
                     var status = r.TryGetProperty("status", out var s) ? s.GetString() ?? "failed" : "failed";
                     var error = r.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String ? e.GetString() : null;
-                    map[id] = new ModCommandResult(id, status, error, ReadDate(r));
+                    var entity = r.TryGetProperty("entity", out var en) && en.TryGetInt64(out var n) ? n : (long?)null;
+                    map[id] = new ModCommandResult(id, status, error, ReadDate(r), entity);
                 }
             }
             return map;

@@ -25,6 +25,10 @@ let lastDynamic = null;
 let loadError = false;
 let pollError = null;                   // błąd pobierania któregoś pliku przy działającym meta.json
 let pendingSelection = readSelection(); // zaznaczenie z linku - zastosujemy, gdy przyjdą dane
+// Link z czatu do świeżo zbudowanego miasta / zakładu może przyjść, zanim obiekt będzie w eksporcie:
+// czekamy na tyle kolejnych danych, zanim uznamy, że go nie ma.
+const PENDING_SELECTION_TRIES = 6;
+let pendingMisses = 0;
 
 applyStatic();
 
@@ -142,10 +146,12 @@ function clearSelection() {
 function applyPendingSelection() {
   const sel = pendingSelection;
   if (!sel || !lastDynamic) return;
-  pendingSelection = null;
   const d = lastDynamic;
   const list = { town: d.towns, industry: d.industries, station: d.stations, line: d.lines }[sel.kind];
   const exists = sel.kind === "owner" ? sidebar.owners.has(sel.id) : list?.some((x) => x.id === sel.id);
+  if (!exists && sel.kind !== "owner" && ++pendingMisses < PENDING_SELECTION_TRIES) return; // może jeszcze dojść
+  pendingSelection = null;
+  pendingMisses = 0;
   if (!exists) {
     writeSelection(sidebar.selected); // obiektu już nie ma (np. usunięta linia)
     return;
@@ -157,6 +163,7 @@ function applyPendingSelection() {
 }
 window.addEventListener("hashchange", () => {
   pendingSelection = readSelection();
+  pendingMisses = 0;
   applyPendingSelection();
 });
 

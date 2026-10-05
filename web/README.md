@@ -52,7 +52,7 @@ web/
 - Pojazdy: mod wysyła ich pozycję (`vehicles[].pos`). Pozycja przy trasie linii (do 40 m od odcinka dojazdu do `stop`) daje ruch wzdłuż trasy, inna (statki, samoloty) - po prostej. Bez `pos` (pozycje wyłączone w modzie albo starszy eksport) położenie jest zgadywane: `AT_TERMINAL` na przystanku, `EN_ROUTE` na trasie od poprzedniego przystanku do `stop`, kilka pojazdów na odcinku rozłożonych równo (na długim odcinku pojazd wtedy stoi).
 - Ruch pojazdów jest interpolowany: po nowej paczce danych pojazd jedzie z miejsca, w którym jest na ekranie, do nowej pozycji, przez średni odstęp między paczkami. Obraz jest więc o jedną paczkę (ok. 10–15 s) opóźniony. Animacja ma 30 kl./s.
 - Trasa linii: przystanek dociągany jest do węzła sieci w tym samym spójnym kawałku co sąsiedni przystanek, bo eksport ma odcięte fragmenty dróg (dojazdy do stacji).
-- Zaznaczenie jest w adresie (`#line=<id>`, `#town=`, `#industry=`, `#station=`, a majątek widza `#owner=<nazwa małymi literami>`), obok pinezki: `#pin=...&note=...&line=<id>`. Zaznaczenie właściciela nie rusza mapy.
+- Zaznaczenie jest w adresie (`#line=<id>`, `#town=`, `#industry=`, `#station=`, a majątek widza `#owner=<nazwa małymi literami>`), obok pinezki: `#pin=...&note=...&line=<id>`. Zaznaczenie właściciela nie rusza mapy. Obiektu, którego jeszcze nie ma w danych (link z czatu do świeżo zbudowanego miasta), strona wypatruje w 6 kolejnych porcjach danych.
 - Na dotyku: przesuwanie jednym palcem, przybliżanie szczypaniem.
 
 ## Budowa za punkty kanału

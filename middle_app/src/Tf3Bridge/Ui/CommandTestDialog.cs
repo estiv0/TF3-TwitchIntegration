@@ -33,6 +33,7 @@ public sealed class CommandTestDialog : Form
     private readonly Label _preview = new() { AutoSize = true, MaximumSize = new Size(520, 0) };
     private readonly Label _result = new() { AutoSize = true, MaximumSize = new Size(520, 0) };
     private readonly Button _send = new() { Text = "Wyślij do gry", AutoSize = true, MinimumSize = new Size(110, 28) };
+    private readonly Button _notify = new() { Text = "Testowe powiadomienie", AutoSize = true, MinimumSize = new Size(110, 28) };
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 250 };
     private readonly ComboBox _reward = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200 };
     private readonly TextBox _input = new() { Width = 260, PlaceholderText = "co wpisał widz, np. kraków" };
@@ -80,7 +81,7 @@ public sealed class CommandTestDialog : Form
 
         var close = new Button { Text = "Zamknij", DialogResult = DialogResult.Cancel, AutoSize = true, MinimumSize = new Size(90, 28) };
         var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, Margin = new Padding(0, 10, 0, 0) };
-        buttons.Controls.AddRange([close, _send]);
+        buttons.Controls.AddRange([close, _send, _notify]);
         CancelButton = close;
 
         foreach (var kind in Enum.GetValues<RewardKind>()) _reward.Items.Add(RewardsDialog.KindLabel(kind));
@@ -116,6 +117,7 @@ public sealed class CommandTestDialog : Form
             r.CheckedChanged += (_, _) => { _newName.Enabled = _rename.Checked; UpdatePreview(); };
         refresh.Click += (_, _) => LoadObjects();
         _send.Click += (_, _) => Send();
+        _notify.Click += (_, _) => SendNotification();
         _timer.Tick += (_, _) => ShowResult();
         _simulate.Click += (_, _) => Simulate();
         _rewards.Finished += OnRewardFinished;
@@ -177,6 +179,21 @@ public sealed class CommandTestDialog : Form
             : name is null ? "Uzupełnij widza albo nową nazwę."
             : $"„{Selected.FullName}” → „{name}”";
         _send.Enabled = name is not null && name != Selected?.FullName && _queue.IsAvailable;
+        _notify.Enabled = _queue.IsAvailable;
+    }
+
+    // Wygląd powiadomienia w grze bez nagrody; kliknięcie w nie pokazuje wybrany obiekt.
+    private void SendNotification()
+    {
+        var viewer = OwnerName.Clean(_viewer.Text);
+        if (viewer.Length == 0) viewer = "test_widz";
+        var o = Selected;
+        var command = _queue.Enqueue(ModCommand.Notify(RewardMessages.NotificationTitle(viewer, test: true),
+            o is null ? $"{viewer} testuje powiadomienia Tf3Bridge." : $"{viewer} testuje powiadomienia Tf3Bridge: {o.Name}.",
+            o?.Entity, RewardService.NotificationDismissMs, CommandSource.Test, viewer));
+        _lastId = command.Id;
+        _result.ForeColor = SystemColors.ControlText;
+        _result.Text = $"Wysłano powiadomienie #{command.Id}, czekam na grę…";
     }
 
     private void Send()
@@ -196,7 +213,7 @@ public sealed class CommandTestDialog : Form
         _result.ForeColor = r.Ok ? Color.FromArgb(46, 160, 67) : Color.Firebrick;
         _result.Text = r.Status switch
         {
-            "ok" => "Gra wykonała komendę. Nowa nazwa pojawi się na stronie po następnym eksporcie.",
+            "ok" => "Gra wykonała komendę. Nowa nazwa pojawi się na stronie po następnym eksporcie (powiadomienie: od razu w grze).",
             "expired" => $"Komenda wygasła: {r.Error}",
             "invalid" => $"Mod odrzucił komendę: {r.Error}",
             _ => $"Nie udało się: {r.Error}",
@@ -225,7 +242,8 @@ public sealed class CommandTestDialog : Form
         _simToken = null;
         _simResult.ForeColor = o.Ok ? Color.FromArgb(46, 160, 67) : Color.Firebrick;
         _simResult.Text = (o.Ok ? $"Wykonano ({o.Message}). Na Twitchu: zrealizowane." : $"Odrzucone: {o.Message}. Na Twitchu: zwrot punktów.")
-            + $"\n\nNa czacie{(_simChat.Checked && _rewards.Settings.ChatMessages ? "" : " (niewysłane)")}: {o.ChatText}";
+            + $"\n\nNa czacie{(_simChat.Checked && _rewards.Settings.ChatMessages ? "" : " (niewysłane)")}: {o.ChatText}"
+            + (o.Ok && _rewards.Settings.GameNotifications ? "\n\nW grze: powiadomienie z dopiskiem [TEST]." : "");
     }
 
     private static Control Row(params Control[] controls)

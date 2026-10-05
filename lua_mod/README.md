@@ -30,6 +30,8 @@ lua_mod/                              → w grze: staging_area/estiv0_tf3export 
     terrain.lua           heightmapa (getBaseHeightAt porcjami) + jednorazowy benchmark metod odczytu terenu
     commands.lua          komendy od Tf3Bridge (akcje widzów): local\tf3export_cmd\queue.lua -> api.cmd -> results.lua
     effects.lua           efekty czasowe z nagród (boost miasta/przemysłu, zatrzymanie linii), cofane po X miesiącach gry
+    twitch_notification.res.lua / .script.lua   typ powiadomienia w grze „Twitch” (komenda notify)
+    icons/twitch*.tga     ikona powiadomienia (maska; generuje ../../tools/make_icon.ps1 z ../../assets/twitch_logo.png)
 ```
 
 Moduły ładuje się względnie przez `ug_require "util.lua"`. Wszystkie leżą w jednym folderze.
@@ -129,7 +131,8 @@ end
   - `setName { entity, name }`: zmiana nazwy (`makeEntitySetNameCmd`);
   - `adopt { entity, owner }`: „Nazwa” → „Nazwa | owner”, tylko gdy obiekt nie ma właściciela (sprawdzane w chwili wykonania, inaczej `invalid`, a Tf3Bridge zwraca punkty);
   - `effect { effect, entity, months, factor }`: efekt czasowy z `effects.lua`, opis niżej;
-  - `createTown { x, y, name, owner }` i `createIndustry { x, y, file, name, owner }`: nowe miasto albo zakład „name | owner” (`create.lua`, opis niżej).
+  - `createTown { x, y, name, owner }` i `createIndustry { x, y, file, name, owner }`: nowe miasto albo zakład „name | owner” (`create.lua`, opis niżej); w wyniku `entity` = id nowego obiektu;
+  - `notify { title, text, entity?, dismissMs? }`: powiadomienie w grze z ikoną Twitcha (zdarzenie `Notifications` → `add`, typ `twitch_notification`); kliknięcie przenosi kamerę do `entity` ([../docs/custom-notifications.md](../docs/custom-notifications.md)).
 - Wynik trafia do `local\tf3export_cmd\results.lua` (`app.saveUserdata`): `json` z listą `{ id, status, error }` (status `ok`, `failed`, `invalid`, `expired`) i `done` z identyfikatorami, z których mod po restarcie gry odtwarza, co już wykonał.
 - Komendy starsze niż 300 s są pomijane (`expired`).
 - Gra wysyła komendy ze swoich skryptów w wątkach symulacji; z wątku GUI to **jeszcze niesprawdzone**. Dlatego mod nie ufa tylko callbackowi `sendCommand`: po wysłaniu przez 15 s sprawdza, czy efekt jest widoczny (dla `setName`: czy encja ma nową nazwę). Log: `command <id>: sent setName`, potem `ok` albo `failed (...)`.

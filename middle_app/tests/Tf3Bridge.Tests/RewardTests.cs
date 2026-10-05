@@ -48,10 +48,11 @@ public sealed class RewardTests : IDisposable
 
     private string QueueText => File.ReadAllText(Path.Combine(_dir, "cmd", "queue.lua"));
 
-    private void ModReports(string status, string? error = null, string? until = null)
+    private void ModReports(string status, string? error = null, string? until = null, long? entity = null)
     {
         var id = System.Text.RegularExpressions.Regex.Match(QueueText, "id = \"(\\w+)\"").Groups[1].Value;
-        var extra = (error is null ? "" : $",\"error\":\"{error}\"") + (until is null ? "" : $",\"until\":{until}");
+        var extra = (error is null ? "" : $",\"error\":\"{error}\"") + (until is null ? "" : $",\"until\":{until}")
+            + (entity is null ? "" : $",\"entity\":{entity}");
         var json = $$"""{"results":[{"id":"{{id}}","status":"{{status}}"{{extra}}}]}""";
         var path = Path.Combine(_dir, "cmd", "results.lua");
         File.WriteAllText(path, $"function data()\r\nreturn {{\r\n\t\tjson = \"{json.Replace("\"", "\\\"")}\",\r\n\t}}\r\nend");
@@ -207,17 +208,28 @@ public sealed class RewardTests : IDisposable
     }
 
     [Fact]
-    public void New_industry_uses_the_file_from_the_export_and_links_to_a_pin()
+    public void New_industry_uses_the_file_from_the_export_and_links_to_the_built_industry()
     {
         var service = Service();
         service.Simulate(RewardKind.CreateIndustry, "[9000, 9000, coal_mine] Kopalnia Ali", "ala", true, out _);
 
         Assert.Contains("file = \"::/industries/coal_mine/coal_mine.con\", name = \"Kopalnia Ali\"", QueueText);
-        ModReports("ok");
+        ModReports("ok", entity: 4321);
 
         var o = Assert.Single(_outcomes);
         Assert.True(o.Ok);
-        Assert.EndsWith("https://gin.estfosoft.com/#pin=9000,9000&note=Kopalnia%20Ali", o.ChatText);
+        Assert.EndsWith("https://gin.estfosoft.com/#industry=4321", o.ChatText);
+    }
+
+    [Fact]
+    public void New_town_links_to_a_pin_when_the_mod_does_not_report_its_id()
+    {
+        var service = Service();
+        service.Simulate(RewardKind.CreateTown, "[3000, -2000] Nowa Wieś", "widz", true, out _);
+
+        ModReports("ok"); // starsza wersja moda: bez entity
+
+        Assert.EndsWith("https://gin.estfosoft.com/#pin=3000,-2000&note=Nowa%20Wie%C5%9B", Assert.Single(_outcomes).ChatText);
     }
 
     [Fact]
@@ -491,6 +503,111 @@ public sealed class RewardTests : IDisposable
         Assert.Contains("id=red1", patch.Url);
         Assert.Contains($"reward_id={rewardId}", patch.Url);
         Assert.Contains("\"status\":\"FULFILLED\"", patch.Body);
+    }
+
+    // ------------------------------------------------------------------ powiadomienie w grze
+
+    // Powiadomienie idzie do kolejki w tle (po odpowiedzi Twitcha), więc czekamy na plik.
+    private async Task<string?> WaitForNotify(int ms = 3000)
+    {
+        for (var waited = 0; waited < ms; waited += 20)
+        {
+            if (QueueText.Contains("kind = \"notify\"")) return QueueText;
+            await Task.Delay(20);
+        }
+        return null;
+    }
+
+    [Fact]
+    public async Task Game_notification_after_the_redemption_is_fulfilled()
+    {
+        var service = await SyncedService();
+        var rewardId = service.Settings.TwitchIds[RewardKind.AdoptTown];
+
+        await service.HandleRedemptionForTestAsync(new ChannelPointsRedemption("red1", rewardId, "", 0, "7", "widz", "Widz", "łódź", DateTimeOffset.UtcNow));
+        ModReports("ok");
+
+        await _helix.WaitFor(r => r.Method == "PATCH" && r.Body.Contains("FULFILLED"));
+        var queue = await WaitForNotify();
+        Assert.NotNull(queue);
+        Assert.Contains("title = \"Twitch: Widz\", text = \"Widz kupił(a) miasto Łódź.\"", queue);
+        Assert.Contains("entity = 10", queue); // kliknięcie w powiadomienie pokazuje miasto
+    }
+
+    [Fact]
+    public async Task No_game_notification_when_twitch_does_not_take_the_points()
+    {
+        var service = await SyncedService();
+        var rewardId = service.Settings.TwitchIds[RewardKind.AdoptTown];
+        _helix.Forbidden.Add("red1");
+
+        await service.HandleRedemptionForTestAsync(new ChannelPointsRedemption("red1", rewardId, "", 0, "7", "widz", "Widz", "łódź", DateTimeOffset.UtcNow));
+        ModReports("ok");
+
+        await _helix.WaitFor(r => r.Method == "PATCH" && r.Body.Contains("FULFILLED"));
+        Assert.Null(await WaitForNotify(300));
+    }
+
+    [Fact]
+    public async Task No_game_notification_after_a_refund()
+    {
+        var service = await SyncedService();
+        var rewardId = service.Settings.TwitchIds[RewardKind.AdoptTown];
+
+        await service.HandleRedemptionForTestAsync(new ChannelPointsRedemption("red2", rewardId, "", 0, "7", "widz", "Widz", "łódź", DateTimeOffset.UtcNow));
+        ModReports("invalid", "already adopted by ola");
+
+        await _helix.WaitFor(r => r.Method == "PATCH" && r.Body.Contains("CANCELED"));
+        Assert.Null(await WaitForNotify(300));
+    }
+
+    [Fact]
+    public async Task Simulation_shows_a_test_notification_with_the_new_town()
+    {
+        var service = Service();
+        service.Simulate(RewardKind.CreateTown, "[3000, -2000] Nowa Wieś", "widz", false, out _);
+
+        ModReports("ok", entity: 777);
+
+        var queue = await WaitForNotify();
+        Assert.NotNull(queue);
+        Assert.Contains("title = \"[TEST] Twitch: widz\", text = \"widz założył(a) miasto Nowa Wieś.\"", queue);
+        Assert.Contains("entity = 777", queue);
+    }
+
+    [Fact]
+    public async Task No_game_notification_when_turned_off()
+    {
+        var service = Service();
+        service.UpdateSettings(service.Settings with { GameNotifications = false });
+        service.Simulate(RewardKind.AdoptTown, "lodz", "widz", false, out _);
+
+        ModReports("ok");
+
+        Assert.True(Assert.Single(_outcomes).Ok);
+        Assert.Null(await WaitForNotify(300));
+    }
+
+    [Theory]
+    [InlineData(RewardKind.BoostTown, "{\"year\":1922,\"month\":5,\"day\":12}", "widz przyspieszył(a) wzrost miasta Łódź o +")]
+    [InlineData(RewardKind.StopLine, "{\"year\":1922,\"month\":5,\"day\":12}", "widz zatrzymał(a) linię Linia 1 do 12 maja 1922.")]
+    public async Task Game_notification_for_effects_has_the_end_date(RewardKind kind, string until, string expected)
+    {
+        var service = Service();
+        service.Simulate(kind, kind == RewardKind.StopLine ? "linia 1" : "łódź", "widz", false, out _);
+
+        ModReports("ok", until: until);
+
+        var queue = await WaitForNotify();
+        Assert.Contains(expected, queue);
+        Assert.Contains("do 12 maja 1922", queue);
+    }
+
+    [Fact]
+    public void Every_reward_kind_has_a_game_notification_text()
+    {
+        foreach (var config in RewardKinds.Defaults)
+            Assert.Contains("Cel", RewardMessages.Notification(config, "widz", "Cel", null));
     }
 
     [Fact]

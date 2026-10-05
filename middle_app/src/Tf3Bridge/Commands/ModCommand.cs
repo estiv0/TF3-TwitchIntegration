@@ -53,6 +53,31 @@ public sealed record ModCommand(
             ["x"] = (long)Math.Round(x), ["y"] = (long)Math.Round(y), ["file"] = file, ["name"] = name, ["owner"] = owner,
         }, source, owner);
 
+    /// <summary>
+    /// In-game notification with the Twitch icon (commands.lua: notify). <paramref name="entity"/>: clicking it moves the camera there.
+    /// Texts are trimmed and kept on one line; the mod shows them as they are.
+    /// </summary>
+    public static ModCommand Notify(string title, string text, long? entity, int dismissMs, CommandSource source, string user)
+    {
+        var args = new Dictionary<string, object>
+        {
+            ["title"] = OneLine(title, MaxNotifyTitle), ["text"] = OneLine(text, MaxNotifyText), ["dismissMs"] = (long)dismissMs,
+        };
+        if (entity is { } e) args["entity"] = e;
+        return new(NewId(), "notify", DateTimeOffset.UtcNow, args, source, user);
+    }
+
+    internal const int MaxNotifyTitle = 100, MaxNotifyText = 300; // jak MAX_TITLE / MAX_TEXT w commands.lua
+
+    private static string OneLine(string s, int max)
+    {
+        var line = string.Join(' ', s.Split(['\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries)).Trim();
+        if (line.Length <= max) return line;
+        var cut = max - 1;
+        if (char.IsHighSurrogate(line[cut - 1])) cut--; // nie rozcinamy emoji
+        return line[..cut] + "…";
+    }
+
     private static string NewId() => Guid.NewGuid().ToString("N")[..12];
 
     // Liczby w logu jak w pliku dla gry (1.5, nie 1,5).
@@ -66,8 +91,9 @@ public sealed record GameDate(int Year, int Month, int Day);
 /// <summary>
 /// Result written by the mod. Statuses: ok, failed, invalid, expired.
 /// <see cref="Until"/>: end of a timed effect in the game calendar.
+/// <see cref="Entity"/>: id of the town or industry built by createTown / createIndustry.
 /// </summary>
-public sealed record ModCommandResult(string Id, string Status, string? Error, GameDate? Until = null)
+public sealed record ModCommandResult(string Id, string Status, string? Error, GameDate? Until = null, long? Entity = null)
 {
     public bool Ok => Status == "ok";
 }

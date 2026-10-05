@@ -128,6 +128,9 @@ public sealed record RewardSettings(IReadOnlyList<RewardConfig> Rewards, string 
     /// <summary>Answer the viewer in chat after a redemption (effect and its end date, or why the points came back).</summary>
     public bool ChatMessages { get; init; } = true;
 
+    /// <summary>Show an in-game notification (Twitch icon) once a redemption is done and its points are taken.</summary>
+    public bool GameNotifications { get; init; } = true;
+
     /// <summary>Industry type ("coal_mine") -> where viewers may build it (<see cref="IndustryZones"/>); null = defaults.</summary>
     public IReadOnlyDictionary<string, IndustryZone>? Zones { get; init; }
 

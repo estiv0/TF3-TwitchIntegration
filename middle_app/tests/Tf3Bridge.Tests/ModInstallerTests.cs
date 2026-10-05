@@ -94,7 +94,8 @@ public sealed class ModInstallerTests : IDisposable
 
         using var doc = JsonDocument.Parse(files["_content.json"]);
         var listed = doc.RootElement.GetProperty("files").EnumerateArray().Select(e => "content/" + e.GetString()).Order();
-        var embedded = files.Keys.Where(k => k.StartsWith("content/") && k.EndsWith(".lua")).Order();
+        var embedded = files.Keys.Where(k => k.StartsWith("content/") && (k.EndsWith(".lua") || k.EndsWith(".tga"))).Order();
         Assert.Equal(embedded, listed);
+        Assert.Contains("content/tf3export/icons/twitch@2x.tga", files.Keys); // ikona powiadomienia (twitch_notification.script.lua)
     }
 }

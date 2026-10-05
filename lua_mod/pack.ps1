@@ -9,7 +9,8 @@ $content = Join-Path $PSScriptRoot "content"
 
 # ---------------------------------------------------------------- _content.json
 # Ścieżki względem content\, z "/"; deskryptor i główny skrypt na początku (jak w modach z gry).
-$files = Get-ChildItem $content -Recurse -File -Filter *.lua |
+# Obrazki (.tga, np. ikona powiadomienia) też, jak w _content.json modów z gry.
+$files = Get-ChildItem $content -Recurse -File | Where-Object { $_.Extension -in ".lua", ".tga" } |
     ForEach-Object { $_.FullName.Substring($content.Length + 1).Replace("\", "/") } |
     Sort-Object @{ e = { if ($_ -like "*.gs.lua") { 0 } elseif ($_ -like "*.script.lua") { 1 } else { 2 } } }, { $_ }
 $list = ($files | ForEach-Object { "        `"$_`"" }) -join ",`n"
