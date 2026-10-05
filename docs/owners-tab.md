@@ -1,7 +1,7 @@
 # Zakładka „Właściciele”: majątek widzów (2026-10-05)
 
-Stan: **etap 1 zrobiony bez mapy** (lista, szczegóły widza, link `#owner=`). Do zrobienia: podświetlenie
-majątku na mapie, potem ewentualnie komenda `!tf_majatek`.
+Stan: **etap 1 zrobiony bez mapy** (lista, szczegóły widza, link `#owner=`), **etap 2 (`!tf_majatek`) zrobiony.**
+Do zrobienia: podświetlenie majątku na mapie.
 
 ## Problem
 
@@ -52,7 +52,7 @@ zaznaczenie mapy (`main.js`, `onPick`). Potrzebne:
   przy jednej zaznaczonej linii, żeby przy wielu liniach mapa była czytelna);
 - `fit()` do obrysu obiektów (jest już `fit(bbox, maxScale)`).
 
-## Etap 2: komenda na czacie (Tf3Bridge, opcjonalnie)
+## Etap 2: komenda na czacie (Tf3Bridge) — zrobione, opis w `middle_app/README.md`
 
 `!tf_majatek [widz]` odpowiada np. „kinek: 2 miasta (Gdańsk, Sopot), 1 zakład, 3 linie, zysk linii
 $1,2 mln, mapa: <link #owner=kinek>”. Bez argumentu pokazuje majątek pytającego. Komenda tylko czyta

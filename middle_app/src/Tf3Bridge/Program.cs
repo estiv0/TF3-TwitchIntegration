@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using Tf3Bridge;
+using Tf3Bridge.Chat;
 using Tf3Bridge.Cloud;
 using Tf3Bridge.Commands;
 using Tf3Bridge.Output;
@@ -47,6 +48,7 @@ internal static class Program
         builder.Services.AddSingleton<EventSubClient>();
         builder.Services.AddSingleton<ModCommandQueue>();
         builder.Services.AddSingleton<RewardService>();
+        builder.Services.AddSingleton<ChatCommandService>();
         builder.Services.AddSingleton<LocalFolderPublisher>();
         builder.Services.AddSingleton<AzureMirror>();
         builder.Services.AddSingleton<IPublisher, MirroringPublisher>();
@@ -60,6 +62,7 @@ internal static class Program
         mirror.Configure(AzureSettingsStore.Load());
         var mod = ModInstaller.Sync(options.InputDir, host.Services.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(ModInstaller)));
         ModSettingsStore.EnsureExists(options.InputDir);
+        host.Services.GetRequiredService<ChatCommandService>(); // komendy z czatu (!tf_...): nasłuchuje EventSub od utworzenia
 
         Application.Run(new MainForm(runner, mirror, host.Services.GetRequiredService<TwitchSession>(), host.Services.GetRequiredService<EventSubClient>(),
             host.Services.GetRequiredService<ModCommandQueue>(), host.Services.GetRequiredService<RewardService>(), options, mod, uiLog));

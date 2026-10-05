@@ -94,7 +94,7 @@ Nowy token (np. gdy stary wygasa): `.\infra\azure-setup.ps1 -Name <nazwa> -SasOn
 
 ## Twitch (logowanie)
 
-Integracja z Twitchem ([../docs/twitch-channel-points.md](../docs/twitch-channel-points.md)): logowanie streamera, EventSub i nagrody za punkty kanału (opis niżej). Komend z czatu jeszcze nie ma. Grę zmieniają tylko punkty kanału; czat jest wyłącznie informacyjny.
+Integracja z Twitchem ([../docs/twitch-channel-points.md](../docs/twitch-channel-points.md)): logowanie streamera, EventSub, nagrody za punkty kanału i komendy z czatu (opis niżej). Grę zmieniają tylko punkty kanału; czat jest wyłącznie informacyjny.
 
 - Aplikacja na dev.twitch.tv jest typu **Public**, bez client secret. `Twitch:ClientId` w `appsettings.json` jest jawny i wspólny dla wszystkich streamerów.
 - **Twitch…** → **Zaloguj przez Twitch**: okno pokazuje kod i otwiera `twitch.tv/activate`, a streamer zatwierdza tam dostęp (Device Code Grant Flow). Uprawnienia: `channel:read:redemptions`, `channel:manage:redemptions`, `user:read:chat`, `user:write:chat` (odpowiedzi dla widzów po wykupieniu). Gdy aplikacja potrzebuje nowego uprawnienia, zapisane konto jest zapominane i trzeba zalogować się ponownie.
@@ -117,6 +117,14 @@ Jak działa:
 - `session_reconnect`: przejście na nowy adres bez ponownych subskrypcji (Twitch je przenosi).
 - Zdarzenia są odrzucane jako duplikaty po `message_id`. W logu pojawiają się wykupienia i wiadomości z czatu zaczynające się od `!`.
 - Stan widać w oknie w linii „EventSub: …”.
+
+## Komendy z czatu
+
+Nasze komendy mają prefiks `!tf_`. Tylko czytają ostatni `dynamic.json` i odpowiadają na czacie jako streamer, nigdy nie wysyłają nic do gry (`Chat/ChatCommandService.cs`).
+
+- `!tf_majatek [widz]`: majątek widza (bez argumentu: pytającego), np. „@ala estiv0: 2 miasta (Szczecin – główne, Barcin), 1 zakład (Browar), 2 linie, 16 pojazdów, zysk linii (12 mies.) $ 833 881. Mapa: https://…/#owner=estiv0”. Grupowanie jak zakładka „Właściciele” na stronie (`Commands/OwnerAssets.cs`): bez rozróżniania wielkości liter, główne miasto = największe, stacje nazwane od kupionego miasta nie są widza. Link tylko przy ustawionym `Twitch:SiteUrl`. Działa też `!tf_majątek`.
+- Jeden widz dostaje najwyżej jedną odpowiedź na 10 s.
+- Z serwerem testowym Twitch CLI odpowiedź trafia tylko do logu (serwer nie ma czatu).
 
 **Test bez Twitcha (Twitch CLI):**
 
@@ -219,6 +227,8 @@ middle_app/
     Commands/ModCommand.cs        komenda dla moda i jej zapis jako Lua (escapowanie tekstu widzów)
     Commands/ModCommandQueue.cs   kolejka queue.lua, odczyt wyników z results.lua, wygasanie
     Commands/GameObjects.cs       cele akcji z dynamic.json, nazwy „Nazwa | Właściciel”
+    Commands/OwnerAssets.cs       majątek widzów z dynamic.json (jak zakładka Właściciele na stronie)
+    Chat/ChatCommandService.cs    komendy z czatu (!tf_majatek), tylko odpowiedzi, bez zmian w grze
     Ui/CommandTestDialog.cs       test bez Twitcha: symulacja nagrody i ręczna zmiana nazwy
     Rewards/RewardSettings.cs     nagrody (rodzaje, koszty, miesiące, mnożniki), zapis rewards.json
     Rewards/TargetResolver.cs     dopasowanie tekstu od widza do miasta, zakładu albo linii
