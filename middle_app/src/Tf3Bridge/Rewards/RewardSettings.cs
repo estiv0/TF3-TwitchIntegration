@@ -7,7 +7,7 @@ using Tf3Bridge.Processing;
 namespace Tf3Bridge.Rewards;
 
 /// <summary>Channel points rewards Tf3Bridge manages. The only way viewers can change the game.</summary>
-public enum RewardKind { AdoptTown, BoostTown, BoostIndustry, StopLine, HoldLine, CreateTown, CreateIndustry }
+public enum RewardKind { AdoptTown, BuyIndustry, BoostTown, BoostIndustry, StopLine, HoldLine, CreateTown, CreateIndustry }
 
 /// <summary>
 /// One reward as the streamer configured it. <see cref="Months"/> (game months) and <see cref="Factor"/>
@@ -51,7 +51,7 @@ public static class RewardKinds
     public static GameObjectKind Target(RewardKind kind) => kind switch
     {
         RewardKind.AdoptTown or RewardKind.BoostTown or RewardKind.CreateTown => GameObjectKind.Town,
-        RewardKind.BoostIndustry or RewardKind.CreateIndustry => GameObjectKind.Industry,
+        RewardKind.BoostIndustry or RewardKind.CreateIndustry or RewardKind.BuyIndustry => GameObjectKind.Industry,
         _ => GameObjectKind.Line,
     };
 
@@ -61,7 +61,10 @@ public static class RewardKinds
     /// </summary>
     public static bool Creates(RewardKind kind) => kind is RewardKind.CreateTown or RewardKind.CreateIndustry;
 
-    /// <summary>Effect name in the mod (effects.lua); null for adoption (not timed).</summary>
+    /// <summary>Buying an existing town or industry: the viewer becomes its owner (adopt), only when it has none yet.</summary>
+    public static bool Buys(RewardKind kind) => kind is RewardKind.AdoptTown or RewardKind.BuyIndustry;
+
+    /// <summary>Effect name in the mod (effects.lua); null for buying (not timed).</summary>
     public static string? Effect(RewardKind kind) => kind switch
     {
         RewardKind.BoostTown => "townBoost",
@@ -80,6 +83,9 @@ public static class RewardKinds
     [
         new(RewardKind.AdoptTown, true, "TF3: kup miasto",
             "Wpisz nazwę miasta bez właściciela. Kupujesz je: zostaniesz jego właścicielem (widać to w grze i na mapie).",
+            5000, 60, 0, 1, 0, 1),
+        new(RewardKind.BuyIndustry, true, "TF3: kup zakład",
+            "Wpisz nazwę zakładu bez właściciela (z mapy {site}). Kupujesz go: zostaniesz jego właścicielem (widać to w grze i na mapie).",
             5000, 60, 0, 1, 0, 1),
         new(RewardKind.BoostTown, true, "TF3: boost miasta",
             "Wpisz nazwę miasta. Przez {months} mies. gry jego docelowa wielkość rośnie o {percent}% (miasto się rozbudowuje).",
@@ -102,6 +108,20 @@ public static class RewardKinds
     ];
 }
 
+/// <summary>
+/// A reward of the streamer with the <see cref="Prefix"/> title prefix that is not one of <see cref="RewardKind"/>
+/// (e.g. added by hand in the Twitch dashboard). Tf3Bridge switches it on and off with the game like its own rewards;
+/// redemptions stay in the Twitch queue for the streamer. Found once when Tf3Bridge connects to Twitch.
+/// <see cref="Enabled"/>: the streamer's choice; on Twitch only when also the game sends data.
+/// <see cref="Switchable"/>: false when Twitch refused the change (403: it lets only the app that created a reward change it).
+/// </summary>
+public sealed record ExtraReward(string TwitchId, string Title, int Cost, bool Enabled, bool Switchable)
+{
+    public const string Prefix = "TF3";
+
+    public static bool HasPrefix(string title) => title.TrimStart().StartsWith(Prefix, StringComparison.OrdinalIgnoreCase);
+}
+
 /// <summary>Rewards plus the Twitch reward IDs created for them on the streamer's channel.</summary>
 public sealed record RewardSettings(IReadOnlyList<RewardConfig> Rewards, string ChannelUserId, IReadOnlyDictionary<RewardKind, string> TwitchIds)
 {
@@ -110,6 +130,9 @@ public sealed record RewardSettings(IReadOnlyList<RewardConfig> Rewards, string 
 
     /// <summary>Industry type ("coal_mine") -> where viewers may build it (<see cref="IndustryZones"/>); null = defaults.</summary>
     public IReadOnlyDictionary<string, IndustryZone>? Zones { get; init; }
+
+    /// <summary>The streamer's own rewards with the TF3 prefix on <see cref="ChannelUserId"/>'s channel (<see cref="ExtraReward"/>).</summary>
+    public IReadOnlyList<ExtraReward> Extras { get; init; } = [];
 
     public static RewardSettings Default { get; } = new(RewardKinds.Defaults, "", new Dictionary<RewardKind, string>());
 
@@ -162,6 +185,7 @@ public static class RewardSettingsStore
                 Rewards = s.Rewards ?? [],
                 ChannelUserId = s.ChannelUserId ?? "",
                 TwitchIds = s.TwitchIds ?? new Dictionary<RewardKind, string>(),
+                Extras = s.Extras ?? [],
             }).Normalized();
         }
         catch (Exception ex) when (ex is JsonException or IOException or NotSupportedException)

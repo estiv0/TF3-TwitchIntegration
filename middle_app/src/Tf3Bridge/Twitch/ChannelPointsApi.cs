@@ -6,7 +6,7 @@ using System.Text.Json.Nodes;
 namespace Tf3Bridge.Twitch;
 
 /// <summary>A custom reward on the channel as Twitch reports it.</summary>
-public sealed record TwitchReward(string Id, string Title, bool IsEnabled, bool IsPaused);
+public sealed record TwitchReward(string Id, string Title, bool IsEnabled, bool IsPaused, int Cost = 0);
 
 public sealed record PendingRedemption(string Id, string RewardId, string UserLogin, string UserName, string UserInput, DateTimeOffset RedeemedAt);
 
@@ -15,12 +15,14 @@ public sealed class ChannelPointsApi(TwitchSession session, HttpClient http)
 {
     private const string Base = "https://api.twitch.tv/helix/channel_points/";
 
-    /// <summary>Rewards created by this client ID (the only ones it may change).</summary>
-    public async Task<List<TwitchReward>> GetManageableRewardsAsync(CancellationToken ct)
+    /// <param name="onlyManageable">true = only rewards created by this client ID (the only ones it may change);
+    /// false = also the ones the streamer made by hand in the Twitch dashboard.</param>
+    public async Task<List<TwitchReward>> GetRewardsAsync(bool onlyManageable, CancellationToken ct)
     {
-        var json = await SendAsync(HttpMethod.Get, $"custom_rewards?broadcaster_id={Broadcaster}&only_manageable_rewards=true", null, ct);
+        var json = await SendAsync(HttpMethod.Get,
+            $"custom_rewards?broadcaster_id={Broadcaster}" + (onlyManageable ? "&only_manageable_rewards=true" : ""), null, ct);
         return [.. json["data"]!.AsArray().Select(r => new TwitchReward(
-            (string)r!["id"]!, (string)r["title"]!, (bool?)r["is_enabled"] ?? true, (bool?)r["is_paused"] ?? false))];
+            (string)r!["id"]!, (string)r["title"]!, (bool?)r["is_enabled"] ?? true, (bool?)r["is_paused"] ?? false, (int?)r["cost"] ?? 0))];
     }
 
     /// <summary>Creates a reward; returns its ID.</summary>
@@ -67,7 +69,7 @@ public sealed class ChannelPointsApi(TwitchSession session, HttpClient http)
             var message = text;
             try { message = (string?)JsonNode.Parse(text)?["message"] ?? text; }
             catch (JsonException) { }
-            throw new TwitchAuthException($"HTTP {(int)response.StatusCode}: {message}", rejected: false);
+            throw new TwitchAuthException($"HTTP {(int)response.StatusCode}: {message}", rejected: false, (int)response.StatusCode);
         }
     }
 }

@@ -24,7 +24,7 @@ Wymagania i ograniczenia:
 - Streamer musi być Affiliate albo Partner.
 - Zarządzanie wymaga scope'a `channel:manage:redemptions`, a sam odczyt `channel:read:redemptions`.
 - Kanał może mieć najwyżej 50 nagród, licząc też wyłączone.
-- **Nagrodę może zmieniać i rozliczać tylko ta aplikacja (Client ID), która ją utworzyła.** Nagrody trzeba więc zakładać z poziomu Tf3Bridge, a nie ręcznie w panelu Twitcha. Inaczej nie zrobimy automatycznego zwrotu punktów, gdy komenda się nie uda.
+- **Nagrodę może zmieniać i rozliczać tylko ta aplikacja (Client ID), która ją utworzyła.** Nagrody trzeba więc zakładać z poziomu Tf3Bridge, a nie ręcznie w panelu Twitcha. Inaczej nie zrobimy automatycznego zwrotu punktów, gdy komenda się nie uda. Nagrody dodanej ręcznie nie da się przez API nawet włączyć ani wyłączyć (403). Tf3Bridge próbuje to zrobić z nagrodami z prefiksem „TF3” i zgłasza w statusie te, których Twitch nie pozwala zmieniać ([opis](../middle_app/README.md#nagrody-za-punkty-kanału)).
 - `should_redemptions_skip_request_queue = true` od razu oznacza wykupienie jako zrealizowane. U nas powinno być `false`, żeby móc zwracać punkty.
 
 ### B. EventSub: zdarzenia w czasie rzeczywistym

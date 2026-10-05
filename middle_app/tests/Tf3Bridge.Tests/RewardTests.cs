@@ -21,7 +21,7 @@ public sealed class RewardTests : IDisposable
         Directory.CreateDirectory(latest);
         File.WriteAllText(Path.Combine(latest, "dynamic.json"), """
             {"towns":[{"id":10,"name":"Łódź","pos":[0,0,5]},{"id":11,"name":"Kraków | ala"},{"id":12,"name":"Nowy Sącz"},{"id":13,"name":"Nowy Targ"}],
-             "industries":[{"id":20,"name":"Kopalnia węgla Bytom","file":"::/industries/coal_mine/coal_mine.con","pos":[5000,5000,5]}],
+             "industries":[{"id":20,"name":"Kopalnia węgla Bytom","file":"::/industries/coal_mine/coal_mine.con","pos":[5000,5000,5]},{"id":21,"name":"Huta Katowice | ola"}],
              "lines":[{"id":30,"name":"Linia 1"}]}
             """);
         File.WriteAllText(Path.Combine(latest, "meta.json"), "{}");
@@ -96,7 +96,7 @@ public sealed class RewardTests : IDisposable
         var path = Path.Combine(_dir, "rewards-test.json");
         var custom = RewardSettings.Default with
         {
-            Rewards = [RewardKinds.Defaults[1] with { Cost = 1234, Months = 999, Factor = 9 }],
+            Rewards = [RewardKinds.Defaults.Single(d => d.Kind == RewardKind.BoostTown) with { Cost = 1234, Months = 999, Factor = 9 }],
             ChannelUserId = "42",
             TwitchIds = new Dictionary<RewardKind, string> { [RewardKind.BoostTown] = "rw1" },
         };
@@ -164,7 +164,7 @@ public sealed class RewardTests : IDisposable
     [Fact]
     public void Prompt_shows_days_and_percent()
     {
-        var c = RewardKinds.Defaults[2] with { Prompt = "+{percent}% na {months} mies.", Months = 7, Factor = 1.25 };
+        var c = RewardKinds.Defaults.Single(d => d.Kind == RewardKind.BoostIndustry) with { Prompt = "+{percent}% na {months} mies.", Months = 7, Factor = 1.25 };
 
         Assert.Equal("+25% na 7 mies.", c.TwitchPrompt);
     }
@@ -253,6 +253,32 @@ public sealed class RewardTests : IDisposable
         Assert.Contains("kind = \"adopt\"", QueueText);
         Assert.Contains("entity = 10", QueueText);
         Assert.Contains("owner = \"WidzX\"", QueueText);
+    }
+
+    [Fact]
+    public async Task Buying_an_industry_adopts_it_and_links_to_it_in_chat()
+    {
+        var service = Service();
+
+        Assert.Null(service.Simulate(RewardKind.BuyIndustry, "kopalnia", "widz", true, out _));
+        Assert.Contains("kind = \"adopt\"", QueueText);
+        Assert.Contains("entity = 20", QueueText);
+        ModReports("ok");
+
+        var chat = await _helix.WaitFor(r => r.Url.EndsWith("/chat/messages"));
+        Assert.Equal("@widz zakład Kopalnia węgla Bytom jest teraz Twój! https://gin.estfosoft.com/#industry=20", Message(chat));
+    }
+
+    [Fact]
+    public void Buying_an_industry_with_an_owner_is_refunded_right_away()
+    {
+        var service = Service();
+
+        var outcome = service.Simulate(RewardKind.BuyIndustry, "huta", "widz", false, out _);
+
+        Assert.True(outcome!.Refunded);
+        Assert.Contains("ma już właściciela (ola)", outcome.Message);
+        Assert.Equal(0, _queue.PendingCount);
     }
 
     [Fact]
@@ -576,6 +602,109 @@ public sealed class RewardTests : IDisposable
         Assert.Contains("@widz", chat.Body);
     }
 
+    // ------------------------------------------------------------------ własne nagrody TF3
+
+    [Fact]
+    public async Task Switches_own_TF3_rewards_with_the_game()
+    {
+        _helix.AllRewards = """{"data":[{"id":"own","title":"TF3: wybierz następną linię","cost":2500,"is_enabled":true},{"id":"other","title":"Nawodnij się","is_enabled":true}]}""";
+        _whyInactive = "brak danych z gry (wczytaj zapis)";
+        var service = Service();
+        await service.TickAsync(default);
+        Assert.Contains(_helix.Requests, r => r.Method == "PATCH" && r.Url.Contains("id=own") && r.Body == """{"is_enabled":false}""");
+        _helix.Requests.Clear();
+
+        _whyInactive = null;
+        await service.TickAsync(default);
+        _whyInactive = "most jest zatrzymany";
+        await service.TickAsync(default);
+
+        Assert.Equal(["""{"is_enabled":true}""", """{"is_enabled":false}"""],
+            _helix.Requests.Where(r => r.Method == "PATCH" && r.Url.Contains("id=own")).Select(r => r.Body));
+        Assert.DoesNotContain(_helix.Requests, r => r.Url.Contains("id=other"));
+        Assert.DoesNotContain(_helix.Requests, r => r.Method is "POST" or "DELETE");
+        var extra = Assert.Single(service.Settings.Extras);
+        Assert.Equal(("TF3: wybierz następną linię", 2500, true), (extra.Title, extra.Cost, extra.Switchable));
+    }
+
+    [Fact]
+    public async Task Disables_own_TF3_rewards_when_the_bridge_closes()
+    {
+        _helix.AllRewards = """{"data":[{"id":"own","title":"TF3: pogoda","cost":100,"is_enabled":true}]}""";
+        var service = Service();
+        await service.TickAsync(default);
+        _helix.Requests.Clear();
+
+        await service.DisableAsync(default);
+
+        Assert.Contains(_helix.Requests, r => r.Method == "PATCH" && r.Url.Contains("id=own") && r.Body == """{"is_enabled":false}""");
+    }
+
+    [Fact]
+    public async Task Reports_TF3_rewards_twitch_does_not_let_it_switch()
+    {
+        _helix.AllRewards = """{"data":[{"id":"hand","title":"TF3: pogoda","cost":100,"is_enabled":true},{"id":"own","title":"TF3: muzyka","cost":50,"is_enabled":true}]}""";
+        _helix.Forbidden.Add("hand");
+        var service = Service();
+
+        await service.TickAsync(default);
+        _helix.Requests.Clear();
+        _whyInactive = "most jest zatrzymany";
+        await service.TickAsync(default);
+
+        Assert.Equal(RewardState.Inactive, service.Status.State);
+        Assert.Contains("Twitch nie pozwala Tf3Bridge włączać i wyłączać: TF3: pogoda", service.Status.Message);
+        Assert.False(service.Settings.Extras.Single(e => e.TwitchId == "hand").Switchable);
+        Assert.DoesNotContain(_helix.Requests, r => r.Url.Contains("id=hand")); // nie próbuje co chwilę
+        Assert.Contains(_helix.Requests, r => r.Url.Contains("id=own") && r.Body == """{"is_enabled":false}""");
+    }
+
+    [Fact]
+    public async Task Leaves_TF3_rewards_the_streamer_switched_off_disabled()
+    {
+        _helix.AllRewards = """{"data":[{"id":"own","title":"TF3: pogoda","cost":100,"is_enabled":true}]}""";
+        var service = Service();
+        await service.TickAsync(default);
+        _helix.Requests.Clear();
+
+        service.UpdateSettings(service.Settings with { Extras = [service.Settings.Extras.Single() with { Enabled = false }] });
+        await service.TickAsync(default);
+        _helix.Requests.Clear();
+        _whyInactive = "most jest zatrzymany";
+        await service.TickAsync(default);
+        _whyInactive = null;
+        await service.TickAsync(default);
+
+        Assert.False(service.Settings.Extras.Single().Enabled);
+        Assert.DoesNotContain(_helix.Requests, r => r.Url.Contains("id=own"));
+    }
+
+    [Fact]
+    public async Task Looks_for_TF3_rewards_only_when_connecting()
+    {
+        var service = await SyncedService();
+        _helix.AllRewards = """{"data":[{"id":"own","title":"TF3: pogoda","cost":100,"is_enabled":true}]}""";
+
+        for (var i = 0; i < 3; i++) await service.TickAsync(default);
+
+        Assert.Empty(_helix.Requests);
+        Assert.Empty(service.Settings.Extras);
+    }
+
+    [Fact]
+    public async Task Hand_made_reward_with_our_title_is_reported()
+    {
+        _helix.AllRewards = """{"data":[{"id":"hand","title":"TF3: kup miasto","cost":1,"is_enabled":true}]}""";
+        var service = Service();
+
+        await service.TickAsync(default);
+
+        Assert.Equal(RewardKinds.Defaults.Count - 1, _helix.Requests.Count(r => r.Method == "POST"));
+        Assert.False(service.Settings.TwitchIds.ContainsKey(RewardKind.AdoptTown));
+        Assert.Contains("TF3: kup miasto", service.Status.Message);
+        Assert.Empty(service.Settings.Extras);
+    }
+
     private static string Message(Request chat) => (string)System.Text.Json.Nodes.JsonNode.Parse(chat.Body)!["message"]!;
 
     private sealed record Request(string Method, string Url, string Body);
@@ -585,6 +714,12 @@ public sealed class RewardTests : IDisposable
         private int _next;
 
         public string Rewards { get; set; } = """{"data":[]}""";
+
+        /// <summary>Listing without only_manageable_rewards (also hand-made rewards); null = same as <see cref="Rewards"/>.</summary>
+        public string? AllRewards { get; set; }
+
+        /// <summary>Reward IDs this client may not change (created by hand or by another app): PATCH gets 403.</summary>
+        public HashSet<string> Forbidden { get; } = [];
 
         public ConcurrentQueue<Request> Requests { get; } = new();
 
@@ -603,7 +738,14 @@ public sealed class RewardTests : IDisposable
             var body = request.Content is null ? "" : await request.Content.ReadAsStringAsync(ct);
             var url = request.RequestUri!.ToString();
             Requests.Enqueue(new Request(request.Method.Method, url, body));
-            var json = request.Method == HttpMethod.Get && url.Contains("custom_rewards?") ? Rewards
+            if (request.Method == HttpMethod.Patch && Forbidden.Any(id => url.EndsWith("&id=" + id)))
+                return new HttpResponseMessage(HttpStatusCode.Forbidden)
+                {
+                    Content = new StringContent("""{"error":"Forbidden","status":403,"message":"The ID in the Client-Id header must match the client ID used to create the custom reward."}""",
+                        Encoding.UTF8, "application/json"),
+                };
+            var json = request.Method == HttpMethod.Get && url.Contains("custom_rewards?") && !url.Contains("only_manageable") ? AllRewards ?? Rewards
+                : request.Method == HttpMethod.Get && url.Contains("custom_rewards?") ? Rewards
                 : request.Method == HttpMethod.Get ? """{"data":[]}"""
                 : request.Method == HttpMethod.Post ? $$"""{"data":[{"id":"rw{{Interlocked.Increment(ref _next)}}"}]}"""
                 : """{"data":[]}""";

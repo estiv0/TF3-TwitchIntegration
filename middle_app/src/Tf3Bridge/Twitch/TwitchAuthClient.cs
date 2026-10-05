@@ -13,9 +13,12 @@ public sealed record TokenResponse(string AccessToken, string RefreshToken, Time
 public sealed record TokenInfo(string ClientId, string UserId, string Login, string[] Scopes, TimeSpan ExpiresIn);
 
 /// <summary>Twitch answered with an error. <see cref="Rejected"/>: it refused the token/grant itself, so retrying won't help.</summary>
-public sealed class TwitchAuthException(string message, bool rejected) : Exception(message)
+public sealed class TwitchAuthException(string message, bool rejected, int? httpStatus = null) : Exception(message)
 {
     public bool Rejected { get; } = rejected;
+
+    /// <summary>HTTP status of a rejected Helix call (e.g. 403); null otherwise.</summary>
+    public int? HttpStatus { get; } = httpStatus;
 }
 
 /// <summary>

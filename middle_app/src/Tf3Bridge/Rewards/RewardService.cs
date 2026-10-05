@@ -6,7 +6,8 @@ using Tf3Bridge.Twitch;
 
 namespace Tf3Bridge.Rewards;
 
-public enum RewardState { Off, WaitingForLogin, NotAffiliate, Ok, Inactive, Error }
+/// <summary><see cref="Warning"/>: active, but Twitch does not let Tf3Bridge switch some TF3 rewards.</summary>
+public enum RewardState { Off, WaitingForLogin, NotAffiliate, Ok, Warning, Inactive, Error }
 
 public sealed record RewardStatus(RewardState State, string Message);
 
@@ -23,7 +24,8 @@ public sealed record RewardOutcome(string Token, RewardKind Kind, string User, s
 
 /// <summary>
 /// Channel points rewards: keeps them in sync on Twitch (create, update, enabled only while the bridge runs
-/// and a loaded save exports data, disabled when Tf3Bridge closes), turns redemptions into mod commands and closes them: FULFILLED when the game confirms,
+/// and a loaded save exports data, disabled when Tf3Bridge closes; the same for the streamer's own rewards with the
+/// TF3 prefix, see <see cref="ExtraReward"/>), turns redemptions into mod commands and closes them: FULFILLED when the game confirms,
 /// CANCELED (points refunded) when the target is not found, already taken or the game fails.
 /// The only path from viewers to game changes (see CommandSource).
 /// </summary>
@@ -54,6 +56,7 @@ public sealed class RewardService
     private volatile RewardStatus _status = new(RewardState.Off, "wyłączone");
     private string? _syncedFor;      // konto, dla którego nagrody są zsynchronizowane
     private bool? _active;           // ostatnio ustawione włączenie na Twitchu
+    private IReadOnlyList<string> _locked = []; // nagrody TF3, których Twitch nie pozwala Tf3Bridge zmieniać
     private readonly SemaphoreSlim _wake = new(0);
     private readonly SemaphoreSlim _tick = new(1, 1); // pętla i wyłączanie przy zamykaniu
 
@@ -105,7 +108,11 @@ public sealed class RewardService
     {
         lock (_gate)
         {
-            _settings = (settings with { ChannelUserId = _settings.ChannelUserId, TwitchIds = _settings.TwitchIds }).Normalized();
+            _settings = (settings with
+            {
+                ChannelUserId = _settings.ChannelUserId, TwitchIds = _settings.TwitchIds,
+                Extras = KeepEnabled(_settings.Extras, settings.Extras), // okno zmienia tylko włączenie
+            }).Normalized();
             _zoneRules?.Set(_settings.Zones);
             SaveLocked();
             _syncedFor = null;
@@ -200,10 +207,15 @@ public sealed class RewardService
                 _active = active;
                 _log.LogInformation("Rewards {State}", active ? "enabled on Twitch (game data arrives)" : $"disabled on Twitch: {why}");
             }
-            var enabled = Settings.Rewards.Count(r => r.Enabled);
-            _status = active
-                ? new(RewardState.Ok, $"aktywne: {enabled} z {Settings.Rewards.Count}")
-                : new(RewardState.Inactive, $"wyłączone na Twitchu, bo {why} ({enabled} nagród)");
+            var s = Settings;
+            var enabled = s.Rewards.Count(r => r.Enabled);
+            var extras = s.Extras.Count(e => e.Switchable && e.Enabled);
+            var counts = extras > 0 ? $"{enabled} z {s.Rewards.Count} + {extras} TF3" : $"{enabled} z {s.Rewards.Count}";
+            var locked = _locked.Count == 0 ? ""
+                : $"; Twitch nie pozwala Tf3Bridge włączać i wyłączać: {string.Join(", ", _locked)} (dodane ręcznie w panelu)";
+            _status = !active ? new(RewardState.Inactive, $"wyłączone na Twitchu, bo {why} ({counts}){locked}")
+                : locked.Length > 0 ? new(RewardState.Warning, $"aktywne: {counts}{locked}")
+                : new(RewardState.Ok, $"aktywne: {counts}");
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
@@ -294,7 +306,7 @@ public sealed class RewardService
         {
             var resolved = TargetResolver.Resolve(objects, RewardKinds.Target(kind), input);
             if (resolved.Target is not { } target) return Reject(resolved.Error!);
-            if (kind == RewardKind.AdoptTown && target.Owner is { } current) return Reject($"{target.Name} ma już właściciela ({current})");
+            if (RewardKinds.Buys(kind) && target.Owner is { } current) return Reject($"{target.Name} ma już właściciela ({current})");
             command = RewardKinds.Effect(kind) is { } effect
                 ? ModCommand.Effect(effect, target.Entity, config.Months, RewardKinds.HasFactor(kind) ? config.Factor : null,
                     CommandSource.ChannelPoints, owner, created)
@@ -410,11 +422,25 @@ public sealed class RewardService
 
     // ------------------------------------------------------------------ nagrody na Twitchu
 
+    /// <summary>All rewards on the channel and the IDs of those this client ID created (only those it may change).</summary>
+    private sealed record ChannelRewards(List<TwitchReward> All, HashSet<string> Mine);
+
+    private async Task<ChannelRewards> GetChannelRewardsAsync(CancellationToken ct)
+    {
+        var mine = await _api.GetRewardsAsync(onlyManageable: true, ct);
+        var all = await _api.GetRewardsAsync(onlyManageable: false, ct);
+        return new([.. all.Concat(mine.Where(m => all.All(a => a.Id != m.Id)))], [.. mine.Select(m => m.Id)]);
+    }
+
+    private static bool SameTitle(string a, string b) => string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
+
     private async Task SyncAsync(string userId, bool active, CancellationToken ct)
     {
         var s = Settings;
-        var ids = s.ChannelUserId == userId ? new Dictionary<RewardKind, string>(s.TwitchIds) : [];
-        var existing = await _api.GetManageableRewardsAsync(ct);
+        var sameChannel = s.ChannelUserId == userId;
+        var ids = sameChannel ? new Dictionary<RewardKind, string>(s.TwitchIds) : [];
+        var channel = await GetChannelRewardsAsync(ct);
+        var existing = channel.All.Where(r => channel.Mine.Contains(r.Id)).ToList();
         foreach (var config in s.Rewards)
         {
             var id = ids.TryGetValue(config.Kind, out var known) && existing.Any(e => e.Id == known)
@@ -423,7 +449,14 @@ public sealed class RewardService
             var body = Body(config, active, RewardMessages.SiteHost(_siteUrl));
             if (id is null)
             {
-                if (!config.Enabled) { ids.Remove(config.Kind); continue; }
+                ids.Remove(config.Kind);
+                if (!config.Enabled) continue;
+                // Twitch nie przyjmie drugiej nagrody o tym samym tytule: ręczną trzeba najpierw usunąć.
+                if (channel.All.Any(r => SameTitle(r.Title, config.Title)))
+                {
+                    _log.LogWarning("Reward \"{Title}\" was added by hand on Twitch: delete it there and Tf3Bridge will create its own", config.Title);
+                    continue;
+                }
                 id = await _api.CreateRewardAsync(body, ct);
                 _log.LogInformation("Reward created on Twitch: {Title}", config.Title);
             }
@@ -432,11 +465,65 @@ public sealed class RewardService
         }
         lock (_gate)
         {
-            _settings = _settings with { ChannelUserId = userId, TwitchIds = ids };
+            _settings = _settings with { ChannelUserId = userId, TwitchIds = ids, Extras = sameChannel ? _settings.Extras : [] };
             SaveLocked();
         }
         _log.LogInformation("Rewards synced with Twitch ({Count} enabled)", s.Rewards.Count(r => r.Enabled));
+        await SyncExtrasAsync(active, channel, ct);
     }
+
+    /// <summary>
+    /// The streamer's own rewards with the TF3 prefix (<see cref="ExtraReward"/>): switched on and off like ours.
+    /// Each is set once here; one Twitch refuses (403, created by another app or by hand) is only reported.
+    /// </summary>
+    private async Task SyncExtrasAsync(bool active, ChannelRewards channel, CancellationToken ct)
+    {
+        var s = Settings;
+        var kindIds = s.TwitchIds.Values.ToHashSet();
+        var extras = new List<ExtraReward>();
+        var locked = new List<string>();
+        foreach (var r in channel.All)
+        {
+            if (kindIds.Contains(r.Id)) continue;
+            if (s.Rewards.FirstOrDefault(c => SameTitle(c.Title, r.Title)) is { } kind)
+            {
+                if (kind.Enabled && !channel.Mine.Contains(r.Id)) locked.Add(r.Title); // blokuje założenie naszej (SyncAsync)
+                continue;
+            }
+            if (!ExtraReward.HasPrefix(r.Title)) continue;
+            var enabled = s.Extras.FirstOrDefault(e => e.TwitchId == r.Id)?.Enabled ?? true;
+            var switchable = await TrySwitchAsync(r.Id, r.Title, enabled && active, ct);
+            if (!switchable) locked.Add(r.Title);
+            extras.Add(new ExtraReward(r.Id, r.Title, r.Cost, enabled, switchable));
+        }
+        _locked = locked;
+        lock (_gate)
+        {
+            var merged = KeepEnabled(extras, _settings.Extras); // okno mogło zapisać coś w międzyczasie
+            if (merged.SequenceEqual(_settings.Extras)) return;
+            _settings = _settings with { Extras = merged };
+            SaveLocked();
+        }
+    }
+
+    /// <summary>False when Twitch does not let this app change the reward.</summary>
+    private async Task<bool> TrySwitchAsync(string rewardId, string title, bool enabled, CancellationToken ct)
+    {
+        try
+        {
+            await _api.UpdateRewardAsync(rewardId, new JsonObject { ["is_enabled"] = enabled }, ct);
+            return true;
+        }
+        catch (TwitchAuthException ex) when (ex.HttpStatus == 403)
+        {
+            _log.LogWarning("Twitch does not let Tf3Bridge switch reward \"{Title}\": {Message}", title, ex.Message);
+            return false;
+        }
+    }
+
+    /// <summary><paramref name="extras"/> with <see cref="ExtraReward.Enabled"/> taken from the matching entry of <paramref name="from"/>.</summary>
+    private static List<ExtraReward> KeepEnabled(IReadOnlyList<ExtraReward> extras, IReadOnlyList<ExtraReward> from) =>
+        [.. extras.Select(e => from.FirstOrDefault(f => f.TwitchId == e.TwitchId) is { } f ? e with { Enabled = f.Enabled } : e)];
 
     private async Task SetActiveAsync(bool active, CancellationToken ct)
     {
@@ -445,6 +532,8 @@ public sealed class RewardService
             if (Settings.TwitchIds.TryGetValue(config.Kind, out var id))
                 await _api.UpdateRewardAsync(id, new JsonObject { ["is_enabled"] = active }, ct);
         }
+        foreach (var extra in Settings.Extras.Where(e => e.Switchable && e.Enabled))
+            await TrySwitchAsync(extra.TwitchId, extra.Title, active, ct);
     }
 
     /// <param name="active">false = hidden from viewers (is_enabled), so nobody buys while the game cannot handle it.</param>

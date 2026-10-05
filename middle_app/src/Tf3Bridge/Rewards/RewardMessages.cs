@@ -28,12 +28,14 @@ public static class RewardMessages
         var text = config.Kind switch
         {
             RewardKind.AdoptTown => $"{who} miasto {target} jest teraz Twoje!",
+            RewardKind.BuyIndustry => $"{who} zakład {target} jest teraz Twój!",
             RewardKind.BoostTown => $"{who} boost miasta {target} (+{percent}%) działa {when}.",
             RewardKind.BoostIndustry => $"{who} boost przemysłu {target} (+{percent}%) działa {when}.",
             RewardKind.StopLine => $"{who} linia {target} stoi {when}.",
             RewardKind.HoldLine => $"{who} pojazdy linii {target} czekają na przystankach {when}.",
             RewardKind.CreateTown => $"{who} miasto {target} zostało założone i jest Twoje!",
-            _ => $"{who} zakład {target} został zbudowany i jest Twój!",
+            RewardKind.CreateIndustry => $"{who} zakład {target} został zbudowany i jest Twój!",
+            _ => throw new ArgumentOutOfRangeException(nameof(config)),
         };
         return string.IsNullOrEmpty(link) ? text : $"{text} {link}";
     }
@@ -66,6 +68,7 @@ public static class RewardMessages
     private static string Label(RewardKind kind) => kind switch
     {
         RewardKind.AdoptTown => "kupno miasta",
+        RewardKind.BuyIndustry => "kupno zakładu",
         RewardKind.BoostTown => "boost miasta",
         RewardKind.BoostIndustry => "boost przemysłu",
         RewardKind.StopLine => "zatrzymanie linii",

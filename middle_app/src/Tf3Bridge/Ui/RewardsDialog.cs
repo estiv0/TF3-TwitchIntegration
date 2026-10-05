@@ -6,7 +6,7 @@ namespace Tf3Bridge.Ui;
 
 /// <summary>
 /// Channel points rewards: on/off, title, prompt, cost, limits and effect strength (for balancing),
-/// plus where viewers may build each industry type.
+/// where viewers may build each industry type, and which of the streamer's own TF3 rewards Tf3Bridge switches with the game.
 /// </summary>
 public sealed class RewardsDialog : Form
 {
@@ -27,6 +27,12 @@ public sealed class RewardsDialog : Form
         AllowUserToResizeRows = false, RowHeadersVisible = false, SelectionMode = DataGridViewSelectionMode.CellSelect,
         BackgroundColor = SystemColors.Window, EditMode = DataGridViewEditMode.EditOnEnter,
     };
+    private readonly DataGridView _extrasGrid = new()
+    {
+        Width = 1060, Height = 120, AllowUserToAddRows = false, AllowUserToDeleteRows = false,
+        AllowUserToResizeRows = false, RowHeadersVisible = false, SelectionMode = DataGridViewSelectionMode.CellSelect,
+        BackgroundColor = SystemColors.Window, EditMode = DataGridViewEditMode.EditOnEnter,
+    };
     private readonly IReadOnlyList<RewardConfig> _original;
 
     private static readonly IndustryZone[] ZoneChoices =
@@ -41,8 +47,14 @@ public sealed class RewardsDialog : Form
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public IReadOnlyDictionary<string, IndustryZone> Zones { get; private set; }
 
-    public RewardsDialog(IReadOnlyList<RewardConfig> rewards, bool chatMessages, IReadOnlyDictionary<string, IndustryZone>? zones, string status)
+    /// <summary>The streamer's own TF3 rewards; only <see cref="ExtraReward.Enabled"/> changes here.</summary>
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public IReadOnlyList<ExtraReward> Extras { get; private set; }
+
+    public RewardsDialog(IReadOnlyList<RewardConfig> rewards, bool chatMessages, IReadOnlyDictionary<string, IndustryZone>? zones,
+        IReadOnlyList<ExtraReward> extras, string status)
     {
+        Extras = extras;
         Zones = IndustryZones.Normalize(zones);
         _original = Rewards = rewards;
         ChatMessages = _chat.Checked = chatMessages;
@@ -112,6 +124,26 @@ public sealed class RewardsDialog : Form
         var zonesRow = new FlowLayoutPanel { AutoSize = true, Margin = new Padding(0, 10, 0, 0) };
         zonesRow.Controls.AddRange([_zonesGrid, zonesHint]);
 
+        var extrasHint = new Label
+        {
+            AutoSize = true, MaximumSize = new Size(1060, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 10, 0, 0),
+            Text = $"Twoje nagrody z tytułem zaczynającym się od „{ExtraReward.Prefix}” (bez akcji w grze; wykupienia zostają w kolejce Twitcha dla Ciebie). "
+                 + "Zaznaczone Tf3Bridge włącza razem z grą i wyłącza, gdy gra nie wysyła danych albo Tf3Bridge się zamyka. "
+                 + "Lista jest odczytywana przy połączeniu z Twitchem (start Tf3Bridge) i po zapisaniu tego okna.",
+        };
+        _extrasGrid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "enabled", HeaderText = "Wł.", Width = 36 });
+        _extrasGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "title", HeaderText = "Tytuł", Width = 300, ReadOnly = true });
+        _extrasGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "cost", HeaderText = "Koszt", Width = 70, ReadOnly = true });
+        _extrasGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "state", HeaderText = "Stan", Width = 630, ReadOnly = true });
+        foreach (var e in extras)
+        {
+            var i = _extrasGrid.Rows.Add(e.Enabled, e.Title, e.Cost,
+                e.Switchable ? "Tf3Bridge włącza i wyłącza ją z grą" : "Twitch nie pozwala Tf3Bridge jej zmieniać (dodana ręcznie w panelu)");
+            if (!e.Switchable) _extrasGrid.Rows[i].Cells["state"].Style.ForeColor = Color.DarkOrange;
+        }
+        if (extras.Count == 0) extrasHint.Text += "\nNa kanale nie ma takich nagród.";
+        _extrasGrid.Visible = extras.Count > 0;
+
         var ok = new Button { Text = "Zapisz i wyślij na Twitcha", AutoSize = true, MinimumSize = new Size(90, 28) };
         var cancel = new Button { Text = "Anuluj", DialogResult = DialogResult.Cancel, AutoSize = true, MinimumSize = new Size(90, 28) };
         var defaults = new Button { Text = "Przywróć domyślne", AutoSize = true, MinimumSize = new Size(90, 28) };
@@ -120,7 +152,7 @@ public sealed class RewardsDialog : Form
         CancelButton = cancel;
 
         var root = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, Padding = new Padding(14), Dock = DockStyle.Fill };
-        root.Controls.AddRange([hint, _grid, _chat, zonesRow, _error, buttons]);
+        root.Controls.AddRange([hint, _grid, _chat, zonesRow, extrasHint, _extrasGrid, _error, buttons]);
         Controls.Add(root);
 
         ok.Click += (_, _) =>
@@ -130,6 +162,7 @@ public sealed class RewardsDialog : Form
                 Rewards = list;
                 ChatMessages = _chat.Checked;
                 Zones = ReadZones();
+                Extras = ReadExtras();
                 DialogResult = DialogResult.OK;
             }
             else _error.Text = error;
@@ -193,6 +226,12 @@ public sealed class RewardsDialog : Form
         return true;
     }
 
+    private List<ExtraReward> ReadExtras()
+    {
+        _extrasGrid.EndEdit();
+        return [.. Extras.Select((e, i) => e with { Enabled = _extrasGrid.Rows[i].Cells["enabled"].Value is true })];
+    }
+
     private Dictionary<string, IndustryZone> ReadZones()
     {
         _zonesGrid.EndEdit();
@@ -218,6 +257,7 @@ public sealed class RewardsDialog : Form
     public static string KindLabel(RewardKind kind) => kind switch
     {
         RewardKind.AdoptTown => "Kupno miasta",
+        RewardKind.BuyIndustry => "Kupno zakładu",
         RewardKind.BoostTown => "Boost miasta",
         RewardKind.BoostIndustry => "Boost przemysłu",
         RewardKind.StopLine => "Stop linii (od razu)",

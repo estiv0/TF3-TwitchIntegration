@@ -275,16 +275,17 @@ public sealed class MainForm : Form
         {
             RewardState.Ok => ($"Nagrody: {r.Message}", Color.FromArgb(46, 160, 67)),
             RewardState.Error => ($"Nagrody: błąd: {r.Message}", Color.Firebrick),
-            RewardState.Inactive or RewardState.NotAffiliate => ($"Nagrody: {r.Message}", Color.DarkOrange),
+            RewardState.Inactive or RewardState.NotAffiliate or RewardState.Warning => ($"Nagrody: {r.Message}", Color.DarkOrange),
             _ => ($"Nagrody: {r.Message}", SystemColors.GrayText),
         };
     }
 
     private void EditRewards()
     {
-        using var dialog = new RewardsDialog(_rewards.Settings.Rewards, _rewards.Settings.ChatMessages, _rewards.Settings.Zones, _rewards.Status.Message);
+        using var dialog = new RewardsDialog(_rewards.Settings.Rewards, _rewards.Settings.ChatMessages, _rewards.Settings.Zones, _rewards.Settings.Extras,
+            _rewards.Status.Message);
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
-        _rewards.UpdateSettings(_rewards.Settings with { Rewards = dialog.Rewards, ChatMessages = dialog.ChatMessages, Zones = dialog.Zones });
+        _rewards.UpdateSettings(_rewards.Settings with { Rewards = dialog.Rewards, ChatMessages = dialog.ChatMessages, Zones = dialog.Zones, Extras = dialog.Extras });
         _log.CreateLogger(nameof(MainForm)).LogInformation("Reward settings saved");
     }
 
