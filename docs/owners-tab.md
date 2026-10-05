@@ -19,7 +19,7 @@ z `dynamic.json` (`web/js/owners.js`, `ownersIndex`). **Mod i Tf3Bridge bez zmia
 |---|---|
 | Miasta | `towns[].owner` |
 | Zakłady | `industries[].owner` |
-| Stacje | `stations[].owner`; stacja zakładu tego samego widza jest liczona przy zakładzie |
+| Stacje | `stations[].owner`; stacja zakładu tego samego widza jest liczona przy zakładzie. Gra nazywa stacje od miasta, także kupionego („Dworzec Szczecin \| estiv0 Zachód”), więc `splitAllOwners` najpierw zamienia w nazwach stacji i przystanków pełne nazwy miast i zakładów z właścicielem na same nazwy („Dworzec Szczecin Zachód”, bez właściciela) |
 | Linie | `lines[].owner` |
 
 Decyzje:
@@ -37,6 +37,10 @@ Zrobione:
 - szukanie po nazwie widza i po nazwach jego obiektów („Szczecin” pokaże właściciela Szczecina);
 - szczegóły widza w pływającym okienku: główne miasto, podsumowanie, klikalne listy obiektów (★ przy
   głównym mieście); najechanie na obiekt podświetla go na mapie;
+- pojazdy na liniach widza: liczba (też na liście), podział według nośnika, w drodze / na przystanku /
+  zatrzymane (z `vehicles[]`; bez nich tylko suma `lines[].vehicleCount`); statystyki jego linii razem:
+  zysk z 12 miesięcy i z poprzedniego roku, przewiezione, przepustowość (sumy), zapełnienie (średnia ważona
+  liczbą pojazdów) i ładunek w pojazdach teraz (suma per ładunek);
 - nazwa właściciela w szczegółach każdego obiektu jest linkiem do jego majątku;
 - adres `#owner=<klucz>` (nazwa małymi literami, `encodeURIComponent`), działa też otwarty od zera;
 - pasek zakładek przewija się w poziomie, bo sześć zakładek nie mieści się w panelu 360 px ani na telefonie.

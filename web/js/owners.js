@@ -8,8 +8,9 @@ export const ownerKey = (name) => String(name ?? "").trim().toLocaleLowerCase();
 
 /**
  * dynamic (po splitAllOwners) -> Map(klucz -> { key, name, towns[], industries[], stations[], lines[],
- * main, size, profit12m, score }). main = największe miasto widza, size = suma wielkości jego miast,
- * profit12m = zysk jego linii z 12 miesięcy (null bez statystyk), score = majątek do sortowania.
+ * main, size, profit12m, lineStats, fleet, score }). main = największe miasto widza, size = suma wielkości
+ * jego miast, profit12m = zysk jego linii z 12 miesięcy (null bez statystyk), lineStats = statystyki jego
+ * linii razem, fleet = pojazdy na jego liniach, score = majątek do sortowania.
  */
 export function ownersIndex(dynamic, stationIndustry = industryOfStation(dynamic)) {
   const owners = new Map();
@@ -41,9 +42,70 @@ export function ownersIndex(dynamic, stationIndustry = industryOfStation(dynamic
     o.lines.sort((a, b) => (b.vehicleCount ?? 0) - (a.vehicleCount ?? 0));
     o.main = o.towns[0] ?? null;
     o.size = o.towns.reduce((n, x) => n + townSize(x), 0);
-    o.profit12m = o.lines.reduce((sum, l) => (l.stats?.profit12m == null ? sum : (sum ?? 0) + l.stats.profit12m), null);
+    o.profit12m = sumOf(o.lines, (l) => l.stats?.profit12m);
+    o.lineStats = lineTotals(o.lines);
+    o.fleet = fleetOf(o.lines, dynamic.vehicles);
     // Miasto i zakład są warte więcej niż stacja czy linia.
     o.score = 3 * (o.towns.length + o.industries.length) + o.stations.length + o.lines.length;
   }
   return owners;
+}
+
+// Suma wartości, null gdy żadna pozycja jej nie ma (brak statystyk to nie zero).
+const sumOf = (items, get) => items.reduce((sum, x) => (get(x) == null ? sum : (sum ?? 0) + get(x)), null);
+
+/**
+ * Statystyki linii widza razem (lines[].stats z moda): zysk, przewiezione i przepustowość - sumy;
+ * zapełnienie - średnia ważona liczbą pojazdów linii; ładunek w pojazdach teraz - suma per ładunek.
+ * null, gdy żadna linia nie ma statystyk.
+ */
+function lineTotals(lines) {
+  const withStats = lines.filter((l) => l.stats);
+  if (!withStats.length) return null;
+  const prevYear = withStats.find((l) => l.stats.prevYear != null)?.stats.prevYear ?? null;
+  let loadSum = 0, loadWeight = 0;
+  const cargo = new Map();
+  for (const { stats: s, vehicleCount } of withStats) {
+    if (s.load != null) {
+      const w = vehicleCount || 1;
+      loadSum += s.load * w;
+      loadWeight += w;
+    }
+    for (const c of s.cargo ?? []) {
+      const e = cargo.get(c.cargo) ?? { cargo: c.cargo, used: 0, capacity: 0 };
+      e.used += c.used ?? 0;
+      e.capacity += c.capacity ?? 0;
+      cargo.set(c.cargo, e);
+    }
+  }
+  return {
+    profit12m: sumOf(withStats, (l) => l.stats.profit12m),
+    prevYear,
+    profitPrevYear: prevYear == null ? null : sumOf(withStats, (l) => (l.stats.prevYear === prevYear ? l.stats.profitPrevYear : null)),
+    transported12m: sumOf(withStats, (l) => l.stats.transported12m),
+    rate: sumOf(withStats, (l) => l.stats.rate),
+    load: loadWeight ? loadSum / loadWeight : null,
+    cargo: [...cargo.values()].sort((a, b) => b.capacity - a.capacity),
+  };
+}
+
+/**
+ * Pojazdy na liniach widza: { total, byCarrier: Map(nośnik -> liczba), enRoute, atStop, stopped }.
+ * Bez dynamic.vehicles (pojazdy wyłączone w modzie) tylko total z lines[].vehicleCount, reszta null.
+ */
+function fleetOf(lines, vehicles) {
+  if (!Array.isArray(vehicles)) {
+    return { total: sumOf(lines, (l) => l.vehicleCount), byCarrier: null, enRoute: null, atStop: null, stopped: null };
+  }
+  const ids = new Set(lines.map((l) => l.id));
+  const fleet = { total: 0, byCarrier: new Map(), enRoute: 0, atStop: 0, stopped: 0 };
+  for (const v of vehicles) {
+    if (!ids.has(v.line)) continue;
+    fleet.total++;
+    fleet.byCarrier.set(v.carrier, (fleet.byCarrier.get(v.carrier) ?? 0) + 1);
+    if (v.stopped) fleet.stopped++;
+    else if (v.state === "AT_TERMINAL") fleet.atStop++;
+    else fleet.enRoute++;
+  }
+  return fleet;
 }

@@ -306,6 +306,9 @@ button { font: inherit; color: inherit; }
 .own-count .ico { width: 14px; height: 14px; }
 .own-line { width: 10px; height: 3px; border-radius: 2px; background: var(--muted); }
 .own-main { color: var(--accent); }
+.own-fleet { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; font-size: 13px; font-variant-numeric: tabular-nums; }
+.own-fleet span { display: inline-flex; align-items: center; gap: 4px; }
+.own-lines { margin-top: 10px; } /* lista linii pod ich statystykami razem */
 
 /* Efekty od widzów (nagrody za punkty kanału): znaczki na liście i lista w szczegółach. */
 .fx-badge { flex: none; font-size: 12px; line-height: 1; cursor: help; }

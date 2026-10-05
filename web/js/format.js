@@ -147,11 +147,35 @@ function splitOwners(items) {
   }
 }
 
-/** Miasta, zakłady, stacje i linie (z przystankami) z dynamic.json. */
+/**
+ * Miasta, zakłady, stacje i linie (z przystankami) z dynamic.json.
+ * Gra nazywa stacje od miasta, także kupionego: "Dworzec Szczecin | estiv0 Zachód" to nie stacja widza
+ * "estiv0 Zachód", tylko "Dworzec Szczecin Zachód". Dlatego w nazwach stacji i przystanków pełne nazwy
+ * miast i zakładów z właścicielem zamieniamy najpierw na same nazwy.
+ */
 export function splitAllOwners(dynamic) {
+  const owned = [...(dynamic.towns ?? []), ...(dynamic.industries ?? [])]
+    .map((x) => x.name).filter((n) => typeof n === "string" && n.includes("|"))
+    .sort((a, b) => b.length - a.length) // dłuższa nazwa pierwsza ("Nowa Góra | x" przed "Góra | x")
+    .map((full) => ({
+      re: new RegExp(`${escapeRegex(full)}(?![\\p{L}\\p{N}_])`, "gu"), // "Bar | ab" nie trafia w "Bar | abc"
+      plain: full.slice(0, full.lastIndexOf("|")).trim(),
+    }));
+  const unOwn = (items) => {
+    if (!owned.length) return;
+    for (const x of items ?? []) {
+      if (typeof x.name !== "string" || !x.name.includes("|")) continue;
+      for (const { re, plain } of owned) x.name = x.name.replace(re, plain);
+    }
+  };
+  unOwn(dynamic.stations);
+  for (const l of dynamic.lines ?? []) unOwn(l.stops);
+
   for (const key of ["towns", "industries", "stations", "lines"]) splitOwners(dynamic[key]);
   for (const l of dynamic.lines ?? []) splitOwners(l.stops);
 }
+
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // Efekty z nagród za punkty kanału (dynamic.effects z moda): rodzaj efektu -> lista obiektów.
 const EFFECT_TARGET = { townBoost: "towns", industryBoost: "industries", lineStop: "lines", lineHold: "lines" };

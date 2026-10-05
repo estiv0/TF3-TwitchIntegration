@@ -489,7 +489,44 @@ function assetCounts(o) {
     + n(o.industries.length, `<span class="dot dot-processing"></span>`, t("tab.industries"))
     + n(o.stations.length, iconHtml(stationImg({ kind: "RAIL" }), "RAIL"), t("tab.stations"))
     + n(o.lines.length, `<span class="swatch own-line"></span>`, t("tab.lines"))
+    + n(o.fleet.total, `<span class="dot dot-vehicle"></span>`, t("line.vehicles"))
     + `</span>`;
+}
+
+// Pojazdy na liniach widza: "Pojazdy (N)", podział według nośnika i stanu (owners.js: fleet).
+function ownerFleetHtml(o) {
+  const f = o.fleet;
+  if (!o.lines.length || !f.total) return "";
+  const carriers = f.byCarrier?.size
+    ? `<p class="own-fleet">${[...f.byCarrier].sort((a, b) => b[1] - a[1]).map(([c, n]) =>
+      `<span title="${esc(carrierName(c) ?? c)}">${carrierIcon(c, c) || "•"} ${fmtInt(n)}</span>`).join("")}</p>`
+    : "";
+  const states = f.byCarrier
+    ? `<dl class="stats">${stat(t("owners.enRoute"), fmtInt(f.enRoute)) + stat(t("owners.atStop"), fmtInt(f.atStop))
+      + (f.stopped ? stat(t("owners.stopped"), `<span class="neg">${fmtInt(f.stopped)}</span>`) : "")}</dl>`
+    : "";
+  return `<h3>${esc(t("owners.vehicles", { n: fmtInt(f.total) }))}</h3>${carriers}${states}`;
+}
+
+// Linie widza: statystyki wszystkich razem (owners.js: lineStats), lista linii i ładunek w pojazdach teraz.
+function ownerLinesHtml(o) {
+  if (!o.lines.length) return "";
+  const s = o.lineStats;
+  const rows = o.lines.map((l) => `
+    <li><button type="button" data-line="${l.id}">
+      <span class="swatch" style="background:${rgb(l.color)}"></span>${carrierIcon(l.carrier, l.carrier)}
+      <span class="link-name">${esc(l.name)}</span>${effectBadges(l)}
+      <span class="link-value">${money(l.stats?.profit12m)}</span>
+    </button></li>`).join("");
+  const cargo = s?.cargo.length
+    ? `<h3>${esc(t("line.loadNow"))}</h3><ul class="chips">${s.cargo.map((c) =>
+      `<li>${cargoLabel(c.cargo)}<span>${fmtInt(c.used)} / ${fmtInt(c.capacity)}</span></li>`).join("")}</ul>`
+    : "";
+  return `
+    <h3 title="${esc(t("owners.linesHint"))}">${esc(t("tab.lines"))}</h3>
+    ${s ? `<dl class="stats">${lineStats(s)}</dl>` : ""}
+    <ul class="line-links own-lines">${rows}</ul>
+    ${cargo}`;
 }
 
 // Majątek widza: podsumowanie i klikalne obiekty (data-pick, linie: data-line); główne (największe) miasto pierwsze.
@@ -511,12 +548,6 @@ function ownerDetail(o, stationIndustry) {
     const ind = stationIndustry.get(s.id);
     return link(ind != null ? `industry:${ind}` : `station:${s.id}`, s.name ?? stationName(s.kind), iconHtml(stationImg(s), s.kind));
   }).join("");
-  const lines = o.lines.map((l) => `
-    <li><button type="button" data-line="${l.id}">
-      <span class="swatch" style="background:${rgb(l.color)}"></span>${carrierIcon(l.carrier, l.carrier)}
-      <span class="link-name">${esc(l.name)}</span>${effectBadges(l)}
-      <span class="link-value">${money(l.stats?.profit12m)}</span>
-    </button></li>`).join("");
 
   const mainTown = o.main
     ? ` · ${esc(t("owners.main"))}: <button type="button" class="owner-link" data-pick="town:${o.main.id}">${esc(o.main.name)}</button>`
@@ -528,12 +559,13 @@ function ownerDetail(o, stationIndustry) {
       ${o.towns.length ? stat(t("tab.towns"), fmtInt(o.towns.length)) + stat(t("owners.size"), fmtInt(o.size)) : ""}
       ${o.industries.length ? stat(t("tab.industries"), fmtInt(o.industries.length)) : ""}
       ${o.stations.length ? stat(t("tab.stations"), fmtInt(o.stations.length)) : ""}
-      ${o.lines.length ? stat(t("tab.lines"), fmtInt(o.lines.length)) + stat(t("line.profit12m"), money(o.profit12m)) : ""}
+      ${o.lines.length ? stat(t("tab.lines"), fmtInt(o.lines.length)) : ""}
     </dl>
     ${section(t("tab.towns"), towns)}
     ${section(t("tab.industries"), industries)}
     ${section(t("tab.stations"), stations)}
-    ${section(t("tab.lines"), lines)}`;
+    ${ownerFleetHtml(o)}
+    ${ownerLinesHtml(o)}`;
 }
 
 // Nazwa efektu z siłą: "Boost miasta +50%".
