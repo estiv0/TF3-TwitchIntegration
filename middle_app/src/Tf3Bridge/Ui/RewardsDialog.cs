@@ -12,7 +12,7 @@ public sealed class RewardsDialog : Form
 {
     private readonly DataGridView _grid = new()
     {
-        Width = 1060, Height = 230, AllowUserToAddRows = false, AllowUserToDeleteRows = false,
+        Width = 1060, Height = 300, AllowUserToAddRows = false, AllowUserToDeleteRows = false,
         AllowUserToResizeRows = false, RowHeadersVisible = false, SelectionMode = DataGridViewSelectionMode.CellSelect,
         AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells, BackgroundColor = SystemColors.Window,
     };
@@ -81,6 +81,10 @@ public sealed class RewardsDialog : Form
             Text = "Tylko te nagrody mogą zmieniać grę (czat jest wyłącznie informacyjny). Tf3Bridge tworzy je na Twitchu sam "
                  + "i pauzuje, gdy gra nie wysyła danych. Widz wpisuje nazwę miasta, zakładu albo linii (przy nowym mieście i zakładzie: wkleja kod z mapy); "
                  + "gdy jej nie ma, cel jest niejednoznaczny, miejsce się nie nadaje albo gra nie wykona akcji, punkty wracają. W opisie można użyć {months}, {percent} i {site} (adres mapy). "
+                 + "Sabotaże (strajk, skarbówka, chrzczone paliwo, hamulce) działają tylko na obiekty innych widzów; przy skarbówce widz wpisuje nick ofiary. "
+                 + "Mnożnik poniżej 1 to spadek (0,5 = -50%), a przy sabotażu hamulców to największa część pojazdów linii, która zniknie (0,5 = do 50%, zawsze co najmniej 1). "
+                 + "Bomba, linia, natura i pojazdy nie robią nic w grze: Tf3Bridge tylko je tworzy i włącza razem z grą, a wykupienia zostają w kolejce Twitcha, "
+                 + "gdzie sam je wykonujesz i akceptujesz albo zwracasz (przy nich wybierasz też, czy widz wpisuje tekst). "
                  + "Limit 0 = bez limitu. Czas efektów jest w miesiącach gry (miesiąc to ok. 1–1,5 min przy prędkości 1×; na pauzie efekt stoi).\n\nStan: " + status,
         };
 
@@ -94,16 +98,19 @@ public sealed class RewardsDialog : Form
         AddText("perUser", "Limit / widz", 75);
         AddText("months", "Miesiące gry", 75);
         AddText("factor", "Mnożnik", 65);
+        _grid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "input", HeaderText = "Widz wpisuje tekst", Width = 70 });
         _grid.Columns.Insert(1, new DataGridViewTextBoxColumn { Name = "kind", HeaderText = "Akcja", Width = 140, ReadOnly = true });
 
         foreach (var r in rewards)
         {
             var i = _grid.Rows.Add(r.Enabled, KindLabel(r.Kind), r.Title, r.Prompt, r.Cost, r.CooldownSec, r.MaxPerStream,
-                r.MaxPerUserPerStream, RewardKinds.HasMonths(r.Kind) ? r.Months : "", RewardKinds.HasFactor(r.Kind) ? r.Factor.ToString("0.##", CultureInfo.CurrentCulture) : "");
+                r.MaxPerUserPerStream, RewardKinds.HasMonths(r.Kind) ? r.Months : "", RewardKinds.HasFactor(r.Kind) ? r.Factor.ToString("0.##", CultureInfo.CurrentCulture) : "",
+                r.RequiresInput);
             var row = _grid.Rows[i];
             row.Tag = r.Kind;
             if (!RewardKinds.HasMonths(r.Kind)) Lock(row.Cells["months"]);
             if (!RewardKinds.HasFactor(r.Kind)) Lock(row.Cells["factor"]);
+            if (!RewardKinds.Manual(r.Kind)) Lock(row.Cells["input"]); // gra potrzebuje nazwy celu
         }
 
         _zonesGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "industry", HeaderText = "Zakład", Width = 170, ReadOnly = true });
@@ -225,13 +232,18 @@ public sealed class RewardsDialog : Form
                 return false;
             }
             var factor = old.Factor;
+            var range = RewardKinds.FactorRange(kind);
             if (RewardKinds.HasFactor(kind) && (!double.TryParse(Text("factor").Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out factor)
-                || factor < RewardConfig.FactorRange.Min || factor > RewardConfig.FactorRange.Max))
+                || factor < range.Min || factor > range.Max))
             {
-                error = $"{KindLabel(kind)}: mnożnik od {RewardConfig.FactorRange.Min} do {RewardConfig.FactorRange.Max} (np. 1,5 = +50%).";
+                var example = kind == RewardKind.BrakeSabotage ? "0,5 = do 50% pojazdów" : range.Max <= 1 ? "0,5 = -50%" : "1,5 = +50%";
+                error = string.Create(CultureInfo.CurrentCulture, $"{KindLabel(kind)}: mnożnik od {range.Min} do {range.Max} (np. {example}).");
                 return false;
             }
-            list.Add(new RewardConfig(kind, row.Cells["enabled"].Value is true, title, prompt, cost, cooldown, perStream, perUser, months, factor));
+            list.Add(new RewardConfig(kind, row.Cells["enabled"].Value is true, title, prompt, cost, cooldown, perStream, perUser, months, factor)
+            {
+                UserInput = row.Cells["input"].Value is true,
+            });
         }
         return true;
     }
@@ -273,6 +285,16 @@ public sealed class RewardsDialog : Form
         RewardKind.StopLine => "Stop linii (od razu)",
         RewardKind.HoldLine => "Linia czeka na stacjach",
         RewardKind.CreateTown => "Nowe miasto (kod z mapy)",
-        _ => "Nowy zakład (kod z mapy)",
+        RewardKind.CreateIndustry => "Nowy zakład (kod z mapy)",
+        RewardKind.StrikeIndustry => "Strajk w zakładzie",
+        RewardKind.TaxRaid => "Nalot skarbówki (nick)",
+        RewardKind.PremiumFuel => "Paliwo premium",
+        RewardKind.BadFuel => "Chrzczone paliwo",
+        RewardKind.BrakeSabotage => "Sabotaż hamulców",
+        RewardKind.Bomb => "Bomba (streamer)",
+        RewardKind.Line => "Linia (streamer)",
+        RewardKind.Nature => "Natura (streamer)",
+        RewardKind.RoadVehicle => "Pojazd drogowy (streamer)",
+        _ => "Pojazd specjalny (streamer)",
     };
 }

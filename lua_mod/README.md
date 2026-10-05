@@ -153,16 +153,25 @@ Tak samo jak edytor mapy gry (`gui/map_editor/map_editor.tl` w `gui.zip`):
 | Efekt | Co robi | Cofnięcie po `months` miesiącach gry |
 |---|---|---|
 | `townBoost` | `sizeFactors` miasta × `factor` (`makeTownUpdateSizeCmd`, budynki dorastają stopniowo) | stare `sizeFactors` |
-| `industryBoost` | produktywność zakładu × `factor` (`makeStockListSetModifiersCmd`) | produktywność sprzed boostu |
+| `industryBoost` | produktywność zakładu × `factor` (`makeStockListSetModifiersCmd`) | produktywność sprzed efektów |
+| `industryStrike` | jak wyżej, `factor` 0,01–1 (strajk) | jak wyżej |
+| `industryTaxRaid` | jak wyżej na wszystkich zakładach z `entities` („1,2,3”); klucz efektu to `target` (widz-ofiara) | jak wyżej |
+| `lineFuelPremium` / `lineFuelBad` | `topSpeedScale` pojazdów linii × `factor` (`makeVehicleSetModifiersCmd`, pozostałe skale bez zmian), także pojazdów dokupionych w trakcie | skala sprzed efektów; pojazd, który opuścił linię, wraca od razu |
 | `lineStop` | pojazdy linii zatrzymane jak przyciskiem w grze (`makeVehicleSetStoppedByUserCmd`), także na szlaku | start tych, które zatrzymał efekt |
 | `lineHold` | ręczny odjazd (`makeVehicleSetManualDepartureCmd`): pojazdy czekają na przystankach | ręczny odjazd wyłączony + `makeVehicleTryToDepartCmd` |
 
-- `factor` 1–5, `months` 1–60 (miesiąc = 365/12 dni gry). Czas liczy się w czasie gry, więc na pauzie efekt stoi. Miesiące, bo dzień gry trwa tylko 2–3 s.
-- Drugi efekt tego samego rodzaju na tym samym celu przedłuża czas. Siła rośnie tylko wtedy, gdy nowe wykupienie ma większy mnożnik (np. po zmianie ustawień).
-- Skrypt gry `industry_workers` też ustawia produktywność (boost od pracowników). Dlatego co sekundę pilnujemy produktywności. Po naszym ustawieniu mod czeka kilka sekund, aż gra je przyjmie, i zapamiętuje faktyczną wartość (gra może mieć własny limit; log: `game keeps productivity …`). Dopiero zmiana względem tej wartości oznacza ingerencję innego skryptu: wtedy nowa wartość staje się bazą (log: `productivity changed by the game …`).
+- `factor` w zakresie rodzaju efektu (boosty 1–5, paliwo premium 1–3, strajk i skarbówka 0,01–1, chrzczone paliwo 0,1–1), `months` 1–60 (miesiąc = 365/12 dni gry). Czas liczy się w czasie gry, więc na pauzie efekt stoi. Miesiące, bo dzień gry trwa tylko 2–3 s.
+- Drugi efekt tego samego rodzaju na tym samym celu przedłuża czas (nalot na tego samego widza dokłada też jego nowe zakłady). Siła rośnie tylko wtedy, gdy nowe wykupienie ma mocniejszy mnożnik (dalej od 1, np. po zmianie ustawień).
+- **Sterownik wartości** (`Controller` w `effects.lua`): produktywność zakładu i prędkość pojazdu ustawia jeden sterownik na obiekt, z bazą (wartość sprzed efektów) × iloczyn mnożników wszystkich aktywnych efektów. Boost ×2 i strajk ×0,01 na tym samym zakładzie dają ×0,02, a po końcu strajku wraca ×2; bez tego efekty przejmowałyby nawzajem swoje wartości jako nową bazę. Bazy są zapisywane w save'ie (`state.effectCtl`); boosty ze starszych save'ów przenoszą swoją bazę do sterownika przy wczytaniu.
+- Skrypt gry `industry_workers` też ustawia produktywność (boost od pracowników). Dlatego co sekundę pilnujemy wartości. Po naszym ustawieniu mod czeka kilka sekund, aż gra je przyjmie, i zapamiętuje faktyczną wartość (gra może mieć własny limit; log: `productivity …: game keeps …`). Dopiero zmiana względem tej wartości oznacza ingerencję innego skryptu: wtedy nowa wartość staje się bazą (log: `productivity …: changed by the game …`). Tak samo dla prędkości (`speed …`). Efekt uznajemy za wykonany, gdy wartość osiągnie cel albo przesunie się od bazy w jego stronę (gra może mieć limit).
+- **Do sprawdzenia w grze:** czy silnik sam nie nadpisuje `topSpeedScale` (premie miast od landmarków) i czy +20% widać na liniach, które ogranicza prędkość toru, a nie pojazdu.
 - `lineStop` nie rusza pojazdów, które gracz zatrzymał wcześniej.
 - `lineHold`: API nie pokazuje trybu ręcznego odjazdu, więc efekt uznajemy za wykonany po wysłaniu komend.
 - Efekt niepotwierdzony w 15 s jest cofany, a Tf3Bridge zwraca punkty.
+
+### Sabotaż hamulców (`wreck` w `commands.lua`)
+
+Gra nie ma wypadków (brak komendy, stanu ani zdarzenia kolizji), więc „wypadek” to zniknięcie pojazdu: losowo od 1 do `share` (domyślnie 50%) pojazdów linii, zawsze co najmniej jeden, jest sprzedawanych (`makeVehicleSellCmd`). Kwotę ze sprzedaży (suma `vehicle.getDepreciatedValue` sprzed sprzedaży) mod zabiera wpisem w księgach (`makeJournalBookAssetCmd`, kategoria `OTHER`, kwota ujemna), żeby streamer nic na tym nie zarobił. Wpis idzie dopiero po potwierdzeniu sprzedaży (callback `true` albo żaden z wybranych pojazdów nie jeździ już na linii), więc odrzucona sprzedaż nic nie kosztuje. Pojazd sprawdzamy po komponencie `TRANSPORT_VEHICLE` i linii, nie samym `entityExists`, bo gra może oddać id sprzedanego pojazdu nowej encji. 15 s na potwierdzenie liczy się tylko wtedy, gdy czas gry płynie, bo na pauzie sprzedaż może wejść dopiero po wznowieniu. Przy `failed` log podaje, ile sprzedanych pojazdów wciąż jest na linii. Wynik: `count` (zniszczone) i `total` (pojazdy linii przed sabotażem). Nie do cofnięcia. **Jeszcze niesprawdzone w grze.**
 - **Kto i do kiedy:** komenda `effect` niesie `user` (widz z Twitcha). Wynik komendy w `results.lua` ma `until = { year, month, day }`, czyli koniec efektu w kalendarzu gry; Tf3Bridge podaje tę datę widzowi na czacie. Aktywne efekty trafiają do każdego eksportu dynamicznego jako `effects` (`effects.list()`), a strona pokazuje je przy obiektach.
 - **Zapis w save'ie:** wątek GUI nie może pisać stanu game scriptu. Lista efektów idzie więc zdarzeniem `tf3x_effects` (`makeScriptingSendEventCmd`) do `handleEvent` w wątku symulacji, który zapisuje ją w `state.effects`. Po wczytaniu gry mod odtwarza efekty z tego stanu (log: `effects: N active effect(s) restored from the save`).
 

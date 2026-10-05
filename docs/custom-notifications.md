@@ -182,6 +182,11 @@ Tytuł: `Twitch: <widz>`. Opis według rodzaju nagrody:
 | HoldLine | `<widz> kazał(a) pojazdom linii <cel> czekać na przystankach do <data>.` |
 | CreateTown | `<widz> założył(a) miasto <cel>.` |
 | CreateIndustry | `<widz> zbudował(a) zakład <cel>.` |
+| StrikeIndustry | `<widz> wywołał(a) strajk w zakładzie <cel>: produkcja -X% do <data>.` |
+| TaxRaid | `<widz> nasłał(a) skarbówkę na zakłady widza <ofiara> (N): produkcja -X% do <data>.` |
+| PremiumFuel | `<widz> zatankował(a) paliwo premium na linii <cel>: +X% prędkości do <data>.` |
+| BadFuel | `<widz> ochrzcił(a) paliwo na linii <cel>: -X% prędkości do <data>.` |
+| BrakeSabotage | `Problemy techniczne na linii <cel>: zniszczone pojazdy: N z M (sabotaż: <widz>).` (kliknięcie pokazuje linię) |
 
 Formy „kupił(a)”, bo płci nie zgadujemy po nicku. `<data>` z `ModCommandResult.Until`
 (`RewardMessages.Date`), a gdy jej brak: „na N mies.”. Bez linku do strony (w grze nie da się go kliknąć).

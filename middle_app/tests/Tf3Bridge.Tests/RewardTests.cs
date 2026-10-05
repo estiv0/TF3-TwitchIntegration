@@ -22,7 +22,7 @@ public sealed class RewardTests : IDisposable
         File.WriteAllText(Path.Combine(latest, "dynamic.json"), """
             {"towns":[{"id":10,"name":"Łódź","pos":[0,0,5]},{"id":11,"name":"Kraków | ala"},{"id":12,"name":"Nowy Sącz"},{"id":13,"name":"Nowy Targ"}],
              "industries":[{"id":20,"name":"Kopalnia węgla Bytom","file":"::/industries/coal_mine/coal_mine.con","pos":[5000,5000,5]},{"id":21,"name":"Huta Katowice | ola"}],
-             "lines":[{"id":30,"name":"Linia 1"}]}
+             "lines":[{"id":30,"name":"Linia 1"},{"id":31,"name":"Tramwaj | ola"},{"id":32,"name":"Autobus | widz"}]}
             """);
         File.WriteAllText(Path.Combine(latest, "meta.json"), "{}");
         _queue = new ModCommandQueue(Path.Combine(_dir, "cmd"), NullLogger.Instance, TimeProvider.System);
@@ -48,11 +48,12 @@ public sealed class RewardTests : IDisposable
 
     private string QueueText => File.ReadAllText(Path.Combine(_dir, "cmd", "queue.lua"));
 
-    private void ModReports(string status, string? error = null, string? until = null, long? entity = null)
+    private void ModReports(string status, string? error = null, string? until = null, long? entity = null, int? count = null, int? total = null)
     {
         var id = System.Text.RegularExpressions.Regex.Match(QueueText, "id = \"(\\w+)\"").Groups[1].Value;
         var extra = (error is null ? "" : $",\"error\":\"{error}\"") + (until is null ? "" : $",\"until\":{until}")
-            + (entity is null ? "" : $",\"entity\":{entity}");
+            + (entity is null ? "" : $",\"entity\":{entity}") + (count is null ? "" : $",\"count\":{count}")
+            + (total is null ? "" : $",\"total\":{total}");
         var json = $$"""{"results":[{"id":"{{id}}","status":"{{status}}"{{extra}}}]}""";
         var path = Path.Combine(_dir, "cmd", "results.lua");
         File.WriteAllText(path, $"function data()\r\nreturn {{\r\n\t\tjson = \"{json.Replace("\"", "\\\"")}\",\r\n\t}}\r\nend");
@@ -317,6 +318,92 @@ public sealed class RewardTests : IDisposable
         Assert.Null(service.Simulate(kind, input, "widz", false, out _));
 
         Assert.Contains(expected, QueueText);
+    }
+
+    // ------------------------------------------------------------------ sabotaże
+
+    [Theory]
+    [InlineData(RewardKind.StrikeIndustry, "huta", "effect = \"industryStrike\", entity = 21, months = 3, user = \"widz\", factor = 0.01 }")]
+    [InlineData(RewardKind.BadFuel, "tramwaj", "effect = \"lineFuelBad\", entity = 31, months = 3, user = \"widz\", factor = 0.8 }")]
+    [InlineData(RewardKind.PremiumFuel, "linia 1", "effect = \"lineFuelPremium\", entity = 30, months = 6, user = \"widz\", factor = 1.2 }")]
+    [InlineData(RewardKind.BrakeSabotage, "tramwaj", "kind = \"wreck\"")]
+    public void Sabotage_and_fuel_send_their_commands(RewardKind kind, string input, string expected)
+    {
+        var service = Service();
+
+        Assert.Null(service.Simulate(kind, input, "widz", false, out _));
+
+        Assert.Contains(expected, QueueText);
+    }
+
+    [Fact]
+    public void Brake_sabotage_sends_the_largest_share()
+    {
+        var service = Service();
+
+        service.Simulate(RewardKind.BrakeSabotage, "tramwaj", "widz", false, out _);
+
+        Assert.Contains("entity = 31, share = 0.5 }", QueueText);
+    }
+
+    [Theory]
+    [InlineData(RewardKind.StrikeIndustry, "kopalnia", "nie ma właściciela")]  // obiekty bez właściciela nie podlegają
+    [InlineData(RewardKind.BadFuel, "linia 1", "nie ma właściciela")]
+    [InlineData(RewardKind.BrakeSabotage, "autobus", "należy do Ciebie")]       // własnych nie sabotujemy
+    [InlineData(RewardKind.TaxRaid, "widz", "nie możesz nasłać skarbówki na siebie")]
+    [InlineData(RewardKind.TaxRaid, "ala", "ala nie ma zakładów")]              // ma tylko miasto
+    [InlineData(RewardKind.TaxRaid, "nikt", "widz „nikt” nie ma nic w grze")]
+    public void Sabotage_only_hits_other_viewers(RewardKind kind, string input, string error)
+    {
+        var service = Service();
+
+        var outcome = service.Simulate(kind, input, "Widz", false, out _);
+
+        Assert.True(outcome!.Refunded);
+        Assert.Contains(error, outcome.Message);
+        Assert.Equal(0, _queue.PendingCount);
+    }
+
+    [Fact]
+    public async Task Tax_raid_hits_all_industries_of_the_viewer_by_nick()
+    {
+        var service = Service();
+
+        Assert.Null(service.Simulate(RewardKind.TaxRaid, "@OLA", "widz", false, out _));
+        Assert.Contains("effect = \"industryTaxRaid\", entity = 21, months = 3, user = \"widz\", factor = 0.5, entities = \"21\", target = \"ola\"", QueueText);
+        ModReports("ok", until: """{"year":1922,"month":5,"day":12}""");
+
+        var o = Assert.Single(_outcomes);
+        Assert.Equal("@widz nalot skarbówki na zakłady widza ola (1) (-50% produkcji) trwa do 12 maja 1922 (data w grze). https://gin.estfosoft.com/#owner=ola",
+            o.ChatText);
+        var queue = await WaitForNotify();
+        Assert.Contains("text = \"widz nasłał(a) skarbówkę na zakłady widza ola (1): produkcja -50% do 12 maja 1922.\"", queue);
+    }
+
+    [Fact]
+    public async Task Brake_sabotage_reports_wrecked_vehicles_and_points_at_the_line()
+    {
+        var service = Service();
+        service.Simulate(RewardKind.BrakeSabotage, "tramwaj", "widz", false, out _);
+
+        ModReports("ok", count: 2, total: 5);
+
+        var o = Assert.Single(_outcomes);
+        Assert.Equal("@widz sabotaż hamulców na linii Tramwaj: zniszczone pojazdy: 2 z 5. https://gin.estfosoft.com/#line=31", o.ChatText);
+        var queue = await WaitForNotify();
+        Assert.Contains("text = \"Problemy techniczne na linii Tramwaj: zniszczone pojazdy: 2 z 5 (sabotaż: widz).\"", queue);
+        Assert.Contains("entity = 31", queue); // kliknięcie w powiadomienie pokazuje linię
+    }
+
+    [Fact]
+    public void Sabotage_prompts_show_the_drop_without_sign_and_factors_stay_in_their_range()
+    {
+        var strike = RewardKinds.Defaults.Single(d => d.Kind == RewardKind.StrikeIndustry);
+
+        Assert.Contains("spada o 99%", strike.TwitchPrompt);
+        Assert.Equal(0.95, (strike with { Factor = 3 }).Normalized().Factor);
+        Assert.Equal(1.05, (RewardKinds.Defaults.Single(d => d.Kind == RewardKind.PremiumFuel) with { Factor = 0.5 }).Normalized().Factor);
+        Assert.Contains("do 50%", RewardKinds.Defaults.Single(d => d.Kind == RewardKind.BrakeSabotage).TwitchPrompt);
     }
 
     [Fact]
@@ -606,8 +693,76 @@ public sealed class RewardTests : IDisposable
     [Fact]
     public void Every_reward_kind_has_a_game_notification_text()
     {
-        foreach (var config in RewardKinds.Defaults)
+        foreach (var config in RewardKinds.Defaults.Where(d => !RewardKinds.Manual(d.Kind)))
             Assert.Contains("Cel", RewardMessages.Notification(config, "widz", "Cel", null));
+    }
+
+    // ------------------------------------------------------------------ nagrody wykonywane przez streamera
+
+    [Fact]
+    public async Task Manual_rewards_are_created_and_switched_with_the_game()
+    {
+        var service = await SyncedService();
+        var bomb = service.Settings.TwitchIds[RewardKind.Bomb];
+
+        _whyInactive = "most jest zatrzymany";
+        await service.TickAsync(default);
+
+        Assert.Contains(_helix.Requests, r => r.Method == "PATCH" && r.Url.Contains($"id={bomb}") && r.Body == """{"is_enabled":false}""");
+    }
+
+    [Fact]
+    public async Task Manual_reward_redemptions_stay_in_the_twitch_queue()
+    {
+        var service = await SyncedService();
+        var rewardId = service.Settings.TwitchIds[RewardKind.RoadVehicle];
+
+        await service.HandleRedemptionForTestAsync(new ChannelPointsRedemption("red9", rewardId, "", 0, "7", "widz", "Widz", "", DateTimeOffset.UtcNow));
+        _whyInactive = "most jest zatrzymany"; // nawet gdy gra nie działa, punktów nie zwracamy
+        await service.HandleRedemptionForTestAsync(new ChannelPointsRedemption("red10", rewardId, "", 0, "7", "widz", "Widz", "", DateTimeOffset.UtcNow));
+        await Task.Delay(100);
+
+        Assert.DoesNotContain(_helix.Requests, r => r.Url.Contains("redemptions"));
+        Assert.Empty(_outcomes);
+        Assert.Equal(0, _queue.PendingCount);
+    }
+
+    [Fact]
+    public void Manual_rewards_ask_for_text_only_when_the_streamer_wants()
+    {
+        var bomb = RewardKinds.Defaults.Single(d => d.Kind == RewardKind.Bomb);
+
+        Assert.False((bool)RewardService.Body(bomb, active: true)["is_user_input_required"]!);
+        Assert.True((bool)RewardService.Body(bomb with { UserInput = true }, active: true)["is_user_input_required"]!);
+        var town = RewardKinds.Defaults.Single(d => d.Kind == RewardKind.BoostTown) with { UserInput = false };
+        Assert.True((bool)RewardService.Body(town, active: true)["is_user_input_required"]!);
+    }
+
+    [Fact]
+    public void Manual_reward_settings_round_trip()
+    {
+        var path = Path.Combine(_dir, "manual.json");
+        RewardSettingsStore.Save(RewardSettings.Default with
+        {
+            Rewards = [RewardKinds.Defaults.Single(d => d.Kind == RewardKind.Nature) with { UserInput = true, Prompt = "Napisz, co posadzić" }],
+        }, path);
+
+        var nature = RewardSettingsStore.Load(path).Get(RewardKind.Nature);
+
+        Assert.True(nature.UserInput);
+        Assert.Equal("Napisz, co posadzić", nature.Prompt);
+        Assert.False(RewardSettingsStore.Load(path).Get(RewardKind.Bomb).UserInput);
+    }
+
+    [Fact]
+    public void Manual_rewards_cannot_be_simulated()
+    {
+        var service = Service();
+
+        var outcome = service.Simulate(RewardKind.Bomb, "", "widz", chat: false, out _);
+
+        Assert.False(outcome!.Ok);
+        Assert.Equal(0, _queue.PendingCount);
     }
 
     [Fact]

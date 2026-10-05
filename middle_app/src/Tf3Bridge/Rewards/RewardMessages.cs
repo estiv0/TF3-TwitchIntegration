@@ -18,13 +18,15 @@ public static class RewardMessages
     /// <param name="until">End of a timed effect in the game calendar (from the mod), if known.</param>
     /// <param name="reason">Why the points were refunded (only when <paramref name="ok"/> is false).</param>
     /// <param name="link">Link to the object on the site, added after a successful redemption.</param>
-    public static string Text(RewardConfig config, string login, string? target, bool ok, GameDate? until, string? reason, string? link = null)
+    /// <param name="count">Brake sabotage: vehicles destroyed (from the mod), of <paramref name="total"/> on the line.</param>
+    public static string Text(RewardConfig config, string login, string? target, bool ok, GameDate? until, string? reason, string? link = null,
+        int? count = null, int? total = null)
     {
         var who = "@" + login.TrimStart('@');
         if (!ok) return $"{who} {Label(config.Kind)}: {reason ?? "nie udało się"}. Punkty wróciły do Ciebie.";
 
         var when = until is { } d ? $"do {Date(d)} (data w grze)" : $"przez {config.Months} mies. gry";
-        var percent = Math.Round((config.Factor - 1) * 100).ToString(CultureInfo.InvariantCulture);
+        var percent = RewardKinds.Percent(config.Kind, config.Factor);
         var text = config.Kind switch
         {
             RewardKind.AdoptTown => $"{who} miasto {target} jest teraz Twoje!",
@@ -35,6 +37,11 @@ public static class RewardMessages
             RewardKind.HoldLine => $"{who} pojazdy linii {target} czekają na przystankach {when}.",
             RewardKind.CreateTown => $"{who} miasto {target} zostało założone i jest Twoje!",
             RewardKind.CreateIndustry => $"{who} zakład {target} został zbudowany i jest Twój!",
+            RewardKind.StrikeIndustry => $"{who} strajk w zakładzie {target} (-{percent}% produkcji) trwa {when}.",
+            RewardKind.TaxRaid => $"{who} nalot skarbówki na {target} (-{percent}% produkcji) trwa {when}.",
+            RewardKind.PremiumFuel => $"{who} paliwo premium na linii {target} (+{percent}% prędkości) działa {when}.",
+            RewardKind.BadFuel => $"{who} chrzczone paliwo na linii {target} (-{percent}% prędkości) działa {when}.",
+            RewardKind.BrakeSabotage => $"{who} sabotaż hamulców na linii {target}: {Wrecked(count, total)}.",
             _ => throw new ArgumentOutOfRangeException(nameof(config)),
         };
         return string.IsNullOrEmpty(link) ? text : $"{text} {link}";
@@ -47,10 +54,10 @@ public static class RewardMessages
     /// Text of the in-game notification after a successful redemption ("kupił(a)": gender is not guessed from the nick).
     /// <paramref name="until"/>: end of a timed effect in the game calendar, if known.
     /// </summary>
-    public static string Notification(RewardConfig config, string user, string target, GameDate? until)
+    public static string Notification(RewardConfig config, string user, string target, GameDate? until, int? count = null, int? total = null)
     {
         var when = until is { } d ? $"do {Date(d)}" : $"na {config.Months} mies.";
-        var percent = Math.Round((config.Factor - 1) * 100).ToString(CultureInfo.InvariantCulture);
+        var percent = RewardKinds.Percent(config.Kind, config.Factor);
         return config.Kind switch
         {
             RewardKind.AdoptTown => $"{user} kupił(a) miasto {target}.",
@@ -61,14 +68,26 @@ public static class RewardMessages
             RewardKind.HoldLine => $"{user} kazał(a) pojazdom linii {target} czekać na przystankach {when}.",
             RewardKind.CreateTown => $"{user} założył(a) miasto {target}.",
             RewardKind.CreateIndustry => $"{user} zbudował(a) zakład {target}.",
+            RewardKind.StrikeIndustry => $"{user} wywołał(a) strajk w zakładzie {target}: produkcja -{percent}% {when}.",
+            RewardKind.TaxRaid => $"{user} nasłał(a) skarbówkę na {target}: produkcja -{percent}% {when}.",
+            RewardKind.PremiumFuel => $"{user} zatankował(a) paliwo premium na linii {target}: +{percent}% prędkości {when}.",
+            RewardKind.BadFuel => $"{user} ochrzcił(a) paliwo na linii {target}: -{percent}% prędkości {when}.",
+            RewardKind.BrakeSabotage => $"Problemy techniczne na linii {target}: {Wrecked(count, total)} (sabotaż: {user}).",
             _ => throw new ArgumentOutOfRangeException(nameof(config)),
         };
     }
+
+    /// <summary>"zniszczone pojazdy: 2 z 5" (count from the mod; unknown with an older mod).</summary>
+    private static string Wrecked(int? count, int? total) =>
+        count is not { } n ? "pojazdy zostały zniszczone"
+        : total is { } t ? $"zniszczone pojazdy: {n} z {t}"
+        : $"zniszczone pojazdy: {n}";
 
     /// <summary>"https://site/#town=123": the site opens the object from the address (web/js/hash.js).</summary>
     public static string? Link(string siteUrl, RewardKind kind, long entity)
     {
         if (string.IsNullOrWhiteSpace(siteUrl)) return null;
+        if (RewardKinds.TargetsOwner(kind)) return null; // wiele zakładów: link do widza daje OwnerLink
         var key = RewardKinds.Target(kind) switch
         {
             GameObjectKind.Town => "town",
@@ -77,6 +96,10 @@ public static class RewardMessages
         };
         return $"{siteUrl.Trim().TrimEnd('/')}/#{key}={entity.ToString(CultureInfo.InvariantCulture)}";
     }
+
+    /// <summary>"https://site/#owner=ola": the viewer in the site's Owners tab (key as <see cref="OwnerIndex.Key"/>).</summary>
+    public static string? OwnerLink(string siteUrl, string ownerKey) =>
+        string.IsNullOrWhiteSpace(siteUrl) ? null : $"{siteUrl.Trim().TrimEnd('/')}/#owner={Uri.EscapeDataString(ownerKey)}";
 
     /// <summary>
     /// "https://site/#pin=x,y&amp;note=Name": a pin where something new is being built. Fallback for the chat answer
@@ -102,6 +125,11 @@ public static class RewardMessages
         RewardKind.StopLine => "zatrzymanie linii",
         RewardKind.HoldLine => "linia czeka na stacjach",
         RewardKind.CreateTown => "nowe miasto",
-        _ => "nowy zakład",
+        RewardKind.CreateIndustry => "nowy zakład",
+        RewardKind.StrikeIndustry => "strajk",
+        RewardKind.TaxRaid => "nalot skarbówki",
+        RewardKind.PremiumFuel => "paliwo premium",
+        RewardKind.BadFuel => "chrzczone paliwo",
+        _ => "sabotaż hamulców",
     };
 }

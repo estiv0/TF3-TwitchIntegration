@@ -69,8 +69,8 @@ Przycisk 🏗 na mapie (`build.js`): widz klika miejsce, wybiera miasto albo zak
 
 `dynamic.effects` (z moda, `effects.lua`) to aktywne efekty z nagród za punkty kanału: `{ type, entity, user, factor, startTime, untilTime, until: {year, month, day} }`.
 
-- `attachEffects` (`format.js`) dokleja je do miast (`townBoost`), zakładów (`industryBoost`) i linii (`lineStop`, `lineHold`) jako `x.effects`. Dolicza też `progress`, czyli ile czasu już minęło, liczone z `gameTime` eksportu.
-- Na liście: znaczek przy nazwie (⚡ boost, ⛔ linia zatrzymana, ⏸ linia czeka) z opisem w podpowiedzi.
+- `attachEffects` (`format.js`) dokleja je do miast (`townBoost`), zakładów (`industryBoost`, `industryStrike`, `industryTaxRaid`) i linii (`lineStop`, `lineHold`, `lineFuelPremium`, `lineFuelBad`) jako `x.effects`. Dolicza też `progress`, czyli ile czasu już minęło, liczone z `gameTime` eksportu.
+- Na liście: znaczek przy nazwie (⚡ boost, ⛔ linia zatrzymana, ⏸ linia czeka, ✊ strajk, 🔍 skarbówka, ⛽ paliwo premium, 💧 chrzczone paliwo; spadek ze znakiem −, np. „Strajk −99%”) z opisem w podpowiedzi.
 - W szczegółach: sekcja „Efekty od widzów” z siłą, datą końca w kalendarzu gry, kupującym widzem i paskiem pozostałego czasu.
 - Starszy eksport bez `effects` działa jak dawniej.
 

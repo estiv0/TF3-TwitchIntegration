@@ -140,7 +140,7 @@ public sealed class ModCommandQueue
                     var status = r.TryGetProperty("status", out var s) ? s.GetString() ?? "failed" : "failed";
                     var error = r.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String ? e.GetString() : null;
                     var entity = r.TryGetProperty("entity", out var en) && en.TryGetInt64(out var n) ? n : (long?)null;
-                    map[id] = new ModCommandResult(id, status, error, ReadDate(r), entity);
+                    map[id] = new ModCommandResult(id, status, error, ReadDate(r), entity, Int(r, "count"), Int(r, "total"));
                 }
             }
             return map;
@@ -151,6 +151,8 @@ public sealed class ModCommandQueue
             return null;
         }
     }
+
+    private static int? Int(JsonElement r, string key) => r.TryGetProperty(key, out var v) && v.TryGetInt32(out var n) ? n : null;
 
     private static GameDate? ReadDate(JsonElement r)
     {

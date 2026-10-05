@@ -3,11 +3,14 @@
 --   Tf3Bridge -> local\tf3export_cmd\queue.lua    (format app.saveUserdata, pisany przez Tf3Bridge)
 --     { commands = { { id = "...", kind = "setName", created = <unix s>, entity = 123, name = "..." }, ... } }
 --     rodzaje: setName { entity, name }, adopt { entity, owner },
---              effect { effect = townBoost|industryBoost|lineStop|lineHold, entity, months, factor, user } (effects.lua)
+--              effect { effect = townBoost|industryBoost|industryStrike|industryTaxRaid|lineFuelPremium|lineFuelBad
+--                       |lineStop|lineHold, entity, months, factor, user, entities?, target? } (effects.lua)
+--              wreck { entity = linia, share } (sabotaż hamulców: część pojazdów linii znika)
 --              createTown { x, y, name, owner }, createIndustry { x, y, file, name, owner } (create.lua)
 --              notify { title, text, entity?, dismissMs? } (powiadomienie w grze, twitch_notification.script.lua)
 --   wynik efektu ma też until = { year, month, day } (koniec w kalendarzu gry, do wiadomości na czacie),
---   a wynik createTown / createIndustry: entity = id nowej encji (link na czacie)
+--   a wynik createTown / createIndustry: entity = id nowej encji (link na czacie);
+--   wynik wreck: count = zniszczone pojazdy, total = pojazdy linii przed sabotażem
 --   mod      -> local\tf3export_cmd\results.lua  (app.saveUserdata)
 --     { json = '{"results":[{"id":"...","status":"ok|failed|invalid|expired","error":"..."}]}',
 --       done = "id1\nid2\n..." }
@@ -49,7 +52,7 @@ local function finish(id, status, err, info)
 	pending[id] = nil
 	done[id] = true
 	results[#results + 1] = { id = id, status = status, error = err, ["until"] = info and info["until"] or nil,
-		entity = info and info.entity or nil }
+		entity = info and info.entity or nil, count = info and info.count or nil, total = info and info.total or nil }
 	while #results > MAX_RESULTS do table.remove(results, 1) end
 	util.log(string.format("command %s: %s%s", id, status, err and (" (" .. err .. ")") or ""))
 	save()
@@ -103,6 +106,75 @@ local now, shared = nil, nil -- czas gry i stan game scriptu z bieżącego poll
 
 function KINDS.effect(c)
 	return effects.start(c, now)
+end
+
+-- Sabotaż hamulców: losowo od 1 do share (domyślnie 50%) pojazdów linii, ale zawsze co najmniej jeden,
+-- znika jak po wypadku. Gra nie ma wypadków, więc pojazdy sprzedajemy, a kwotę ze sprzedaży (wartość
+-- po amortyzacji) zabieramy wpisem w księgach: streamer traci pojazd i nic na tym nie zarabia.
+-- Nie do cofnięcia; wpis w księgach dopiero, gdy pojazdów już nie ma (nieudana sprzedaż nic nie kosztuje).
+local seeded = false
+
+-- Pojazd wciąż jeździ na linii. Samo entityExists nie wystarcza: gra może oddać id sprzedanego
+-- pojazdu nowej encji, a wtedy sprzedaż wyglądałaby na nieudaną i widz dostałby punkty z powrotem.
+local function stillOnLine(v, line)
+	if not api.engine.entityExists(v) then return false end
+	local tv = util.comp(v, util.ct.TRANSPORT_VEHICLE)
+	return tv ~= nil and util.field(tv, "line") == line
+end
+
+function KINDS.wreck(c)
+	local line, share = tonumber(c.entity), tonumber(c.share) or 0.5
+	if not line then return nil, "bad arguments" end
+	local vs = util.lineVehicles(line)
+	if #vs == 0 then return nil, "line has no vehicles" end
+	if not seeded then
+		math.randomseed(math.floor((os and os.time and os.time() or 0) + util.clock() * 1000))
+		seeded = true
+	end
+	share = math.max(0, math.min(1, share))
+	local count = math.random(1, math.max(1, math.floor(#vs * share)))
+	for i = #vs, 2, -1 do -- tasowanie Fishera-Yatesa, bierzemy pierwsze count
+		local j = math.random(1, i)
+		vs[i], vs[j] = vs[j], vs[i]
+	end
+	local picked, value = {}, 0
+	for i = 1, count do
+		picked[i] = vs[i]
+		local ok, v = pcall(function() return api.engine.util.vehicle.getDepreciatedValue(vs[i]) end)
+		if ok and tonumber(v) then value = value + tonumber(v) end
+	end
+	api.cmd.sendCommand(api.cmd.makeVehicleSellCmd(picked), function(_, success)
+		local p = pending[c.id]
+		if p then p.callback = success end
+	end)
+	util.log(string.format("wreck line %s: selling %d of %d vehicles, value %d", tostring(line), count, #vs, value))
+	local booked = false
+	local function remaining()
+		local n = 0
+		for _, v in ipairs(picked) do
+			if stillOnLine(v, line) then n = n + 1 end
+		end
+		return n
+	end
+	return function()
+		-- callback true = gra przyjęła sprzedaż, nawet jeśli pojazdy znikną dopiero w następnym kroku symulacji
+		local p = pending[c.id]
+		if not (p and p.callback == true) and remaining() > 0 then return false end
+		if not booked and value > 0 then
+			booked = true -- sprzedaż potwierdzona: błąd księgowania nie może zwrócić punktów
+			local ok, err = pcall(function()
+				local entry = api.type.JournalEntry.new()
+				entry.amount = -value
+				entry.time = -1
+				entry.category.type = api.type.JournalEntry.Type.OTHER
+				api.cmd.sendCommand(api.cmd.makeJournalBookAssetCmd(api.engine.util.getPlayer(), entry, api.type.Vec3f.new(0, 0, 0)))
+			end)
+			if not ok then util.log("wreck: booking the loss failed: " .. tostring(err)) end
+		end
+		return true
+	end, nil, { count = count, total = #vs,
+		diag = function() return string.format("%d of %d sold vehicles still on the line", remaining(), count) end,
+		holdOnPause = true }
 end
 
 -- Powiadomienie w grze (po rozliczonej nagrodzie za punkty kanału). Teksty są gotowe z Tf3Bridge.
@@ -178,16 +250,24 @@ local function start(c, wall)
 	util.log(string.format("command %s: sent %s", id, c.kind))
 end
 
-local function check(wall)
+-- paused: czas gry stoi od poprzedniego poll. Komendy z info.holdOnPause (wreck) czekają wtedy dłużej,
+-- bo zmiana może wejść dopiero po wznowieniu symulacji, a punktów za wykonaną już sprzedaż nie da się odebrać.
+local function check(wall, paused)
 	for id, p in pairs(pending) do
 		local ok, visible = pcall(p.verify)
+		local dt = wall - (p.checked or p.sent)
+		p.checked = wall
+		if not (paused and p.info and p.info.holdOnPause) then p.waited = (p.waited or 0) + dt end
 		if ok and visible then
 			finish(id, "ok", nil, p.info)
-		elseif p.callback == false or wall - p.sent >= p.timeout then
+		elseif p.callback == false or (p.waited or 0) >= p.timeout then
 			-- nieudany efekt cofamy, bo Tf3Bridge zwróci widzowi punkty
 			if p.cmd.kind == "effect" then pcall(effects.abort, p.cmd) end
-			finish(id, "failed", p.callback == false and "game rejected the command"
+			local why = not ok and ("verify error: " .. tostring(visible))
+				or p.info and p.info.diag and select(2, pcall(p.info.diag))
+			finish(id, "failed", (p.callback == false and "game rejected the command"
 				or string.format("no effect after %d s (callback: %s)", p.timeout, tostring(p.callback)))
+				.. (why and ("; " .. tostring(why)) or ""))
 		end
 	end
 end
@@ -198,12 +278,16 @@ function M.reset()
 end
 
 -- Wołane z guiUpdate co commandsEveryWallSec; gameTime i stan game scriptu (state:get()) dla efektów.
+local lastGameTime = nil
+
 function M.poll(wall, gameTime, sharedState)
+	local paused = lastGameTime ~= nil and gameTime == lastGameTime
+	lastGameTime = gameTime
 	now, shared = gameTime, sharedState
 	if done == nil then loadDone() end
 	local okE, errE = pcall(effects.update, now, shared)
 	if not okE then util.log("effects update failed: " .. tostring(errE)) end
-	check(wall)
+	check(wall, paused)
 	if not util.userdataExists(DIR, QUEUE) then return end
 	local ok, t = pcall(function() return app.loadUserdata(DIR, QUEUE) end)
 	if not ok or type(t) ~= "table" or type(t.commands) ~= "table" then return end -- np. plik w trakcie zapisu

@@ -568,10 +568,12 @@ function ownerDetail(o, stationIndustry) {
     ${ownerLinesHtml(o)}`;
 }
 
-// Nazwa efektu z siłą: "Boost miasta +50%".
+// Nazwa efektu z siłą: "Boost miasta +50%", "Strajk −99%".
 function effectName(e) {
   const name = t(`fx.${e.type}`);
-  return e.factor ? `${name} +${Math.round((e.factor - 1) * 100)}%` : name;
+  if (!e.factor) return name;
+  const p = Math.round((e.factor - 1) * 100);
+  return `${name} ${p >= 0 ? "+" : "−"}${Math.abs(p)}%`;
 }
 
 function effectTip(e) {
@@ -579,8 +581,12 @@ function effectTip(e) {
     .filter(Boolean).join(" · ");
 }
 
-// Znaczki na liście (miasta, zakłady, linie): ⚡ boost, ⏸ czeka na stacjach, ⛔ zatrzymana.
-const EFFECT_ICON = { townBoost: "⚡", industryBoost: "⚡", lineStop: "⛔", lineHold: "⏸" };
+// Znaczki na liście (miasta, zakłady, linie): ⚡ boost, ⏸ czeka na stacjach, ⛔ zatrzymana,
+// ✊ strajk, 🔍 skarbówka, ⛽ paliwo premium, 💧 chrzczone paliwo.
+const EFFECT_ICON = {
+  townBoost: "⚡", industryBoost: "⚡", lineStop: "⛔", lineHold: "⏸",
+  industryStrike: "✊", industryTaxRaid: "🔍", lineFuelPremium: "⛽", lineFuelBad: "💧",
+};
 function effectBadges(x) {
   return (x.effects ?? []).map((e) =>
     `<span class="fx-badge fx-${esc(e.type)}" title="${esc(effectTip(e))}">${EFFECT_ICON[e.type] ?? "★"}</span>`).join("");

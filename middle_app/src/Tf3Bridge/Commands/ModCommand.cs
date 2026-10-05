@@ -29,15 +29,28 @@ public sealed record ModCommand(
             new Dictionary<string, object> { ["entity"] = entity, ["owner"] = owner }, source, user);
 
     /// <summary>
-    /// Timed effect (effects.lua): townBoost/industryBoost (with factor), lineStop/lineHold.
+    /// Timed effect (effects.lua): townBoost, industryBoost/industryStrike/lineFuelPremium/lineFuelBad (with factor),
+    /// lineStop/lineHold; industryTaxRaid acts on all <paramref name="entities"/> at once and is keyed by
+    /// <paramref name="target"/> (the victim), so a second raid on the same viewer extends the first.
     /// <paramref name="created"/> = when the viewer asked; the mod drops commands older than 300 s.
     /// </summary>
-    public static ModCommand Effect(string effect, long entity, int months, double? factor, CommandSource source, string user, DateTimeOffset? created = null)
+    public static ModCommand Effect(string effect, long entity, int months, double? factor, CommandSource source, string user,
+        DateTimeOffset? created = null, IReadOnlyCollection<long>? entities = null, string? target = null)
     {
         var args = new Dictionary<string, object> { ["effect"] = effect, ["entity"] = entity, ["months"] = (long)months, ["user"] = user };
         if (factor is { } f) args["factor"] = f;
+        if (entities is { Count: > 0 }) args["entities"] = string.Join(',', entities.Select(e => e.ToString(CultureInfo.InvariantCulture)));
+        if (target is not null) args["target"] = target;
         return new(NewId(), "effect", created ?? DateTimeOffset.UtcNow, args, source, user);
     }
+
+    /// <summary>
+    /// Brake sabotage (commands.lua: wreck): 1 up to <paramref name="share"/> of the line's vehicles disappear, not undone.
+    /// The mod reports how many (<see cref="ModCommandResult.Count"/> of <see cref="ModCommandResult.Total"/>).
+    /// </summary>
+    public static ModCommand Wreck(long line, double share, CommandSource source, string user, DateTimeOffset? created = null) =>
+        new(NewId(), "wreck", created ?? DateTimeOffset.UtcNow,
+            new Dictionary<string, object> { ["entity"] = line, ["share"] = share }, source, user);
 
     /// <summary>New town "name | owner" at (x, y), game metres (create.lua).</summary>
     public static ModCommand CreateTown(double x, double y, string name, string owner, CommandSource source, DateTimeOffset? created = null) =>
@@ -92,8 +105,10 @@ public sealed record GameDate(int Year, int Month, int Day);
 /// Result written by the mod. Statuses: ok, failed, invalid, expired.
 /// <see cref="Until"/>: end of a timed effect in the game calendar.
 /// <see cref="Entity"/>: id of the town or industry built by createTown / createIndustry.
+/// <see cref="Count"/> / <see cref="Total"/>: wreck: vehicles destroyed / vehicles the line had.
 /// </summary>
-public sealed record ModCommandResult(string Id, string Status, string? Error, GameDate? Until = null, long? Entity = null)
+public sealed record ModCommandResult(string Id, string Status, string? Error, GameDate? Until = null, long? Entity = null,
+    int? Count = null, int? Total = null)
 {
     public bool Ok => Status == "ok";
 }

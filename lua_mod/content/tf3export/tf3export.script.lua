@@ -575,6 +575,7 @@ local script = {
 			-- wątek GUI nie może pisać stanu: lista aktywnych efektów przychodzi zdarzeniem i trafia do save'a
 			local s = state:get() or {}
 			s.effects = (type(param) == "table" and param.effects) or {}
+			s.effectCtl = (type(param) == "table" and param.ctl) or {} -- bazy produktywności / prędkości (effects.lua)
 			state:set(s)
 			return
 		end

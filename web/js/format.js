@@ -178,7 +178,10 @@ export function splitAllOwners(dynamic) {
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // Efekty z nagród za punkty kanału (dynamic.effects z moda): rodzaj efektu -> lista obiektów.
-const EFFECT_TARGET = { townBoost: "towns", industryBoost: "industries", lineStop: "lines", lineHold: "lines" };
+const EFFECT_TARGET = {
+  townBoost: "towns", industryBoost: "industries", industryStrike: "industries", industryTaxRaid: "industries",
+  lineStop: "lines", lineHold: "lines", lineFuelPremium: "lines", lineFuelBad: "lines",
+};
 
 /**
  * Dokleja aktywne efekty do miast, zakładów i linii (x.effects). Postęp efektu (0..1, ile już minęło)

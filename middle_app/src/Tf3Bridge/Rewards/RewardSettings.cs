@@ -6,13 +6,22 @@ using Tf3Bridge.Processing;
 
 namespace Tf3Bridge.Rewards;
 
-/// <summary>Channel points rewards Tf3Bridge manages. The only way viewers can change the game.</summary>
-public enum RewardKind { AdoptTown, BuyIndustry, BoostTown, BoostIndustry, StopLine, HoldLine, CreateTown, CreateIndustry }
+/// <summary>
+/// Channel points rewards Tf3Bridge manages. The only way viewers can change the game.
+/// The last ones (<see cref="RewardKinds.Manual"/>) have no effect in the mod: the streamer carries them out.
+/// </summary>
+public enum RewardKind
+{
+    AdoptTown, BuyIndustry, BoostTown, BoostIndustry, StopLine, HoldLine, CreateTown, CreateIndustry,
+    StrikeIndustry, TaxRaid, PremiumFuel, BadFuel, BrakeSabotage,
+    Bomb, Line, Nature, RoadVehicle, SpecialVehicle,
+}
 
 /// <summary>
 /// One reward as the streamer configured it. <see cref="Months"/> (game months) and <see cref="Factor"/>
-/// only matter for timed effects (see <see cref="RewardKinds"/>). Prompts may use {months}, {percent}
-/// and {site} (the map site, filled in when the reward is sent to Twitch).
+/// only matter for timed effects (see <see cref="RewardKinds"/>); for the brake sabotage <see cref="Factor"/> is the
+/// largest share of the line's vehicles that may be wrecked. Prompts may use {months}, {percent} (the change in %,
+/// without sign; the share for the brake sabotage) and {site} (the map site, filled in when the reward is sent to Twitch).
 /// Months, not days: a game day lasts only 2-3 s, so effects of a few days were over before anyone saw them.
 /// </summary>
 public sealed record RewardConfig(
@@ -20,14 +29,21 @@ public sealed record RewardConfig(
     int CooldownSec, int MaxPerStream, int MaxPerUserPerStream, int Months, double Factor)
 {
     public const int MaxTitle = 45;
+
+    /// <summary>
+    /// The viewer types a text with the redemption. Always on for rewards the game carries out (the text names the target);
+    /// the streamer's choice for <see cref="RewardKinds.Manual"/> ones.
+    /// </summary>
+    public bool UserInput { get; init; } = true;
+
+    public bool RequiresInput => UserInput || !RewardKinds.Manual(Kind);
     public const int MaxPrompt = 200;
     public static readonly (int Min, int Max) MonthsRange = (1, 60);
-    public static readonly (double Min, double Max) FactorRange = (1.05, 5.0);
 
     /// <summary>Prompt shown on Twitch with the placeholders filled in.</summary>
     public string TwitchPrompt => Prompt
         .Replace("{months}", Months.ToString(CultureInfo.InvariantCulture))
-        .Replace("{percent}", Math.Round((Factor - 1) * 100).ToString(CultureInfo.InvariantCulture));
+        .Replace("{percent}", RewardKinds.Percent(Kind, Factor));
 
     /// <summary>Values clamped to what Twitch and the mod accept.</summary>
     public RewardConfig Normalized() => this with
@@ -39,7 +55,7 @@ public sealed record RewardConfig(
         MaxPerStream = Math.Max(0, MaxPerStream),
         MaxPerUserPerStream = Math.Max(0, MaxPerUserPerStream),
         Months = Math.Clamp(Months, MonthsRange.Min, MonthsRange.Max),
-        Factor = Math.Round(Math.Clamp(Factor, FactorRange.Min, FactorRange.Max), 2),
+        Factor = Math.Round(Math.Clamp(Factor, RewardKinds.FactorRange(Kind).Min, RewardKinds.FactorRange(Kind).Max), 2),
     };
 
     private static string Cut(string s, int max) => s.Length <= max ? s : s[..max];
@@ -51,9 +67,33 @@ public static class RewardKinds
     public static GameObjectKind Target(RewardKind kind) => kind switch
     {
         RewardKind.AdoptTown or RewardKind.BoostTown or RewardKind.CreateTown => GameObjectKind.Town,
-        RewardKind.BoostIndustry or RewardKind.CreateIndustry or RewardKind.BuyIndustry => GameObjectKind.Industry,
+        RewardKind.BoostIndustry or RewardKind.CreateIndustry or RewardKind.BuyIndustry or RewardKind.StrikeIndustry
+            or RewardKind.TaxRaid => GameObjectKind.Industry,
         _ => GameObjectKind.Line,
     };
+
+    /// <summary>The viewer types the nick of another viewer, not an object name (all industries of that viewer).</summary>
+    public static bool TargetsOwner(RewardKind kind) => kind is RewardKind.TaxRaid;
+
+    /// <summary>
+    /// Harms someone: allowed only on objects of another viewer (objects without an owner and the buyer's own are refused).
+    /// </summary>
+    public static bool Sabotage(RewardKind kind) =>
+        kind is RewardKind.StrikeIndustry or RewardKind.TaxRaid or RewardKind.BadFuel or RewardKind.BrakeSabotage;
+
+    /// <summary>Allowed <see cref="RewardConfig.Factor"/>: boosts above 1, sabotage below 1, brake sabotage a share 0..1.</summary>
+    public static (double Min, double Max) FactorRange(RewardKind kind) => kind switch
+    {
+        RewardKind.StrikeIndustry or RewardKind.TaxRaid => (0.01, 0.95),
+        RewardKind.BadFuel => (0.1, 0.95),
+        RewardKind.PremiumFuel => (1.05, 3.0),
+        RewardKind.BrakeSabotage => (0.05, 1.0),
+        _ => (1.05, 5.0),
+    };
+
+    /// <summary>"50" for ×1.5 and for ×0.5 (the text says whether it is more or less); the share in % for the brake sabotage.</summary>
+    public static string Percent(RewardKind kind, double factor) =>
+        Math.Round(Math.Abs(kind == RewardKind.BrakeSabotage ? factor : factor - 1) * 100).ToString(CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Builds something new where the viewer pointed on the site map: the input is a code from the site
@@ -71,12 +111,23 @@ public static class RewardKinds
         RewardKind.BoostIndustry => "industryBoost",
         RewardKind.StopLine => "lineStop",
         RewardKind.HoldLine => "lineHold",
+        RewardKind.StrikeIndustry => "industryStrike",
+        RewardKind.TaxRaid => "industryTaxRaid",
+        RewardKind.PremiumFuel => "lineFuelPremium",
+        RewardKind.BadFuel => "lineFuelBad",
         _ => null,
     };
 
-    public static bool HasFactor(RewardKind kind) => kind is RewardKind.BoostTown or RewardKind.BoostIndustry;
+    public static bool HasFactor(RewardKind kind) => kind is RewardKind.BoostTown or RewardKind.BoostIndustry or RewardKind.StrikeIndustry
+        or RewardKind.TaxRaid or RewardKind.PremiumFuel or RewardKind.BadFuel or RewardKind.BrakeSabotage;
 
     public static bool HasMonths(RewardKind kind) => Effect(kind) is not null;
+
+    /// <summary>
+    /// No action in the game: Tf3Bridge only creates the reward and switches it with the game (off when the mod does not run);
+    /// redemptions stay in the Twitch queue and the streamer carries them out and accepts or refunds them.
+    /// </summary>
+    public static bool Manual(RewardKind kind) => kind >= RewardKind.Bomb;
 
     /// <summary>Starting values; costs and durations are guesses to be balanced on stream.</summary>
     public static IReadOnlyList<RewardConfig> Defaults { get; } =
@@ -105,6 +156,27 @@ public static class RewardKinds
         new(RewardKind.CreateIndustry, true, "TF3: zbuduj zakład",
             "Na mapie {site} kliknij 🏗, wskaż miejsce, wybierz zakład, nadaj nazwę i wklej tu kod. Zakład powstanie i będzie Twój.",
             15000, 600, 0, 1, 0, 1),
+        new(RewardKind.StrikeIndustry, true, "TF3: strajk w zakładzie",
+            "Wpisz nazwę zakładu innego widza. Załoga strajkuje: produkcja spada o {percent}% na {months} mies. gry.",
+            8000, 600, 0, 1, 3, 0.01),
+        new(RewardKind.TaxRaid, true, "TF3: nalot skarbówki",
+            "Wpisz nick widza, który ma zakłady. Skarbówka blokuje wszystkie jego zakłady: produkcja spada o {percent}% na {months} mies. gry.",
+            15000, 900, 0, 1, 3, 0.5),
+        new(RewardKind.PremiumFuel, true, "TF3: paliwo premium",
+            "Wpisz nazwę linii. Jej pojazdy jeżdżą o {percent}% szybciej przez {months} mies. gry.",
+            4000, 300, 0, 0, 6, 1.2),
+        new(RewardKind.BadFuel, true, "TF3: chrzczone paliwo",
+            "Wpisz nazwę linii innego widza. Jej pojazdy jeżdżą o {percent}% wolniej przez {months} mies. gry.",
+            6000, 600, 0, 1, 3, 0.8),
+        new(RewardKind.BrakeSabotage, true, "TF3: sabotaż hamulców",
+            "Wpisz nazwę linii innego widza. Od 1 do {percent}% jej pojazdów rozbije się i zniknie (nie do cofnięcia).",
+            25000, 1800, 0, 1, 0, 0.5),
+        // Wykonuje streamer: opis i limity ustawia sam w oknie nagród.
+        new(RewardKind.Bomb, true, "TF3: bomba", "", 5000, 0, 0, 0, 0, 1) { UserInput = false },
+        new(RewardKind.Line, true, "TF3: linia", "", 5000, 0, 0, 0, 0, 1) { UserInput = false },
+        new(RewardKind.Nature, true, "TF3: natura", "", 5000, 0, 0, 0, 0, 1) { UserInput = false },
+        new(RewardKind.RoadVehicle, true, "TF3: pojazd drogowy", "", 5000, 0, 0, 0, 0, 1) { UserInput = false },
+        new(RewardKind.SpecialVehicle, true, "TF3: pojazd specjalny", "", 5000, 0, 0, 0, 0, 1) { UserInput = false },
     ];
 }
 

@@ -16,6 +16,9 @@ public sealed class CommandTestDialog : Form
         (GameObjectKind.Station, "Stacje"), (GameObjectKind.Line, "Linie"),
     ];
 
+    // Nagrody wykonywane przez streamera nie mają czego symulować w grze.
+    private static readonly RewardKind[] Simulated = [.. Enum.GetValues<RewardKind>().Where(k => !RewardKinds.Manual(k))];
+
     private readonly ModCommandQueue _queue;
     private readonly RewardService _rewards;
     private string? _simToken;
@@ -84,7 +87,7 @@ public sealed class CommandTestDialog : Form
         buttons.Controls.AddRange([close, _send, _notify]);
         CancelButton = close;
 
-        foreach (var kind in Enum.GetValues<RewardKind>()) _reward.Items.Add(RewardsDialog.KindLabel(kind));
+        foreach (var kind in Simulated) _reward.Items.Add(RewardsDialog.KindLabel(kind));
         _reward.SelectedIndex = 0;
         var sim = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, Dock = DockStyle.Fill };
         sim.Controls.Add(RowLabel("Nagroda:"), 0, 0);
@@ -222,7 +225,7 @@ public sealed class CommandTestDialog : Form
 
     private void Simulate()
     {
-        var kind = Enum.GetValues<RewardKind>()[_reward.SelectedIndex];
+        var kind = Simulated[_reward.SelectedIndex];
         _simResult.ForeColor = SystemColors.ControlText;
         _simResult.Text = "Wysłano do gry, czekam na wynik…";
         var rejected = _rewards.Simulate(kind, _input.Text, _simViewer.Text, _simChat.Checked, out var token);

@@ -66,6 +66,15 @@ function util.list(v)
 	return out
 end
 
+-- Pojazdy linii (kopia jako zwykła tablica); {} przy błędzie.
+function util.lineVehicles(line)
+	local ok, vs = pcall(function() return api.engine.system.transportVehicleSystem.getLineVehicles(line) end)
+	if not ok then return {} end
+	local out = {}
+	for i, v in ipairs(util.list(vs)) do out[i] = v end
+	return out
+end
+
 -- Iteracja po mapie (tabela Lua albo natywna mapa, jeśli wspiera pairs).
 function util.pairs(v)
 	if v == nil then return function() return nil end end

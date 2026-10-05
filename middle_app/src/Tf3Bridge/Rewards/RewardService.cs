@@ -14,10 +14,10 @@ public sealed record RewardStatus(RewardState State, string Message);
 /// <summary>
 /// How a redemption ended. <see cref="Refunded"/>: the points went back to the viewer.
 /// <see cref="ChatText"/>: the answer for the viewer in chat (sent only for real redemptions,
-/// or for a simulation when asked to).
+/// or for a simulation when asked to). <see cref="Count"/> / <see cref="Total"/>: vehicles wrecked by the brake sabotage.
 /// </summary>
 public sealed record RewardOutcome(string Token, RewardKind Kind, string User, string Input, bool Ok, string Message,
-    string? Target = null, GameDate? Until = null, string ChatText = "")
+    string? Target = null, GameDate? Until = null, string ChatText = "", int? Count = null, int? Total = null)
 {
     public bool Refunded => !Ok;
 }
@@ -34,7 +34,7 @@ public sealed class RewardService
     /// <summary>Redemptions waiting longer than this (e.g. while Tf3Bridge was off) are refunded.</summary>
     internal static readonly TimeSpan MaxRedemptionAge = TimeSpan.FromMinutes(5);
     /// <summary>How long the in-game notification stays on screen (it stays in the game's notification log).</summary>
-    internal const int NotificationDismissMs = 10_000;
+    internal const int NotificationDismissMs = 30_000;
     /// <summary>No export for this long = game not running: rewards are disabled on Twitch.</summary>
     internal static readonly TimeSpan GameIdleAfter = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan LoopEvery = TimeSpan.FromSeconds(15);
@@ -251,6 +251,7 @@ public sealed class RewardService
     {
         var kind = KindOf(r.RewardId);
         if (kind is null) return Task.CompletedTask; // nie nasza nagroda
+        if (RewardKinds.Manual(kind.Value)) return Task.CompletedTask; // zostaje w kolejce Twitcha dla streamera
         // Kupione tuż przed wyłączeniem nagród albo czekające od poprzedniego uruchomienia: gra i tak by tego nie wykonała.
         if (!_mock && _whyInactive() is { } why)
         {
@@ -285,6 +286,7 @@ public sealed class RewardService
             return o;
         }
 
+        if (RewardKinds.Manual(kind)) return Reject("tę nagrodę wykonuje streamer, nie gra");
         if (!config.Enabled) return Reject("nagroda jest wyłączona");
         if (!_queue.IsAvailable) return Reject("brak folderu gry");
         var owner = OwnerName.Clean(user).Replace("|", "");
@@ -306,12 +308,27 @@ public sealed class RewardService
                 : ModCommand.CreateTown(place.X, place.Y, place.Name, owner, CommandSource.ChannelPoints, created);
             (targetName, link) = (place.Name, RewardMessages.PlaceLink(_siteUrl, place.X, place.Y, place.Name));
         }
+        else if (RewardKinds.TargetsOwner(kind))
+        {
+            var victim = Victim(objects, input, owner);
+            if (victim.Error is { } error) return Reject(error);
+            command = ModCommand.Effect(RewardKinds.Effect(kind)!, victim.Industries[0], config.Months, config.Factor,
+                CommandSource.ChannelPoints, owner, created, victim.Industries, victim.Key);
+            (targetName, link) = ($"zakłady widza {victim.Name} ({victim.Industries.Count})", RewardMessages.OwnerLink(_siteUrl, victim.Key));
+        }
         else
         {
             var resolved = TargetResolver.Resolve(objects, RewardKinds.Target(kind), input);
             if (resolved.Target is not { } target) return Reject(resolved.Error!);
             if (RewardKinds.Buys(kind) && target.Owner is { } current) return Reject($"{target.Name} ma już właściciela ({current})");
-            command = RewardKinds.Effect(kind) is { } effect
+            if (RewardKinds.Sabotage(kind))
+            {
+                if (target.Owner is not { } victim) return Reject($"{target.Name} nie ma właściciela (sabotować można tylko obiekty innych widzów)");
+                if (OwnerIndex.Key(victim) == OwnerIndex.Key(owner)) return Reject($"{target.Name} należy do Ciebie");
+            }
+            command = kind == RewardKind.BrakeSabotage
+                ? ModCommand.Wreck(target.Entity, config.Factor, CommandSource.ChannelPoints, owner, created)
+                : RewardKinds.Effect(kind) is { } effect
                 ? ModCommand.Effect(effect, target.Entity, config.Months, RewardKinds.HasFactor(kind) ? config.Factor : null,
                     CommandSource.ChannelPoints, owner, created)
                 : ModCommand.Adopt(target.Entity, owner, CommandSource.ChannelPoints, owner, created);
@@ -321,6 +338,25 @@ public sealed class RewardService
         _queue.Enqueue(command);
         _log.LogInformation("Reward \"{Title}\" by {User}: {Target}", config.Title, owner, targetName);
         return null;
+    }
+
+    private sealed record VictimResult(string Key, string Name, IReadOnlyList<long> Industries, string? Error);
+
+    /// <summary>
+    /// The viewer whose nick another viewer typed (nalot skarbówki): all industries with that owner.
+    /// Nick compared like object names (case, Polish letters, a leading @ do not matter).
+    /// </summary>
+    private static VictimResult Victim(List<GameObject> objects, string input, string buyer)
+    {
+        var query = TargetResolver.Normalize(input.Trim().TrimStart('@'));
+        if (query.Length == 0) return new("", "", [], "nie podano nicku widza");
+        var owned = objects.Where(o => o.Owner is { } w && TargetResolver.Normalize(w) == query).ToList();
+        if (owned.Count == 0) return new("", "", [], $"widz „{input.Trim()}” nie ma nic w grze");
+        var name = owned.GroupBy(o => o.Owner!).MaxBy(g => g.Count())!.Key;
+        var key = OwnerIndex.Key(name);
+        if (key == OwnerIndex.Key(buyer)) return new(key, name, [], "nie możesz nasłać skarbówki na siebie");
+        var industries = owned.Where(o => o.Kind == GameObjectKind.Industry).Select(o => o.Entity).Distinct().ToList();
+        return industries.Count == 0 ? new(key, name, [], $"{name} nie ma zakładów") : new(key, name, industries, null);
     }
 
     private void OnCommandCompleted(ModCommand command, ModCommandResult result)
@@ -341,8 +377,8 @@ public sealed class RewardService
             : reason!;
         // Nowe miasto / zakład: link do obiektu po id z gry; pinezka w miejscu budowy tylko gdy mod go nie podał.
         var link = result.Entity is { } built && RewardKinds.Creates(p.Kind) ? RewardMessages.Link(_siteUrl, p.Kind, built) : p.Link;
-        var chat = RewardMessages.Text(Settings.Get(p.Kind), p.Origin.Login, p.Target, result.Ok, result.Until, reason, link);
-        var outcome = new RewardOutcome(p.Token, p.Kind, p.User, p.Input, result.Ok, message, p.Target, result.Until, chat);
+        var chat = RewardMessages.Text(Settings.Get(p.Kind), p.Origin.Login, p.Target, result.Ok, result.Until, reason, link, result.Count, result.Total);
+        var outcome = new RewardOutcome(p.Token, p.Kind, p.User, p.Input, result.Ok, message, p.Target, result.Until, chat, result.Count, result.Total);
         if (result.Ok) _log.LogInformation("Reward {Kind} by {User}: {Message}", p.Kind, p.User, message);
         else _log.LogWarning("Reward {Kind} by {User}: {Message}, refunding", p.Kind, p.User, message);
         Complete(p.Origin, outcome, result.Entity ?? p.Entity);
@@ -366,7 +402,7 @@ public sealed class RewardService
     private void Notify(RewardOutcome outcome, long? entity, bool test)
     {
         if (!Settings.GameNotifications || outcome.Target is not { } target || !_queue.IsAvailable) return;
-        var text = RewardMessages.Notification(Settings.Get(outcome.Kind), outcome.User, target, outcome.Until);
+        var text = RewardMessages.Notification(Settings.Get(outcome.Kind), outcome.User, target, outcome.Until, outcome.Count, outcome.Total);
         try
         {
             _queue.Enqueue(ModCommand.Notify(RewardMessages.NotificationTitle(outcome.User, test), text, entity, NotificationDismissMs,
@@ -399,6 +435,8 @@ public sealed class RewardService
         // Gra trzyma skrypty wczytane przy starcie: nowy plik moda działa dopiero po restarcie TF3.
         _ when r.Error?.StartsWith("unknown kind ", StringComparison.Ordinal) == true => "gra ma starszą wersję moda (uruchom TF3 ponownie)",
         _ when r.Error?.StartsWith("already adopted by ", StringComparison.Ordinal) == true => "ma już właściciela (" + r.Error["already adopted by ".Length..] + ")",
+        "invalid" when r.Error == "line has no vehicles" => "linia nie ma pojazdów",
+        "invalid" when r.Error == "no industries" => "nie ma już tych zakładów",
         // create.lua
         "invalid" when r.Error == "on water" => "to miejsce jest na wodzie",
         "invalid" when r.Error == "needs water" => "ten zakład stawia się tylko na wodzie",
@@ -427,11 +465,12 @@ public sealed class RewardService
         }
     }
 
-    // Wykupienia sprzed startu Tf3Bridge: świeże wykonujemy, stare zwracamy.
+    // Wykupienia sprzed startu Tf3Bridge: świeże wykonujemy, stare zwracamy (poza nagrodami, które wykonuje streamer).
     private async Task ProcessBacklogAsync(CancellationToken ct)
     {
         foreach (var (kind, rewardId) in Settings.TwitchIds)
         {
+            if (RewardKinds.Manual(kind)) continue;
             foreach (var r in await _api.GetUnfulfilledAsync(rewardId, ct))
             {
                 var redemption = new ChannelPointsRedemption(r.Id, rewardId, "", 0, "", r.UserLogin, r.UserName, r.UserInput, r.RedeemedAt);
@@ -584,7 +623,7 @@ public sealed class RewardService
             ["cost"] = c.Cost,
             ["is_enabled"] = c.Enabled && active,
             ["is_paused"] = false, // starsze wersje pauzowały zamiast wyłączać
-            ["is_user_input_required"] = true,
+            ["is_user_input_required"] = c.RequiresInput,
             ["should_redemptions_skip_request_queue"] = false,
             ["is_global_cooldown_enabled"] = c.CooldownSec > 0,
             ["is_max_per_stream_enabled"] = c.MaxPerStream > 0,
