@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Microsoft.Extensions.Options;
 using Tf3Bridge.Input;
 using Tf3Bridge.Output;
+using Tf3Bridge.Rewards;
 
 namespace Tf3Bridge.Processing;
 
@@ -17,7 +18,8 @@ namespace Tf3Bridge.Processing;
 /// </list>
 /// Files that cannot be parsed yet are assumed to be mid-write and retried on the next pass.
 /// </summary>
-public sealed class ExportProcessor(IOptions<BridgeOptions> options, IPublisher publisher, ILogger<ExportProcessor> logger)
+public sealed class ExportProcessor(IOptions<BridgeOptions> options, IPublisher publisher, ILogger<ExportProcessor> logger,
+    IndustryZoneRules? zoneRules = null)
 {
     public const string DynamicPath = "latest/dynamic.json";
     public const string NetworkPath = "latest/network.json";
@@ -25,6 +27,8 @@ public sealed class ExportProcessor(IOptions<BridgeOptions> options, IPublisher 
     public const string TerrainPngPath = "latest/terrain.png";
     public const string TerrainInfoPath = "latest/terrain.json";
     public const string TownSitesPath = "latest/terrain-site.png";
+    public const string TerrainZonesPath = "latest/terrain-zone.png";
+    public const string BuildRulesPath = "latest/build-rules.json";
 
     private readonly BridgeOptions _options = options.Value;
     private readonly NetworkState _network = new();
@@ -40,10 +44,12 @@ public sealed class ExportProcessor(IOptions<BridgeOptions> options, IPublisher 
 
     public NetworkState Network => _network;
 
-    private volatile TownSites? _townSites;
+    private volatile BuildTerrain? _buildTerrain;
+    private int _rulesVersion; // published version of zoneRules (0 = not yet)
+    private string? _cacheCheckedFor; // session for which the terrain cache was already tried
 
     /// <summary>Ground around every point of the newest heightmap (for build rewards); null until the first terrain export.</summary>
-    public TownSites? TownSites => _townSites;
+    public BuildTerrain? BuildTerrain => _buildTerrain;
 
     private long _lastDynamicTicks;
 
@@ -77,7 +83,8 @@ public sealed class ExportProcessor(IOptions<BridgeOptions> options, IPublisher 
         var current = files.Where(f => f.Session == session).ToList();
         var networkChanged = ProcessNetwork(current);
         var dynamicChanged = ProcessDynamic(current, out var dynamicJson);
-        var terrainChanged = await ProcessTerrainAsync(current, ct);
+        var terrainChanged = await ProcessTerrainAsync(current, ct) || await LoadTerrainCacheAsync(session, ct);
+        var rulesChanged = await PublishRulesAsync(ct);
 
         if (networkChanged)
             await publisher.PublishAsync(NetworkPath, _network.ToJson().ToJsonString(JsonOptions), ct);
@@ -86,7 +93,7 @@ public sealed class ExportProcessor(IOptions<BridgeOptions> options, IPublisher 
             await publisher.PublishAsync(DynamicPath, dynamicJson, ct);
             Volatile.Write(ref _lastDynamicTicks, DateTime.UtcNow.Ticks);
         }
-        if (networkChanged || dynamicChanged || terrainChanged)
+        if (networkChanged || dynamicChanged || terrainChanged || rulesChanged)
             await publisher.PublishAsync(MetaPath, BuildMeta().ToJsonString(JsonOptions), ct);
     }
 
@@ -112,21 +119,86 @@ public sealed class ExportProcessor(IOptions<BridgeOptions> options, IPublisher 
             return false;
         }
 
+        await PublishTerrainAsync(grid, newest.Session, newest.Seq, ct);
+        SaveTerrainCache(doc, newest.Session, newest.Seq);
+        terrains.ForEach(Retire);
+        return true;
+    }
+
+    /// <summary>
+    /// After a restart: the newest terrain of this session from <see cref="BridgeOptions.TerrainCacheFile"/>
+    /// (the mod does not send it again until the next load or terraforming). Tried once per session.
+    /// </summary>
+    private async Task<bool> LoadTerrainCacheAsync(string session, CancellationToken ct)
+    {
+        if (_terrainSession == session || _cacheCheckedFor == session) return false;
+        _cacheCheckedFor = session;
+        var path = _options.TerrainCacheFile;
+        if (string.IsNullOrEmpty(path) || !File.Exists(path)) return false;
+        try
+        {
+            var cache = JsonNode.Parse(await File.ReadAllTextAsync(path, ct))?.AsObject();
+            if (cache is null || JsonRead.String(cache["session"]) != session || cache["terrain"] is not JsonObject doc) return false;
+            var seq = JsonRead.Long(cache["seq"]) ?? 0;
+            await PublishTerrainAsync(TerrainGrid.Parse(doc), session, seq, ct);
+            logger.LogInformation("terrain #{Seq}: restored from {Path}", seq, path);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or FormatException or InvalidOperationException)
+        {
+            logger.LogWarning("Terrain cache {Path} not used: {Message}", path, ex.Message);
+            return false;
+        }
+    }
+
+    private void SaveTerrainCache(JsonObject doc, string session, long seq)
+    {
+        var path = _options.TerrainCacheFile;
+        if (string.IsNullOrEmpty(path)) return;
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+            var cache = new JsonObject { ["session"] = session, ["seq"] = seq, ["terrain"] = doc.DeepClone() };
+            File.WriteAllText(path + ".tmp", cache.ToJsonString());
+            File.Move(path + ".tmp", path, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            logger.LogWarning("Terrain cache {Path} not saved: {Message}", path, ex.Message);
+        }
+    }
+
+    /// <summary>Terrain PNGs + placement JSON (PNGs first, so meta never points at a missing image) and the build checks.</summary>
+    private async Task PublishTerrainAsync(TerrainGrid grid, string session, long seq, CancellationToken ct)
+    {
         var started = DateTime.UtcNow;
         var png = TerrainRenderer.RenderPng(grid);
         await publisher.PublishBytesAsync(TerrainPngPath, png, ct);
         var sites = TownSites.Compute(grid);
         await publisher.PublishBytesAsync(TownSitesPath, sites.RenderPng(), ct);
-        _townSites = sites;
+        var zones = TerrainZones.Compute(grid);
+        await publisher.PublishBytesAsync(TerrainZonesPath, zones.RenderPng(), ct);
+        _buildTerrain = new BuildTerrain(sites, zones);
+        logger.LogInformation("terrain #{Seq}: zones of the land: mountains {Mountains:P0} (average slope >= {Slope:P0}), near water {Water:P0}, lowland {Lowland:P0}, inland {Inland:P0}",
+            seq, zones.Coverage(IndustryZone.Mountains), zones.MountainSlope, zones.Coverage(IndustryZone.NearWater),
+            zones.Coverage(IndustryZone.Lowland), zones.Coverage(IndustryZone.Inland));
         await publisher.PublishAsync(TerrainInfoPath,
-            TerrainRenderer.Info(grid, newest.Session, newest.Seq).ToJsonString(JsonOptions), ct);
+            TerrainRenderer.Info(grid, session, seq).ToJsonString(JsonOptions), ct);
 
-        _terrainSession = newest.Session;
-        _terrainSeq = newest.Seq;
+        _terrainSession = session;
+        _terrainSeq = seq;
         logger.LogInformation("terrain #{Seq}: {Nx} x {Ny} @ {Step} m, z {ZMin:F0}..{ZMax:F0}, PNG {Bytes} B in {Ms:F0} ms",
-            newest.Seq, grid.Nx, grid.Ny, grid.Step, grid.ZMin, grid.ZMax, png.Length, (DateTime.UtcNow - started).TotalMilliseconds);
+            seq, grid.Nx, grid.Ny, grid.Step, grid.ZMin, grid.ZMax, png.Length, (DateTime.UtcNow - started).TotalMilliseconds);
+    }
 
-        terrains.ForEach(Retire);
+    /// <summary>latest/build-rules.json (where viewers may build industries) whenever the streamer changes it.</summary>
+    private async Task<bool> PublishRulesAsync(CancellationToken ct)
+    {
+        if (zoneRules is null) return false;
+        var version = zoneRules.Version;
+        if (version == _rulesVersion) return false;
+        await publisher.PublishAsync(BuildRulesPath, IndustryZones.ToJson(zoneRules.Zones).ToJsonString(JsonOptions), ct);
+        _rulesVersion = version;
         return true;
     }
 
@@ -219,6 +291,8 @@ public sealed class ExportProcessor(IOptions<BridgeOptions> options, IPublisher 
         ["edges"] = _network.EdgeCount,
         ["terrainSeq"] = _terrainSeq,
         ["terrainSession"] = _terrainSession,
+        // Changes with the streamer's settings; Tf3Bridge restarts count from 1 again, so the session is part of it.
+        ["rulesVersion"] = _rulesVersion > 0 ? $"{_session}:{_rulesVersion}" : null,
         ["gameTime"] = _gameTime,
         ["date"] = _date?.DeepClone(),
         ["updatedAtUtc"] = DateTime.UtcNow.ToString("O"),

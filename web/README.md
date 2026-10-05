@@ -38,6 +38,7 @@ web/
   js/owners.js      majątek widzów: obiekty z "Nazwa | Widz" pogrupowane po widzu, główne miasto = największe
   js/pin.js         pinezka z linkiem (#pin=x,y,skala&note=opis)
   js/build.js       budowa za punkty kanału: kod do nagrody na Twitchu
+  js/ground.js      teren pod budowę: woda i zbocza dla miast, regiony (góry, nizina...) dla zakładów
   js/company.js     zakładka Firma (finanse wg lat, wykresy historii) i sparkline salda w górnym pasku
   js/format.js      formatowanie liczb i dat, polskie nazwy ładunków i środków transportu
 ```
@@ -60,6 +61,7 @@ Przycisk 🏗 na mapie (`build.js`): widz klika miejsce, wybiera miasto albo zak
 
 - Strona od razu ostrzega o tym, co Tf3Bridge odrzuci: za blisko miasta albo zakładu, przy krawędzi mapy, zajęta nazwa. Liczby są te same co w `BuildCode.cs`; na mapie przerywany okrąg pokazuje minimalną odległość od miast.
 - Woda i góry: Tf3Bridge z heightmapy liczy dla każdego punktu, jaka część obszaru miasta (kwadrat ±250 m) to woda, a jaka to zbocza bardziej strome niż 15%, i publikuje to jako `terrain-site.png` (R = woda, G = zbocza, B = 255 pod wodą; piksel = próbka jak w `terrain.png`). Miasto ma być na lądzie, wokół najwyżej 30% wody i 50% zboczy (te same progi co w `TownSites.cs`), inaczej gra je zakłada, ale nie stawia ani ulicy, ani domu. Przy wybieraniu miejsca takie obszary są na mapie czerwone, a strona nie daje kodu. Zakład: platforma wiertnicza, łowisko i pogłębiarka tylko na wodzie, reszta tylko na lądzie.
+- Regiony dla zakładów (`ground.js`): Tf3Bridge publikuje `terrain-zone.png` (R = góry, G = woda w promieniu ok. 1 km, B = płaska nizina) i `build-rules.json` (`{ "industries": { "coal_mine": "mountains", ... } }`, ustawienia streamera; zmiana podbija `meta.rulesVersion`). Po wybraniu rodzaju zakładu czerwone jest wszystko, gdzie go postawić nie wolno, w liście rodzajów jest dopisek „(w górach)” itd., a przy złym miejscu strona nie daje kodu i podpowiada, jak daleko i w którą stronę jest najbliższe dozwolone miejsce. Regionu, którego na mapie nie ma (np. gór na płaskiej mapie), nie sprawdzamy.
 - Kolizji z torami, drogami i budynkami strona nie sprawdza; robi to gra.
 - `twitchUrl` w `config.js` (adres kanału) dodaje w okienku link „Otwórz Twitcha”.
 

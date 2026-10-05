@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Tf3Bridge.Commands;
+using Tf3Bridge.Processing;
 
 namespace Tf3Bridge.Rewards;
 
@@ -107,6 +108,9 @@ public sealed record RewardSettings(IReadOnlyList<RewardConfig> Rewards, string 
     /// <summary>Answer the viewer in chat after a redemption (effect and its end date, or why the points came back).</summary>
     public bool ChatMessages { get; init; } = true;
 
+    /// <summary>Industry type ("coal_mine") -> where viewers may build it (<see cref="IndustryZones"/>); null = defaults.</summary>
+    public IReadOnlyDictionary<string, IndustryZone>? Zones { get; init; }
+
     public static RewardSettings Default { get; } = new(RewardKinds.Defaults, "", new Dictionary<RewardKind, string>());
 
     public RewardConfig Get(RewardKind kind) => Rewards.First(r => r.Kind == kind);
@@ -124,6 +128,7 @@ public sealed record RewardSettings(IReadOnlyList<RewardConfig> Rewards, string 
             { Months: <= 0 } r => Migrate(r with { Months = d.Months }, d), // plik sprzed zmiany dni -> miesiące
             var r => Migrate(r, d),
         }).Select(r => r.Normalized())],
+        Zones = IndustryZones.Normalize(Zones),
     };
 
     private static RewardConfig Migrate(RewardConfig r, RewardConfig d) => r with

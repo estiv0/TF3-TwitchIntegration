@@ -28,6 +28,13 @@ public sealed class BridgeOptions
     /// <summary>Move processed input files to InputDir/processed instead of deleting them (debugging).</summary>
     public bool KeepProcessedFiles { get; set; }
 
+    /// <summary>
+    /// Copy of the newest terrain export. The mod sends the terrain only when a save is loaded or the ground
+    /// changes, so after a Tf3Bridge restart the build checks (water, slopes, regions) come from here.
+    /// Empty = no cache (Program sets %LOCALAPPDATA%\Tf3Bridge\terrain-cache.json).
+    /// </summary>
+    public string TerrainCacheFile { get; set; } = "";
+
     /// <summary>Write indented JSON to the output (debugging; larger files).</summary>
     public bool IndentOutput { get; set; }
 

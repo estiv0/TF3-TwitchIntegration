@@ -42,11 +42,14 @@ internal static class Program
         {
             o.InputDir = BridgeOptions.ResolveInputDir(o.InputDir);
             o.OutputDir = BridgeOptions.ResolveOutputDir(o.OutputDir);
+            if (string.IsNullOrWhiteSpace(o.TerrainCacheFile))
+                o.TerrainCacheFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Tf3Bridge", "terrain-cache.json");
         });
         builder.Services.Configure<TwitchOptions>(builder.Configuration.GetSection(TwitchOptions.Section));
         builder.Services.AddSingleton<TwitchSession>();
         builder.Services.AddSingleton<EventSubClient>();
         builder.Services.AddSingleton<ModCommandQueue>();
+        builder.Services.AddSingleton<IndustryZoneRules>();
         builder.Services.AddSingleton<RewardService>();
         builder.Services.AddSingleton<ChatCommandService>();
         builder.Services.AddSingleton<LocalFolderPublisher>();

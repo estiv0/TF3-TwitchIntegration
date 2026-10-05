@@ -4,59 +4,18 @@
 // i wysyła komendę do moda (lua_mod/content/tf3export/create.lua).
 //
 // Kod: "[x, y] Nazwa" (miasto) albo "[x, y, rodzaj] Nazwa" (zakład, np. coal_mine); x, y w metrach gry.
+// Teren (woda, zbocza, regiony jak góry) i czerwona nakładka zakazanych miejsc: ground.js.
 
 import { config } from "../config.js";
-import { dict, t } from "./i18n.js";
+import { dict, locale, t } from "./i18n.js";
+import { Ground, ON_WATER, TOWN_MAX_STEEP, TOWN_MAX_WATER } from "./ground.js";
 
 // Te same liczby co w BuildCode.cs: tu tylko podpowiedź, rozstrzyga Tf3Bridge.
 const MIN_NAME = 2, MAX_NAME = 40;
 const TOWN_FROM_TOWN = 1500, TOWN_FROM_INDUSTRY = 600, INDUSTRY_FROM_TOWN = 800, INDUSTRY_FROM_INDUSTRY = 600, MAP_MARGIN = 300;
-const ON_WATER = new Set(["oil_platform", "fishing_grounds", "dredging_platform"]); // jak w create.lua
-// Jak TownSites.cs: miasto na wodzie albo na zboczach gra zakłada, ale nie stawia w nim ani ulicy, ani domu.
-const TOWN_MAX_WATER = 0.3, TOWN_MAX_STEEP = 0.5;
-const BLOCKED_RGBA = [220, 60, 50, 90]; // nakładka na mapie: tu miasto się nie zbuduje
-
-/**
- * Teren wokół każdego punktu z terrain-site.png (Tf3Bridge, Processing/TownSites.cs), piksel = próbka
- * heightmapy jak w terrain.png: R = udział wody, G = udział stromych zboczy w obszarze miasta, B = 255 pod wodą.
- */
-class TownSites {
-  constructor(bitmap, info) {
-    const { width: w, height: h } = bitmap;
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const g = canvas.getContext("2d", { willReadFrequently: true });
-    g.drawImage(bitmap, 0, 0);
-    this.data = g.getImageData(0, 0, w, h).data;
-    this.w = w;
-    this.h = h;
-    this.info = info;
-
-    const overlay = g.createImageData(w, h);
-    for (let o = 0; o < this.data.length; o += 4) {
-      if (townBlocked(this.site(o))) overlay.data.set(BLOCKED_RGBA, o);
-    }
-    g.putImageData(overlay, 0, 0);
-    this.overlay = canvas;
-  }
-
-  site(o) {
-    const d = this.data;
-    return { water: d[o] / 255, steep: d[o + 1] / 255, onWater: d[o + 2] > 127 };
-  }
-
-  /** x, y w metrach gry; null poza mapą. Obrazek sięga pół próbki za skrajne próbki (TerrainRenderer.Info). */
-  at(x, y) {
-    const { minX, maxY, step } = this.info;
-    const i = Math.floor((x - minX) / step), row = Math.floor((maxY - y) / step);
-    if (i < 0 || row < 0 || i >= this.w || row >= this.h) return null;
-    return this.site((row * this.w + i) * 4);
-  }
-}
-
-const townBlocked = (s) => s.onWater || s.water > TOWN_MAX_WATER || s.steep > TOWN_MAX_STEEP;
 const pct = (share) => Math.round(share * 100);
+// Kierunki co 45°, od północy zgodnie z zegarem (klucze dir.* w i18n).
+const DIRECTIONS = ["n", "ne", "e", "se", "s", "sw", "w", "nw"];
 
 /** "coal_mine" z "::/industries/coal_mine/coal_mine.con"; null dla innych plików. */
 export const industryType = (file) => String(file ?? "").match(/^::\/industries\/(\w+)\/\1\.con$/)?.[1] ?? null;
@@ -91,7 +50,9 @@ export class BuildController {
     this.how = form.querySelector("[data-build-how]");
     this.twitch = form.querySelector("[data-build-twitch]");
     this.draft = null; // { x, y }
-    this.sites = null; // TownSites albo null (brak terrain-site.png)
+    this.ground = null; // Ground albo null (brak terenu)
+    this.rules = {};    // build-rules.json: rodzaj zakładu -> region ("mountains", ...)
+    this.nearest = null; // { key, value } - ostatnio policzone najbliższe dozwolone miejsce
 
     if (config.twitchUrl) this.twitch.href = config.twitchUrl;
     else this.twitch.hidden = true;
@@ -126,22 +87,43 @@ export class BuildController {
     this.showOverlay();
   }
 
-  // Nowy teren z DataFeed: { info, sites } (sites = ImageBitmap albo null).
-  setSites({ info, sites }) {
+  // Nowy teren z DataFeed: { info, sites, zones } (obrazki = ImageBitmap albo null).
+  setGround({ info, sites, zones }) {
     try {
-      this.sites = sites ? new TownSites(sites, info) : null;
+      this.ground = sites || zones ? new Ground(info, sites, zones) : null;
     } catch (err) {
-      console.warn("terrain-site.png:", err);
-      this.sites = null;
+      console.warn("terrain-site.png / terrain-zone.png:", err);
+      this.ground = null;
     }
+    this.nearest = null;
     this.showOverlay();
     this.refresh();
   }
 
-  // Czerwone miejsca, gdzie miasto się nie zbuduje: przy wybieraniu miejsca i w okienku budowy miasta.
+  // Nowe build-rules.json (streamer zmienił, gdzie wolno stawiać zakłady).
+  setRules(rules) {
+    this.rules = rules?.industries ?? {};
+    this.nearest = null;
+    this.fillTypes();
+    this.showOverlay();
+    this.refresh();
+  }
+
+  /** Region, który ogranicza ten rodzaj zakładu na tej mapie; null = żaden. */
+  zoneOf(type) {
+    return type ? this.ground?.activeZone(this.rules[type]) ?? null : null;
+  }
+
+  get selectedType() {
+    return this.industry ? this.type.value || null : null;
+  }
+
+  // Czerwone miejsca, gdzie nie wolno budować wybranego miasta albo zakładu: przy wybieraniu miejsca i w okienku budowy.
   showOverlay() {
     const building = this.map.placeMode === "build" || !this.form.hidden;
-    this.map.setOverlay(building && !this.industry ? this.sites?.overlay ?? null : null);
+    if (this.industry && !this.type.value) this.fillTypes(); // przed pierwszym okienkiem lista rodzajów jest pusta
+    const type = this.selectedType;
+    this.map.setOverlay(building && this.ground && (!this.industry || type) ? this.ground.overlay(type, this.zoneOf(type)) : null);
   }
 
   // Wywoływane przez MapView (onPlace): miejsce budowy + formularz obok.
@@ -166,7 +148,8 @@ export class BuildController {
     const keep = this.type.value;
     const types = new Set((this.getDynamic()?.industries ?? []).map((i) => industryType(i.file)).filter(Boolean));
     const names = dict().industry ?? {};
-    const label = (k) => (names[k] ?? k.replace(/_/g, " ")) + (ON_WATER.has(k) ? ` (${t("build.water")})` : "");
+    const where = (k) => ON_WATER.has(k) ? t("build.water") : this.rules[k] ? t(`zone.${this.rules[k]}`) : null;
+    const label = (k) => (names[k] ?? k.replace(/_/g, " ")) + (where(k) ? ` (${where(k)})` : "");
     const sorted = [...types].sort((a, b) => label(a).localeCompare(label(b)));
     this.type.replaceChildren(...sorted.map((k) => new Option(label(k), k)));
     if (types.has(keep)) this.type.value = keep;
@@ -223,18 +206,44 @@ export class BuildController {
     return this.tooClose(dynamic.towns, fromTown) ?? this.tooClose(dynamic.industries, fromIndustry);
   }
 
-  // Woda albo zbocza w miejscu budowy (terrain-site.png); null = w porządku albo nie wiadomo.
+  // Woda, zbocza albo zły region w miejscu budowy; null = w porządku albo nie wiadomo.
   groundProblem(industry, type) {
-    const site = this.sites?.at(this.draft.x, this.draft.y);
-    if (!site) return null;
+    const ground = this.ground;
+    if (!ground) return null;
+    const { x, y } = this.draft;
+    const k = ground.index(x, y);
+    if (k < 0) return null;
+    let problem = null;
     if (industry) {
-      if (ON_WATER.has(type) && !site.onWater) return t("build.needsWater");
-      if (!ON_WATER.has(type) && site.onWater) return t("build.industryOnWater");
-      return null;
+      const zone = this.zoneOf(type);
+      if (ground.sites && ON_WATER.has(type) && !ground.onWater(k)) problem = t("build.needsWater");
+      else if (ground.sites && !ON_WATER.has(type) && ground.onWater(k)) problem = t("build.industryOnWater");
+      else if (zone && !ground.inZone(k, zone)) {
+        const name = dict().industry?.[type] ?? type.replace(/_/g, " ");
+        problem = t("build.zone", { name, where: t(`zone.${zone}`) });
+      }
+    } else {
+      const site = ground.site(x, y);
+      if (site && (site.onWater || site.water > TOWN_MAX_WATER)) problem = t("build.onWater", { p: pct(site.water) });
+      else if (site && site.steep > TOWN_MAX_STEEP) problem = t("build.steep", { p: pct(site.steep) });
     }
-    if (site.onWater || site.water > TOWN_MAX_WATER) return t("build.onWater", { p: pct(site.water) });
-    if (site.steep > TOWN_MAX_STEEP) return t("build.steep", { p: pct(site.steep) });
-    return null;
+    return problem && `${problem} ${this.nearestHint(type)}`.trim();
+  }
+
+  // "Najbliżej: 3,2 km na północny wschód." - gdzie najbliżej wolno postawić to, co wybrano.
+  nearestHint(type) {
+    const zone = this.zoneOf(type);
+    const key = `${this.draft.x},${this.draft.y},${type},${zone}`;
+    if (this.nearest?.key !== key) {
+      this.nearest = { key, value: this.ground.nearestAllowed(this.draft.x, this.draft.y, type, zone) };
+    }
+    const n = this.nearest.value;
+    if (!n) return t("build.nowhere");
+    const d = Math.hypot(n.dx, n.dy);
+    const angle = (Math.atan2(n.dx, n.dy) * 180) / Math.PI; // 0 = północ, zgodnie z zegarem
+    const dir = DIRECTIONS[Math.round(((angle + 360) % 360) / 45) % 8];
+    const km = new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(Math.max(0.1, d / 1000));
+    return t("build.nearest", { km, dir: t(`dir.${dir}`) });
   }
 
   tooClose(items, min) {

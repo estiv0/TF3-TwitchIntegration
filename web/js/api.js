@@ -1,4 +1,5 @@
-// Pobieranie danych opublikowanych przez Tf3Bridge (latest/meta.json, dynamic.json, network.json, terrain.*, terrain-site.png).
+// Pobieranie danych opublikowanych przez Tf3Bridge (latest/meta.json, dynamic.json, network.json, terrain.*,
+// terrain-site.png, terrain-zone.png, build-rules.json).
 // Polling: co pollMs pobieramy mały meta.json; dynamic/network/terrain tylko gdy zmienił się ich seq.
 // W ukrytej karcie polling stoi.
 
@@ -29,8 +30,9 @@ async function loadBitmap(url) {
 
 export class DataFeed {
   // onPoll(err) po każdym sprawdzeniu: null - wszystko pobrane, inaczej błąd (pierwszy z nieudanych plików).
-  constructor({ onMeta, onDynamic, onNetwork, onTerrain, onPoll }) {
-    this.handlers = { onMeta, onDynamic, onNetwork, onTerrain, onPoll };
+  constructor({ onMeta, onDynamic, onNetwork, onTerrain, onRules, onPoll }) {
+    this.handlers = { onMeta, onDynamic, onNetwork, onTerrain, onRules, onPoll };
+    this.rulesKey = null;
     this.dynamicKey = null;
     this.networkKey = null;
     this.terrainKey = null;
@@ -95,10 +97,20 @@ export class DataFeed {
         const info = await fetchJson("terrain.json");
         const v = `?v=${encodeURIComponent(terrainKey)}`;
         const image = await loadImage(`${config.dataBaseUrl}terrain.png${v}`);
-        // Woda i zbocza wokół każdego punktu (dla budowy miast); starszy Tf3Bridge go nie publikuje.
-        const sites = await loadBitmap(`${config.dataBaseUrl}terrain-site.png${v}`).catch(() => null);
+        // Teren pod budowę (woda i zbocza dla miast, regiony dla zakładów); starszy Tf3Bridge ich nie publikuje.
+        const [sites, zones] = await Promise.all(["terrain-site.png", "terrain-zone.png"]
+          .map((name) => loadBitmap(`${config.dataBaseUrl}${name}${v}`).catch(() => null)));
         this.terrainKey = terrainKey;
-        this.handlers.onTerrain?.({ info, image, sites });
+        this.handlers.onTerrain?.({ info, image, sites, zones });
+      });
+    }
+
+    // Gdzie wolno stawiać zakłady (ustawienia streamera w Tf3Bridge); zmienia się rzadko.
+    if (meta.rulesVersion && meta.rulesVersion !== this.rulesKey) {
+      await step(async () => {
+        const rules = await fetchJson("build-rules.json");
+        this.rulesKey = meta.rulesVersion;
+        this.handlers.onRules?.(rules);
       });
     }
 

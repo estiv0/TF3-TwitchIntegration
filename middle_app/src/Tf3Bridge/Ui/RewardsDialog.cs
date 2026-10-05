@@ -1,9 +1,13 @@
 using System.Globalization;
+using Tf3Bridge.Processing;
 using Tf3Bridge.Rewards;
 
 namespace Tf3Bridge.Ui;
 
-/// <summary>Channel points rewards: on/off, title, prompt, cost, limits and effect strength (for balancing).</summary>
+/// <summary>
+/// Channel points rewards: on/off, title, prompt, cost, limits and effect strength (for balancing),
+/// plus where viewers may build each industry type.
+/// </summary>
 public sealed class RewardsDialog : Form
 {
     private readonly DataGridView _grid = new()
@@ -17,7 +21,16 @@ public sealed class RewardsDialog : Form
     {
         AutoSize = true, Text = "Odpowiadaj widzom na czacie (np. „@widz boost miasta Szczecin działa do 12 maja 1922”, albo dlaczego punkty wróciły)",
     };
+    private readonly DataGridView _zonesGrid = new()
+    {
+        Width = 420, Height = 230, AllowUserToAddRows = false, AllowUserToDeleteRows = false,
+        AllowUserToResizeRows = false, RowHeadersVisible = false, SelectionMode = DataGridViewSelectionMode.CellSelect,
+        BackgroundColor = SystemColors.Window, EditMode = DataGridViewEditMode.EditOnEnter,
+    };
     private readonly IReadOnlyList<RewardConfig> _original;
+
+    private static readonly IndustryZone[] ZoneChoices =
+        [IndustryZone.Any, IndustryZone.Mountains, IndustryZone.NearWater, IndustryZone.Lowland, IndustryZone.Inland];
 
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public IReadOnlyList<RewardConfig> Rewards { get; private set; }
@@ -25,8 +38,12 @@ public sealed class RewardsDialog : Form
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public bool ChatMessages { get; private set; }
 
-    public RewardsDialog(IReadOnlyList<RewardConfig> rewards, bool chatMessages, string status)
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public IReadOnlyDictionary<string, IndustryZone> Zones { get; private set; }
+
+    public RewardsDialog(IReadOnlyList<RewardConfig> rewards, bool chatMessages, IReadOnlyDictionary<string, IndustryZone>? zones, string status)
     {
+        Zones = IndustryZones.Normalize(zones);
         _original = Rewards = rewards;
         ChatMessages = _chat.Checked = chatMessages;
         Text = "Tf3Bridge: nagrody za punkty kanału";
@@ -69,6 +86,32 @@ public sealed class RewardsDialog : Form
             if (!RewardKinds.HasFactor(r.Kind)) Lock(row.Cells["factor"]);
         }
 
+        _zonesGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "industry", HeaderText = "Zakład", Width = 170, ReadOnly = true });
+        var where = new DataGridViewComboBoxColumn
+        {
+            Name = "zone", HeaderText = "Gdzie widz może go zbudować", Width = 230, DisplayStyle = DataGridViewComboBoxDisplayStyle.DropDownButton,
+            FlatStyle = FlatStyle.Flat,
+        };
+        where.Items.AddRange([.. ZoneChoices.Select(ZoneLabel)]);
+        _zonesGrid.Columns.Add(where);
+        // Base game industries first, then types only the settings know (e.g. from mods).
+        var types = IndustryZones.Known.Select(k => k.Type).Concat(Zones.Keys.Except(IndustryZones.Known.Select(k => k.Type)));
+        foreach (var type in types)
+        {
+            var i = _zonesGrid.Rows.Add(IndustryZones.Name(type), ZoneLabel(Zones.GetValueOrDefault(type)));
+            _zonesGrid.Rows[i].Tag = type;
+        }
+        var zonesHint = new Label
+        {
+            AutoSize = true, MaximumSize = new Size(620, 0), ForeColor = SystemColors.GrayText,
+            Text = "Nowy zakład (kod z mapy): gdzie wolno go postawić. Platformy, łowiska i pogłębiarki i tak tylko na wodzie, reszta tylko na lądzie. "
+                 + "Regiony Tf3Bridge liczy z terenu gry w promieniu ok. 1 km: góry to najbardziej pofałdowany ląd mapy (najwyżej 15%), "
+                 + "nizina to prawie płaski teren. Gdy danego regionu na mapie nie ma (np. płaska mapa bez gór), ograniczenie nie działa. "
+                 + "Na stronie zakazany teren jest czerwony, a kod z takiego miejsca jest odrzucany (punkty wracają). Ile mapy zajmuje każdy region: log Tf3Bridge po eksporcie terenu.",
+        };
+        var zonesRow = new FlowLayoutPanel { AutoSize = true, Margin = new Padding(0, 10, 0, 0) };
+        zonesRow.Controls.AddRange([_zonesGrid, zonesHint]);
+
         var ok = new Button { Text = "Zapisz i wyślij na Twitcha", AutoSize = true, MinimumSize = new Size(90, 28) };
         var cancel = new Button { Text = "Anuluj", DialogResult = DialogResult.Cancel, AutoSize = true, MinimumSize = new Size(90, 28) };
         var defaults = new Button { Text = "Przywróć domyślne", AutoSize = true, MinimumSize = new Size(90, 28) };
@@ -77,7 +120,7 @@ public sealed class RewardsDialog : Form
         CancelButton = cancel;
 
         var root = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, Padding = new Padding(14), Dock = DockStyle.Fill };
-        root.Controls.AddRange([hint, _grid, _chat, _error, buttons]);
+        root.Controls.AddRange([hint, _grid, _chat, zonesRow, _error, buttons]);
         Controls.Add(root);
 
         ok.Click += (_, _) =>
@@ -86,6 +129,7 @@ public sealed class RewardsDialog : Form
             {
                 Rewards = list;
                 ChatMessages = _chat.Checked;
+                Zones = ReadZones();
                 DialogResult = DialogResult.OK;
             }
             else _error.Text = error;
@@ -94,6 +138,7 @@ public sealed class RewardsDialog : Form
         {
             Rewards = RewardKinds.Defaults;
             ChatMessages = true;
+            Zones = IndustryZones.Normalize(null);
             DialogResult = DialogResult.OK;
         };
     }
@@ -147,6 +192,28 @@ public sealed class RewardsDialog : Form
         }
         return true;
     }
+
+    private Dictionary<string, IndustryZone> ReadZones()
+    {
+        _zonesGrid.EndEdit();
+        var zones = new Dictionary<string, IndustryZone>();
+        foreach (DataGridViewRow row in _zonesGrid.Rows)
+        {
+            var label = Convert.ToString(row.Cells["zone"].Value, CultureInfo.CurrentCulture);
+            var zone = ZoneChoices.FirstOrDefault(z => ZoneLabel(z) == label);
+            if (zone != IndustryZone.Any) zones[(string)row.Tag!] = zone;
+        }
+        return zones;
+    }
+
+    private static string ZoneLabel(IndustryZone zone) => zone switch
+    {
+        IndustryZone.Mountains => "tylko w górach",
+        IndustryZone.NearWater => "tylko przy wodzie (do 1 km)",
+        IndustryZone.Lowland => "tylko na płaskiej nizinie",
+        IndustryZone.Inland => "tylko z dala od wody (ponad 1 km)",
+        _ => "wszędzie",
+    };
 
     public static string KindLabel(RewardKind kind) => kind switch
     {

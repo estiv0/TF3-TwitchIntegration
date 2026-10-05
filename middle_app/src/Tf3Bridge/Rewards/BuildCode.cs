@@ -59,8 +59,11 @@ public static partial class BuildCode
         return name.Length > 0 ? name : null;
     }
 
-    /// <param name="sites">Ground from the newest heightmap; null = not known yet (towns are then not checked for water and slopes).</param>
-    public static Result Parse(string input, bool industry, IReadOnlyCollection<GameObject> objects, MapBounds? bounds, TownSites? sites = null)
+    /// <param name="terrain">Ground from the newest heightmap; null = not known yet (then neither water and slopes
+    /// for towns nor regions for industries are checked).</param>
+    /// <param name="zones">Industry type -> required region (<see cref="IndustryZones"/>); null = defaults.</param>
+    public static Result Parse(string input, bool industry, IReadOnlyCollection<GameObject> objects, MapBounds? bounds,
+        BuildTerrain? terrain = null, IReadOnlyDictionary<string, IndustryZone>? zones = null)
     {
         var m = Code().Match(input);
         if (!m.Success) return Error("to nie jest kod z mapy (skopiuj go ze strony: przycisk 🏗)");
@@ -76,13 +79,16 @@ public static partial class BuildCode
 
         if (bounds is { } b && (x < b.MinX + MapMargin || x > b.MaxX - MapMargin || y < b.MinY + MapMargin || y > b.MaxY - MapMargin))
             return Error("to miejsce jest poza mapą albo przy samej krawędzi");
-        if (!industry && sites?.At(x, y) is { } site && TownSites.TownProblem(site) is { } ground) return Error(ground);
+        if (!industry && terrain?.Sites.At(x, y) is { } site && TownSites.TownProblem(site) is { } ground) return Error(ground);
 
         string? file = null;
         if (type is not null)
         {
             file = objects.FirstOrDefault(o => o.Kind == GameObjectKind.Industry && string.Equals(IndustryType(o.File), type, StringComparison.OrdinalIgnoreCase))?.File;
             if (file is null) return Error($"nieznany rodzaj zakładu „{type}” (na tej mapie takich nie ma)");
+            var kind = type.ToLowerInvariant();
+            if (terrain is not null && (zones ?? IndustryZones.Defaults).TryGetValue(kind, out var zone) && !terrain.Zones.Allows(zone, x, y))
+                return Error($"{IndustryZones.Name(kind)}: ten rodzaj zakładu można budować tylko {IndustryZones.Label(zone)} (na mapie zakazany teren jest czerwony)");
         }
 
         var key = TargetResolver.Normalize(name);

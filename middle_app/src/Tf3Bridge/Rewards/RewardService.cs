@@ -43,7 +43,8 @@ public sealed class RewardService
     private readonly string _dynamicPath;
     private readonly string _terrainPath;
     private readonly Func<string?> _whyInactive; // null = gra działa i wysyła dane
-    private readonly Func<TownSites?> _townSites;
+    private readonly Func<BuildTerrain?> _terrain;
+    private readonly IndustryZoneRules? _zoneRules;
     private readonly string _settingsPath;
     private readonly string _siteUrl;
     private readonly ILogger _log;
@@ -59,9 +60,9 @@ public sealed class RewardService
     public event Action<RewardOutcome>? Finished;
 
     public RewardService(TwitchSession session, EventSubClient eventSub, ModCommandQueue queue, BridgeRunner runner, ExportProcessor processor,
-        IOptions<BridgeOptions> options, IOptions<TwitchOptions> twitch, ILogger<RewardService> log)
+        IndustryZoneRules zoneRules, IOptions<BridgeOptions> options, IOptions<TwitchOptions> twitch, ILogger<RewardService> log)
         : this(session, new HttpClient { Timeout = TimeSpan.FromSeconds(20) }, eventSub.IsMock, queue, options.Value.OutputDir, twitch.Value.SiteUrl,
-            () => WhyInactive(runner.IsRunning, processor.LastDynamicUtc, DateTime.UtcNow), () => processor.TownSites, log)
+            () => WhyInactive(runner.IsRunning, processor.LastDynamicUtc, DateTime.UtcNow), () => processor.BuildTerrain, zoneRules, log)
     {
         eventSub.RedemptionReceived += r => _ = HandleRedemptionAsync(r);
         runner.StateChanged += () => _wake.Release(); // Zatrzymaj / Uruchom: nagrody od razu, nie po 15 s
@@ -69,15 +70,17 @@ public sealed class RewardService
 
     // Jeden HttpClient dla API nagród i czatu.
     private RewardService(TwitchSession session, HttpClient http, bool mock, ModCommandQueue queue, string outputDir, string siteUrl,
-        Func<string?> whyInactive, Func<TownSites?> townSites, ILogger log)
+        Func<string?> whyInactive, Func<BuildTerrain?> terrain, IndustryZoneRules zoneRules, ILogger log)
         : this(session, new ChannelPointsApi(session, http), new ChatApi(session, http), queue, mock, outputDir, RewardSettingsStore.FilePath,
-            whyInactive, log, siteUrl, townSites) { }
+            whyInactive, log, siteUrl, terrain, zoneRules) { }
 
     internal RewardService(TwitchSession session, ChannelPointsApi api, ChatApi chat, ModCommandQueue queue, bool mock,
-        string outputDir, string settingsPath, Func<string?> whyInactive, ILogger log, string siteUrl = "", Func<TownSites?>? townSites = null)
+        string outputDir, string settingsPath, Func<string?> whyInactive, ILogger log, string siteUrl = "", Func<BuildTerrain?>? terrain = null,
+        IndustryZoneRules? zoneRules = null)
     {
         _whyInactive = whyInactive;
-        _townSites = townSites ?? (() => null);
+        _terrain = terrain ?? (() => null);
+        _zoneRules = zoneRules;
         _siteUrl = siteUrl;
         _session = session;
         _api = api;
@@ -89,6 +92,7 @@ public sealed class RewardService
         _settingsPath = settingsPath;
         _log = log;
         _settings = RewardSettingsStore.Load(settingsPath);
+        _zoneRules?.Set(_settings.Zones);
         queue.Completed += OnCommandCompleted;
     }
 
@@ -102,6 +106,7 @@ public sealed class RewardService
         lock (_gate)
         {
             _settings = (settings with { ChannelUserId = _settings.ChannelUserId, TwitchIds = _settings.TwitchIds }).Normalized();
+            _zoneRules?.Set(_settings.Zones);
             SaveLocked();
             _syncedFor = null;
         }
@@ -278,7 +283,7 @@ public sealed class RewardService
         if (RewardKinds.Creates(kind))
         {
             if (objects.Count == 0) return Reject("brak danych z gry (czy TF3 działa?)");
-            var parsed = BuildCode.Parse(input, kind == RewardKind.CreateIndustry, objects, MapBounds.Load(_terrainPath), _townSites());
+            var parsed = BuildCode.Parse(input, kind == RewardKind.CreateIndustry, objects, MapBounds.Load(_terrainPath), _terrain(), Settings.Zones);
             if (parsed.Place is not { } place) return Reject(parsed.Error!);
             command = place.File is { } file
                 ? ModCommand.CreateIndustry(place.X, place.Y, file, place.Name, owner, CommandSource.ChannelPoints, created)
