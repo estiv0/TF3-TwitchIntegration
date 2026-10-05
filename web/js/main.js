@@ -67,7 +67,9 @@ const build = new BuildController(map, { form: $("#build-form"), button: $("#bui
 const sidebar = new Sidebar($("#sidebar"), $("#detail"), {
   onPick(kind, id) {
     setSheet(false); // telefon: wybór z listy pokazuje obiekt na mapie
-    map.focus(kind, id);
+    // Właściciel (majątek widza) nie jest jednym obiektem mapy - mapa tylko gubi poprzednie zaznaczenie.
+    if (kind === "owner") map.select(null);
+    else map.focus(kind, id);
     sidebar.setSelected(kind, id);
     writeSelection({ kind, id });
   },
@@ -143,11 +145,13 @@ function applyPendingSelection() {
   pendingSelection = null;
   const d = lastDynamic;
   const list = { town: d.towns, industry: d.industries, station: d.stations, line: d.lines }[sel.kind];
-  if (!list?.some((x) => x.id === sel.id)) {
+  const exists = sel.kind === "owner" ? sidebar.owners.has(sel.id) : list?.some((x) => x.id === sel.id);
+  if (!exists) {
     writeSelection(sidebar.selected); // obiektu już nie ma (np. usunięta linia)
     return;
   }
-  if (readPinHash()) map.select(sel.kind, sel.id);
+  if (sel.kind === "owner") map.select(null);
+  else if (readPinHash()) map.select(sel.kind, sel.id);
   else map.focus(sel.kind, sel.id);
   sidebar.setSelected(sel.kind, sel.id);
 }

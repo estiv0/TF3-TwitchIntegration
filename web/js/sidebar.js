@@ -1,4 +1,4 @@
-// Panel boczny: listy (miasta, przemysł, stacje, linie) i szczegóły zaznaczonego obiektu
+// Panel boczny: listy (miasta, przemysł, stacje, linie, właściciele) i szczegóły zaznaczonego obiektu
 // (szczegóły w osobnym, pływającym okienku nad mapą - element detail, js/float.js).
 
 import {
@@ -10,6 +10,7 @@ import { companyHtml } from "./company.js";
 import { townEarnings } from "./earnings.js";
 import { locale, t } from "./i18n.js";
 import { industryKind, industryOutputs } from "./map.js";
+import { ownerKey, ownersIndex } from "./owners.js";
 
 export class Sidebar {
   constructor(root, detail, { onPick, onStop, onClose, onLinesView, onHoverItem }) {
@@ -39,6 +40,8 @@ export class Sidebar {
     this.stationLines = new Map();                 // id stacji -> linie
     this.industryLines = new Map();                // id zakładu -> linie jego stacji
     this.stationIndustry = new Map();              // id stacji -> id zakładu (stacje przemysłu)
+    this.owners = new Map();                       // klucz widza -> majątek (ownersIndex)
+    this.ownerSort = "assets";                     // lista właścicieli: "assets" (majątek), "profit", "name"
 
     root.querySelectorAll("[data-tab]").forEach((btn) =>
       btn.addEventListener("click", () => this.showTab(btn.dataset.tab)));
@@ -46,7 +49,8 @@ export class Sidebar {
     this.carriers.addEventListener("click", (e) => {
       const sort = e.target.closest("[data-sort]");
       if (sort) {
-        this.townSort = sort.dataset.sort;
+        if (this.tab === "owners") this.ownerSort = sort.dataset.sort;
+        else this.townSort = sort.dataset.sort;
         this.renderCarriers();
         this.renderList();
         return;
@@ -85,20 +89,26 @@ export class Sidebar {
 
     this.list.addEventListener("click", (e) => {
       const row = e.target.closest("[data-kind]");
-      if (row) this.onPick(row.dataset.kind, Number(row.dataset.id));
+      if (row) this.onPick(row.dataset.kind, selId(row.dataset.kind, row.dataset.id));
     });
 
     // Najechanie na pozycję listy (miasto, zakład, stacja, linia) podświetla ją na mapie.
+    // Właściciel nie jest jednym punktem na mapie.
     this.list.addEventListener("mouseover", (e) => {
       const row = e.target.closest("[data-kind]");
-      onHoverItem?.(row?.dataset.kind ?? null, row ? Number(row.dataset.id) : null);
+      const kind = row && row.dataset.kind !== "owner" ? row.dataset.kind : null;
+      onHoverItem?.(kind, kind ? Number(row.dataset.id) : null);
     });
     this.list.addEventListener("mouseleave", () => onHoverItem?.(null));
 
     // Tak samo linie w szczegółach (miasta, stacji, zakładu): wskazana linia na mapie na tle zaznaczonego obiektu.
+    // W szczegółach właściciela tak samo jego miasta, zakłady i stacje (data-pick).
     this.detail.addEventListener("mouseover", (e) => {
       const line = e.target.closest("[data-line]");
-      onHoverItem?.(line ? "line" : null, line ? Number(line.dataset.line) : null);
+      if (line) return onHoverItem?.("line", Number(line.dataset.line));
+      const [kind, id] = splitPick(e.target.closest("[data-pick]"));
+      const onMap = kind && kind !== "owner";
+      onHoverItem?.(onMap ? kind : null, onMap ? Number(id) : null);
     });
     this.detail.addEventListener("mouseleave", () => onHoverItem?.(null));
 
@@ -107,9 +117,20 @@ export class Sidebar {
         onClose?.();
         return;
       }
+      const copy = e.target.closest("[data-copy]");
+      if (copy) {
+        copyName(copy);
+        return;
+      }
       const line = e.target.closest("[data-line]");
       if (line) {
         this.onPick("line", Number(line.dataset.line));
+        return;
+      }
+      // Właściciel w szczegółach obiektu i obiekty w szczegółach właściciela.
+      const [kind, id] = splitPick(e.target.closest("[data-pick]"));
+      if (kind) {
+        this.onPick(kind, selId(kind, id));
         return;
       }
       const stop = e.target.closest("[data-stop]");
@@ -125,7 +146,10 @@ export class Sidebar {
   // Przełącza zakładkę (też z zewnątrz: klik w saldo w górnym pasku otwiera Firmę).
   showTab(tab) {
     this.tab = tab;
-    this.root.querySelectorAll("[data-tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
+    this.root.querySelectorAll("[data-tab]").forEach((b) => {
+      b.setAttribute("aria-selected", String(b.dataset.tab === tab));
+      if (b.dataset.tab === tab) scrollTabIntoView(b);
+    });
     this.renderSearch();
     this.renderCarriers();
     this.emitLinesView();
@@ -138,10 +162,12 @@ export class Sidebar {
     this.stationIndustry = industryOfStation(dynamic);
     this.industryLines = linesByIndustry(dynamic, this.stationLines, this.stationIndustry);
     this.earnings = townEarnings(dynamic);
+    this.owners = ownersIndex(dynamic, this.stationIndustry);
     this.root.querySelector('[data-count="towns"]').textContent = dynamic.towns?.length ?? 0;
     this.root.querySelector('[data-count="industries"]').textContent = dynamic.industries?.length ?? 0;
     this.root.querySelector('[data-count="stations"]').textContent = dynamic.stations?.length ?? 0;
     this.root.querySelector('[data-count="lines"]').textContent = dynamic.lines?.length ?? 0;
+    this.root.querySelector('[data-count="owners"]').textContent = this.owners.size;
     this.render();
   }
 
@@ -244,6 +270,21 @@ export class Sidebar {
             <span class="row-value">${money(outside.profit12m)}</span>
           </li>`;
       }
+    } else if (this.tab === "owners") {
+      // Szukanie po nazwie widza i po nazwach jego obiektów ("Gdańsk" pokaże właściciela Gdańska).
+      const matchOwner = (o) => match(o.name)
+        || [o.towns, o.industries, o.stations, o.lines].some((xs) => xs.some((x) => match(x.name)));
+      const byName = (a, b) => a.name.localeCompare(b.name, locale());
+      const order = this.ownerSort === "profit"
+        ? (a, b) => (b.profit12m ?? -Infinity) - (a.profit12m ?? -Infinity) || b.score - a.score
+        : this.ownerSort === "name" ? byName : (a, b) => b.score - a.score || byName(a, b);
+      html = [...this.owners.values()].filter(matchOwner).sort(order)
+        .map((o) => `
+          <li class="row" data-kind="owner" data-id="${esc(o.key)}" aria-current="${isSel("owner", o.key)}">
+            <span class="row-name">${esc(o.name)}</span>
+            ${assetCounts(o)}
+            <span class="row-value">${this.ownerSort === "profit" ? money(o.profit12m) : ""}</span>
+          </li>`).join("");
     } else if (this.tab === "industries") {
       const { mode, cargo } = this.industryFilter;
       const hasCargo = (i) => !cargo || industryCargos(i, mode).has(cargo);
@@ -292,13 +333,14 @@ export class Sidebar {
           </li>`).join("");
     }
 
-    const empty = this.tab === "lines" && this.visibleLines ? "list.emptyView" : "list.empty";
+    const empty = this.tab === "lines" && this.visibleLines ? "list.emptyView"
+      : this.tab === "owners" && !this.owners.size ? "owners.empty" : "list.empty";
     this.list.innerHTML = html || `<li class="empty">${esc(t(empty))}</li>`;
   }
 
   // Przyciski typów linii / rodzajów stacji: tylko typy obecne w danych, z liczbą pozycji.
   renderCarriers() {
-    this.carriers.hidden = !(this.tab in this.typeFilter || this.tab === "towns" || this.tab === "industries");
+    this.carriers.hidden = !(this.tab in this.typeFilter || ["towns", "industries", "owners"].includes(this.tab));
     if (this.tab === "industries") {
       this.carriers.innerHTML = this.industryFilterHtml();
       return;
@@ -307,6 +349,12 @@ export class Sidebar {
       const btn = (key) =>
         `<button type="button" data-sort="${key}" aria-pressed="${this.townSort === key}">${esc(t(`town.sort.${key}`))}</button>`;
       this.carriers.innerHTML = btn("size") + btn("profit") + btn("growth");
+      return;
+    }
+    if (this.tab === "owners") {
+      const btn = (key) =>
+        `<button type="button" data-sort="${key}" aria-pressed="${this.ownerSort === key}">${esc(t(`owners.sort.${key}`))}</button>`;
+      this.carriers.innerHTML = btn("assets") + btn("profit") + btn("name");
       return;
     }
     if (!(this.tab in this.typeFilter)) return;
@@ -357,24 +405,135 @@ export class Sidebar {
       return;
     }
     const list = { town: d.towns, industry: d.industries, station: d.stations, line: d.lines }[sel.kind] ?? [];
-    const item = list.find((x) => x.id === sel.id);
+    const item = sel.kind === "owner" ? this.owners.get(sel.id) : list.find((x) => x.id === sel.id);
     if (!item) {
       this.detail.hidden = true;
       return;
     }
     this.detail.hidden = false;
     const close = `<button type="button" class="detail-close" data-close title="${esc(t("detail.close"))}" aria-label="${esc(t("detail.close"))}">×</button>`;
-    this.detail.innerHTML = close + (sel.kind === "town" ? townDetail(item, this.earnings.towns.get(item.id))
+    this.detail.innerHTML = close + (sel.kind === "owner" ? ownerDetail(item, this.stationIndustry)
+      : sel.kind === "town" ? townDetail(item, this.earnings.towns.get(item.id))
       : sel.kind === "line" ? lineDetail(item, this.focusedStop)
       : sel.kind === "station" ? stationDetail(item, this.stationLines.get(item.id) ?? [])
       : industryDetail(item, this.industryLines.get(item.id) ?? []));
   }
 }
 
+// Przycisk kopiowania nazwy przy nagłówku (nagłówek służy do przeciągania okienka, więc tekstu nie da się w nim zaznaczyć).
+function copyBtn(name) {
+  if (!name) return "";
+  return `<button type="button" class="detail-copy" data-copy="${esc(name)}" title="${esc(t("detail.copy"))}" aria-label="${esc(t("detail.copy"))}">⧉</button>`;
+}
+
+async function copyName(btn) {
+  const text = btn.dataset.copy;
+  let ok = false;
+  try {
+    await navigator.clipboard.writeText(text);
+    ok = true;
+  } catch {
+    // bez Clipboard API (np. http bez localhost): stary sposób przez ukryte pole tekstowe
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;opacity:0";
+    document.body.append(ta);
+    ta.select();
+    try { ok = document.execCommand("copy"); } catch { /* nic */ }
+    ta.remove();
+  }
+  btn.textContent = ok ? "✓" : "✕";
+  btn.title = t(ok ? "detail.copied" : "detail.copyFailed");
+  setTimeout(() => {
+    if (!btn.isConnected) return;
+    btn.textContent = "⧉";
+    btn.title = t("detail.copy");
+  }, 1500);
+}
+
+// Pasek zakładek przewija się w poziomie (wąski panel, telefon): wybrana zakładka cała w widoku.
+// Bez scrollIntoView, bo ten przesuwa też stronę, gdy jest szersza od ekranu.
+function scrollTabIntoView(btn) {
+  const bar = btn.parentElement;
+  const pad = parseFloat(getComputedStyle(bar).paddingLeft) || 0;
+  const left = btn.offsetLeft - bar.offsetLeft - pad, right = btn.offsetLeft - bar.offsetLeft + btn.offsetWidth + pad;
+  if (left < bar.scrollLeft) bar.scrollLeft = left;
+  else if (right > bar.scrollLeft + bar.clientWidth) bar.scrollLeft = right - bar.clientWidth;
+}
+
+// Zaznaczenie z listy albo linku: właściciel ma klucz tekstowy, reszta liczbowe id.
+const selId = (kind, id) => (kind === "owner" ? id : Number(id));
+
+// data-pick="rodzaj:id" (klucz właściciela może zawierać ":") -> [rodzaj, id] albo [].
+function splitPick(el) {
+  const v = el?.dataset.pick ?? "";
+  const i = v.indexOf(":");
+  return i > 0 ? [v.slice(0, i), v.slice(i + 1)] : [];
+}
+
 // Właściciel z nazwy w grze ("Nazwa | Właściciel", splitAllOwners) i efekty od widzów (attachEffects).
+// Nazwa właściciela otwiera jego majątek.
 function ownerHtml(x) {
-  return `<p class="detail-owner">${x.owner ? `${esc(t("owner"))}: <strong>${esc(x.owner)}</strong>` : esc(t("owner.none"))}</p>`
-    + effectsHtml(x);
+  const owner = x.owner
+    ? `${esc(t("owner"))}: <button type="button" class="owner-link" data-pick="owner:${esc(ownerKey(x.owner))}" title="${esc(t("owner.show"))}">${esc(x.owner)}</button>`
+    : esc(t("owner.none"));
+  return `<p class="detail-owner">${owner}</p>` + effectsHtml(x);
+}
+
+// Liczniki obiektów widza na liście (tylko niezerowe).
+function assetCounts(o) {
+  const n = (count, icon, label) =>
+    (count ? `<span class="own-count" title="${esc(label)}">${icon}${fmtInt(count)}</span>` : "");
+  return `<span class="own-counts">`
+    + n(o.towns.length, `<span class="dot dot-town"></span>`, t("tab.towns"))
+    + n(o.industries.length, `<span class="dot dot-processing"></span>`, t("tab.industries"))
+    + n(o.stations.length, iconHtml(stationImg({ kind: "RAIL" }), "RAIL"), t("tab.stations"))
+    + n(o.lines.length, `<span class="swatch own-line"></span>`, t("tab.lines"))
+    + `</span>`;
+}
+
+// Majątek widza: podsumowanie i klikalne obiekty (data-pick, linie: data-line); główne (największe) miasto pierwsze.
+function ownerDetail(o, stationIndustry) {
+  const link = (pick, name, icon, value = "", x = null) => `
+    <li><button type="button" data-pick="${pick}">
+      ${icon}<span class="link-name">${esc(name)}</span>${x ? effectBadges(x) : ""}
+      <span class="link-value">${value}</span>
+    </button></li>`;
+  const section = (title, rows) => (rows ? `<h3>${esc(title)}</h3><ul class="line-links">${rows}</ul>` : "");
+  const main = `<span class="own-main" title="${esc(t("owners.main"))}">★</span> `;
+
+  const towns = o.towns.map((x) =>
+    link(`town:${x.id}`, x.name, `<span class="dot dot-town"></span>`, (x === o.main ? main : "") + fmtInt(townSize(x)), x)).join("");
+  const industries = o.industries.map((x) =>
+    link(`industry:${x.id}`, x.name, industryBadge(x), esc(t("list.level", { n: x.level ?? "–" })), x)).join("");
+  // Stacja zakładu (innego widza albo bez właściciela) otwiera zakład, jak na liście stacji.
+  const stations = o.stations.map((s) => {
+    const ind = stationIndustry.get(s.id);
+    return link(ind != null ? `industry:${ind}` : `station:${s.id}`, s.name ?? stationName(s.kind), iconHtml(stationImg(s), s.kind));
+  }).join("");
+  const lines = o.lines.map((l) => `
+    <li><button type="button" data-line="${l.id}">
+      <span class="swatch" style="background:${rgb(l.color)}"></span>${carrierIcon(l.carrier, l.carrier)}
+      <span class="link-name">${esc(l.name)}</span>${effectBadges(l)}
+      <span class="link-value">${money(l.stats?.profit12m)}</span>
+    </button></li>`).join("");
+
+  const mainTown = o.main
+    ? ` · ${esc(t("owners.main"))}: <button type="button" class="owner-link" data-pick="town:${o.main.id}">${esc(o.main.name)}</button>`
+    : "";
+  return `
+    <h2>${esc(o.name)}${copyBtn(o.name)}</h2>
+    <p class="detail-sub">${esc(t("owner"))}${mainTown}</p>
+    <dl class="stats">
+      ${o.towns.length ? stat(t("tab.towns"), fmtInt(o.towns.length)) + stat(t("owners.size"), fmtInt(o.size)) : ""}
+      ${o.industries.length ? stat(t("tab.industries"), fmtInt(o.industries.length)) : ""}
+      ${o.stations.length ? stat(t("tab.stations"), fmtInt(o.stations.length)) : ""}
+      ${o.lines.length ? stat(t("tab.lines"), fmtInt(o.lines.length)) + stat(t("line.profit12m"), money(o.profit12m)) : ""}
+    </dl>
+    ${section(t("tab.towns"), towns)}
+    ${section(t("tab.industries"), industries)}
+    ${section(t("tab.stations"), stations)}
+    ${section(t("tab.lines"), lines)}`;
 }
 
 // Nazwa efektu z siłą: "Boost miasta +50%".
@@ -419,7 +578,7 @@ function lineLinks(lines) {
 function stationDetail(s, lines) {
   const use = stationUse(s);
   return `
-    <h2>${iconHtml(stationImg(s), s.kind)} ${esc(s.name ?? stationName(s.kind))}</h2>
+    <h2>${iconHtml(stationImg(s), s.kind)} ${esc(s.name ?? stationName(s.kind))}${copyBtn(s.name ?? stationName(s.kind))}</h2>
     <p class="detail-sub">${esc(stationName(s.kind) ?? t("station"))}${use ? ` · ${esc(use)}` : ""}</p>
     ${ownerHtml(s)}
     <dl class="stats">
@@ -483,7 +642,7 @@ function townDetail(town, earnings) {
     needs = chips ? `<h3>${esc(t("town.demand"))}</h3><ul class="chips">${chips}</ul>` : "";
   }
   return `
-    <h2>${esc(town.name)}</h2>
+    <h2>${esc(town.name)}${copyBtn(town.name)}</h2>
     <p class="detail-sub">${esc(t("town"))} · ${esc(t(town.growing ? "town.growing" : "town.stopped"))}</p>
     ${ownerHtml(town)}
     <dl class="stats">
@@ -527,7 +686,7 @@ function industryDetail(i, lines) {
     : "";
 
   return `
-    <h2>${esc(i.name)}</h2>
+    <h2>${esc(i.name)}${copyBtn(i.name)}</h2>
     <p class="detail-sub">${esc(t(industryKind(i) === "raw" ? "industry.raw" : "industry.processing"))}</p>
     ${ownerHtml(i)}
     <dl class="stats">
@@ -601,7 +760,7 @@ function lineDetail(l, focusedStop) {
     return `<li data-stop="${i}" aria-current="${focusedStop === i}"><button type="button">${name}</button></li>`;
   }).join("");
   return `
-    <h2><span class="swatch" style="background:${rgb(l.color)}"></span> ${esc(l.name)}</h2>
+    <h2><span class="swatch" style="background:${rgb(l.color)}"></span> ${esc(l.name)}${copyBtn(l.name)}</h2>
     <p class="detail-sub">${carrierIcon(l.carrier, l.carrier)} ${esc(carrierName(l.carrier) ?? t("line"))}</p>
     ${ownerHtml(l)}
     <dl class="stats">

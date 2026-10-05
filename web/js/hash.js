@@ -2,7 +2,8 @@
 // #pin=120,-340,0.25&note=Port&line=429883. Części zmieniamy jako napisy "klucz=wartość",
 // żeby nie przekodować opisu pinezki.
 
-const SEL_KINDS = ["town", "industry", "station", "line"];
+// owner = majątek widza, id to klucz tekstowy (owners.js), zakodowany: #owner=kinek
+const SEL_KINDS = ["town", "industry", "station", "line", "owner"];
 
 const parts = () => location.hash.replace(/^#/, "").split("&").filter(Boolean);
 
@@ -14,7 +15,13 @@ export function hashWith(drop, extra = []) {
 /** Zaznaczony obiekt z hasha ({ kind, id }) albo null. */
 export function readSelection() {
   for (const p of parts()) {
-    const [key, value] = p.split("=");
+    const [key, value = ""] = p.split("=");
+    if (key === "owner") {
+      let id = "";
+      try { id = decodeURIComponent(value); } catch { /* zepsuty link */ }
+      if (id) return { kind: key, id };
+      continue;
+    }
     const id = Number(value);
     if (SEL_KINDS.includes(key) && Number.isInteger(id)) return { kind: key, id };
   }
@@ -23,6 +30,7 @@ export function readSelection() {
 
 /** Zapisuje zaznaczenie w adresie (bez nowego wpisu w historii i bez hashchange). */
 export function writeSelection(sel) {
-  const hash = hashWith(SEL_KINDS, sel?.kind ? [`${sel.kind}=${sel.id}`] : []);
+  const value = sel?.kind === "owner" ? encodeURIComponent(sel.id) : sel?.id;
+  const hash = hashWith(SEL_KINDS, sel?.kind ? [`${sel.kind}=${value}`] : []);
   history.replaceState(null, "", hash ? `#${hash}` : location.pathname + location.search);
 }

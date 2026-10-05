@@ -34,7 +34,8 @@ web/
   js/main.js        spina dane, mapę i panel
   js/api.js         DataFeed: polling meta.json, pobieranie dynamic/network przy zmianie seq
   js/map.js         MapView: canvas, sieć jako krzywe Béziera (z tangensów TF), pan/zoom/hover/wybór
-  js/sidebar.js     listy miast, przemysłu i linii, szczegóły zaznaczenia
+  js/sidebar.js     listy miast, przemysłu, stacji, linii i właścicieli, szczegóły zaznaczenia
+  js/owners.js      majątek widzów: obiekty z "Nazwa | Widz" pogrupowane po widzu, główne miasto = największe
   js/pin.js         pinezka z linkiem (#pin=x,y,skala&note=opis)
   js/build.js       budowa za punkty kanału: kod do nagrody na Twitchu
   js/company.js     zakładka Firma (finanse wg lat, wykresy historii) i sparkline salda w górnym pasku
@@ -50,7 +51,7 @@ web/
 - Pojazdy: mod wysyła ich pozycję (`vehicles[].pos`). Pozycja przy trasie linii (do 40 m od odcinka dojazdu do `stop`) daje ruch wzdłuż trasy, inna (statki, samoloty) - po prostej. Bez `pos` (pozycje wyłączone w modzie albo starszy eksport) położenie jest zgadywane: `AT_TERMINAL` na przystanku, `EN_ROUTE` na trasie od poprzedniego przystanku do `stop`, kilka pojazdów na odcinku rozłożonych równo (na długim odcinku pojazd wtedy stoi).
 - Ruch pojazdów jest interpolowany: po nowej paczce danych pojazd jedzie z miejsca, w którym jest na ekranie, do nowej pozycji, przez średni odstęp między paczkami. Obraz jest więc o jedną paczkę (ok. 10–15 s) opóźniony. Animacja ma 30 kl./s.
 - Trasa linii: przystanek dociągany jest do węzła sieci w tym samym spójnym kawałku co sąsiedni przystanek, bo eksport ma odcięte fragmenty dróg (dojazdy do stacji).
-- Zaznaczenie jest w adresie (`#line=<id>`, `#town=`, `#industry=`, `#station=`), obok pinezki: `#pin=...&note=...&line=<id>`.
+- Zaznaczenie jest w adresie (`#line=<id>`, `#town=`, `#industry=`, `#station=`, a majątek widza `#owner=<nazwa małymi literami>`), obok pinezki: `#pin=...&note=...&line=<id>`. Zaznaczenie właściciela nie rusza mapy.
 - Na dotyku: przesuwanie jednym palcem, przybliżanie szczypaniem.
 
 ## Budowa za punkty kanału

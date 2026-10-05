@@ -8,6 +8,7 @@
 | [export-format-performance.md](export-format-performance.md) | Format eksportu a wydajność: gdzie jest koszt, propozycje (tabele Lua zamiast JSON, format kolumnowy, mniejsza precyzja) i pomiar `bench.lua`. |
 | [architecture.md](architecture.md) | Architektura całości: mod → middle app → Azure → strona, plus koszty i opcje rozszerzenia Twitcha. |
 | [api-ideas.md](api-ideas.md) | Przegląd API gry pod kątem nowych nagród i danych: zdarzenia gry (fajerwerki, marketing), haki symulacji (ceny biletów), kamera, dźwięk, statystyki. Nic nie przetestowane. |
+| [owners-tab.md](owners-tab.md) | Zakładka „Właściciele”: cały majątek widza (miasta, zakłady, stacje, linie) w jednym miejscu, główne miasto, link `#owner=`; dalej mapa i komenda `!tf_majatek`. |
 | [twitch-channel-points.md](twitch-channel-points.md) | Analiza integracji punktów kanału Twitcha: API (Helix, EventSub), przepływ Tf3Bridge → mod, pomysły na nagrody i komendy gry, ryzyka. |
 
 Kod:

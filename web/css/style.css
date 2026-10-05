@@ -208,9 +208,14 @@ button { font: inherit; color: inherit; }
   background: var(--panel); border-left: 1px solid var(--border);
 }
 
-.tabs { display: flex; padding: 10px 10px 0; gap: 4px; border-bottom: 1px solid var(--border); }
+/* Zakładki nie mieszczą się w wąskim panelu: przewijają się w poziomie (bez paska), wybrana wjeżdża w widok (sidebar.js). */
+.tabs {
+  display: flex; padding: 10px 10px 0; gap: 4px; border-bottom: 1px solid var(--border);
+  overflow-x: auto; scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
 .tabs button {
-  flex: 1; padding: 8px 6px 10px; cursor: pointer;
+  flex: 1 0 auto; white-space: nowrap; padding: 8px 6px 10px; cursor: pointer;
   background: none; border: 0; border-bottom: 2px solid transparent;
   color: var(--muted); font-weight: 600;
 }
@@ -278,10 +283,29 @@ button { font: inherit; color: inherit; }
   color: var(--muted); font-size: 18px; line-height: 1;
 }
 .detail-close:hover { color: var(--text); background: var(--bg); }
+.detail-copy {
+  margin-left: 6px; width: 22px; height: 22px; padding: 0; vertical-align: middle;
+  border: 0; border-radius: 6px; background: transparent; cursor: pointer;
+  color: var(--muted); font-size: 14px; line-height: 1;
+}
+.detail-copy:hover { color: var(--text); background: var(--bg); }
 .detail h3 { margin: 12px 0 6px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .detail-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
 .detail-owner { font-size: 12px; margin-top: 4px; color: var(--muted); }
 .detail-owner strong { color: var(--accent); }
+/* Nazwa właściciela (i główne miasto) jako link do majątku widza. */
+.owner-link {
+  padding: 0; border: 0; background: none; cursor: pointer;
+  font: inherit; font-weight: 600; color: var(--accent);
+}
+.owner-link:hover { text-decoration: underline; }
+
+/* Lista właścicieli: liczniki obiektów (miasta, zakłady, stacje, linie). */
+.own-counts { display: flex; gap: 10px; flex: none; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.own-count { display: inline-flex; align-items: center; gap: 4px; }
+.own-count .ico { width: 14px; height: 14px; }
+.own-line { width: 10px; height: 3px; border-radius: 2px; background: var(--muted); }
+.own-main { color: var(--accent); }
 
 /* Efekty od widzów (nagrody za punkty kanału): znaczki na liście i lista w szczegółach. */
 .fx-badge { flex: none; font-size: 12px; line-height: 1; cursor: help; }
