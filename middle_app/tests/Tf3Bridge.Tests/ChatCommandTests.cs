@@ -12,14 +12,24 @@ public sealed class ChatCommandTests : IDisposable
     private readonly ManualTime _time = new();
 
     private const string Dynamic = """
-        {"towns":[{"id":1,"name":"Barcin | Estiv0","capacities":[100,50,10]},{"id":2,"name":"Szczecin | estiv0","capacities":[500,300,100]},
-                  {"id":3,"name":"Łódź","capacities":[900]}],
-         "industries":[{"id":10,"name":"Browar | estiv0","level":2}],
+        {"date":{"year":1922,"month":5,"day":12},"player":{"balance":1234567.4},
+         "company":{"history":{"companyTotalValue":[[1921.5,500000],[1922.3,9876543]]},
+                    "finance":{"header":["1921","1922"],"total":[-50000,120000]}},
+         "effects":[{"type":"townBoost","entity":2,"user":"ola","factor":1.5,"until":{"year":1922,"month":8,"day":1}},
+                    {"type":"lineFuelBad","entity":30,"user":"ola","factor":0.7,"until":{"year":1922,"month":6,"day":3}}],
+         "towns":[{"id":1,"name":"Barcin | Estiv0","capacities":[100,50,10]},
+                  {"id":2,"name":"Szczecin | estiv0","capacities":[500,300,100],"initialCapacities":[400,300,100],
+                   "supply":[{"cargo":"FOOD","supply":30,"demand":40},{"cargo":"GOODS","supply":80,"demand":60}]},
+                  {"id":3,"name":"Łódź","capacities":[900]},{"id":4,"name":"Kraków","capacities":[1200]}],
+         "industries":[{"id":10,"name":"Browar | estiv0","level":2,"maxLevel":4,"productivity":1.2,"year":{"produced":1234}},
+                       {"id":11,"name":"Kopalnia węgla","level":1},{"id":12,"name":"Tartak","level":3}],
          "stations":[{"id":20,"name":"Dworzec Szczecin | estiv0 Zachód"},{"id":21,"name":"Dworzec Szczecin | estiv0"},
                      {"id":22,"name":"Stacja browaru | estiv0","industry":10},{"id":23,"name":"Port | ala"}],
          "lines":[{"id":30,"name":"Linia 1 | estiv0","vehicleCount":10,"stats":{"profit12m":653957.4}},
                   {"id":31,"name":"Linia 2 | ESTIV0","vehicleCount":6,"stats":{"profit12m":179924}},
-                  {"id":32,"name":"Linia 3"}]}
+                  {"id":32,"name":"Linia 3","vehicleCount":2,"stats":{"profit12m":-457279}},
+                  {"id":33,"name":"Linia 4 | ala","vehicleCount":1,"stats":{"profit12m":1000}}],
+         "vehicles":[{"id":40,"line":30,"stopped":true},{"id":41,"line":30,"stopped":false},{"id":42,"line":31,"stopped":true}]}
         """;
 
     public ChatCommandTests()
@@ -54,6 +64,7 @@ public sealed class ChatCommandTests : IDisposable
         Assert.Equal(16, o.Vehicles);
         Assert.Equal(833881.4, o.Profit12m!.Value, 1);
         Assert.Equal(1, OwnerIndex.Parse(doc.RootElement)["ala"].Stations);
+        Assert.Equal(1, OwnerIndex.Parse(doc.RootElement)["ala"].Lines);
     }
 
     [Fact]
@@ -83,11 +94,124 @@ public sealed class ChatCommandTests : IDisposable
 
         Assert.Null(service.Answer(Msg("!majatek estiv0")));
         Assert.Null(service.Answer(Msg("hej !tf_majatek")));
+        Assert.Null(service.Answer(Msg("!tf_nieznana")));
         Assert.NotNull(service.Answer(Msg("!tf_majatek estiv0")));
-        Assert.Null(service.Answer(Msg("!tf_majatek estiv0")));
-        Assert.NotNull(service.Answer(Msg("!tf_majatek estiv0", id: "other")));
+        Assert.Null(service.Answer(Msg("!tf_miasto Łódź"))); // ten sam widz, inna komenda
+        Assert.NotNull(service.Answer(Msg("!tf_majatek ala", id: "other")));
         _time.Now += ChatCommandService.Cooldown;
-        Assert.NotNull(service.Answer(Msg("!tf_majatek estiv0")));
+        Assert.NotNull(service.Answer(Msg("!tf_miasto Łódź")));
+    }
+
+    [Fact]
+    public void The_same_command_with_the_same_argument_has_a_cooldown_for_the_whole_chat()
+    {
+        var service = Service();
+
+        Assert.NotNull(service.Answer(Msg("!tf_miasto Łódź", id: "1")));
+        Assert.Null(service.Answer(Msg("!tf_miasto lodz", id: "2"))); // ta sama odpowiedź: bez powtórki na czacie
+        Assert.NotNull(service.Answer(Msg("!tf_miasto Kraków", id: "3")));
+        Assert.NotNull(service.Answer(Msg("!tf_ranking", id: "4")));
+        Assert.Null(service.Answer(Msg("!tf_top", id: "5"))); // alias tej samej komendy
+        Assert.NotNull(service.Answer(Msg("!tf_majatek", "a", "a", id: "6"))); // majątek pytającego: osobno dla każdego
+        Assert.NotNull(service.Answer(Msg("!tf_majatek", "b", "b", id: "7")));
+
+        _time.Now += TimeSpan.FromSeconds(30);
+        Assert.NotNull(service.Answer(Msg("!tf_miasto lodz", id: "2")));
+        Assert.Null(service.Answer(Msg("!tf_ranking", id: "5"))); // ranking: 60 s
+        _time.Now += TimeSpan.FromSeconds(30);
+        Assert.NotNull(service.Answer(Msg("!tf_ranking", id: "5")));
+    }
+
+    [Fact]
+    public void Pomoc_and_mapa()
+    {
+        var help = Service().Answer(Msg("!tf_pomoc"))!;
+        Assert.StartsWith("@Kermit33 Komendy TF3: !tf_majatek [widz], !tf_miasto <nazwa>", help);
+        Assert.True(help.Length <= 500, "limit wiadomości Twitcha");
+
+        Assert.Equal("@Kermit33 mapa na żywo: https://gin.estfosoft.com/", Service().Answer(Msg("!tf_mapa")));
+        Assert.Equal("@Kermit33 mapa nie jest jeszcze ustawiona.", Service(site: "").Answer(Msg("!tf_mapa")));
+    }
+
+    [Fact]
+    public void Miasto_shows_owner_size_growth_supply_effects_and_link()
+    {
+        var service = Service();
+
+        Assert.Equal("@Kermit33 Szczecin (właściciel: estiv0): pojemność 900, +13% od startu gry, zaspokojenie potrzeb 90%, "
+            + "efekty: boost miasta +50% do 1 sierpnia 1922 (od ola). https://gin.estfosoft.com/#town=2",
+            service.Answer(Msg("!tf_miasto szczecin", id: "1")));
+        Assert.Equal("@Kermit33 Łódź (bez właściciela): pojemność 900. https://gin.estfosoft.com/#town=3",
+            service.Answer(Msg("!tf_miasto lodz", id: "2")));
+        Assert.Equal("@Kermit33 nie znaleziono „Gdańsk”.", service.Answer(Msg("!tf_miasto Gdańsk", id: "3")));
+        Assert.Equal("@Kermit33 podaj nazwę, np. !tf_miasto Szczecin", service.Answer(Msg("!tf_miasto", id: "4")));
+    }
+
+    [Fact]
+    public void Zaklad_and_linia()
+    {
+        var service = Service();
+
+        Assert.Equal("@Kermit33 Browar (właściciel: estiv0): poziom 2/4, produktywność 120%, produkcja (rok) 1 234. "
+            + "https://gin.estfosoft.com/#industry=10", service.Answer(Msg("!tf_zakład browar", id: "1")));
+        Assert.Equal("@Kermit33 Linia 1 (właściciel: estiv0): 10 pojazdów (zatrzymane: 1), zysk (12 mies.) $ 653 957, "
+            + "efekty: chrzczone paliwo -30% do 3 czerwca 1922 (od ola). https://gin.estfosoft.com/#line=30",
+            service.Answer(Msg("!tf_linia linia 1", id: "2")));
+        Assert.Equal("@Kermit33 „linia” pasuje do kilku: Linia 1, Linia 2, Linia 3, Linia 4.", service.Answer(Msg("!tf_linia linia", id: "3")));
+    }
+
+    [Fact]
+    public void Ranking_orders_viewers_by_towns_then_industries()
+    {
+        Assert.Equal("@Kermit33 ranking: 1. estiv0 (2 miasta, 1 zakład, 2 linie), 2. ala (1 linia). Wszyscy: https://gin.estfosoft.com/",
+            Service().Answer(Msg("!tf_ranking")));
+    }
+
+    [Fact]
+    public void Wolne_lists_towns_by_size_and_industries_by_level()
+    {
+        var service = Service(site: "");
+
+        Assert.Equal("@Kermit33 wolne miasta (2): Kraków, Łódź; wolne zakłady (2): Tartak, Kopalnia węgla. Kupisz je za punkty kanału.",
+            service.Answer(Msg("!tf_wolne", id: "1")));
+        Assert.Equal("@Kermit33 wolne miasta (2): Kraków, Łódź. Kupisz je za punkty kanału.", service.Answer(Msg("!tf_wolne miasta", id: "2")));
+        Assert.Equal("@Kermit33 wolne zakłady (2): Tartak, Kopalnia węgla. Kupisz je za punkty kanału.", service.Answer(Msg("!tf_wolne zakłady", id: "3")));
+        Assert.Equal("@Kermit33 użyj: !tf_wolne [miasta|zaklady]", service.Answer(Msg("!tf_wolne stacje", id: "4")));
+    }
+
+    [Fact]
+    public void Data_warns_when_the_export_is_old()
+    {
+        var path = Path.Combine(_dir, "latest", "dynamic.json");
+        File.SetLastWriteTimeUtc(path, _time.Now.UtcDateTime.AddSeconds(-20));
+        Assert.Equal("@Kermit33 w grze jest 12 maja 1922.", Service().Answer(Msg("!tf_data")));
+
+        File.SetLastWriteTimeUtc(path, _time.Now.UtcDateTime.AddMinutes(-5));
+        Assert.Equal("@Kermit33 w grze jest 12 maja 1922. Ostatnie dane z gry sprzed 5 min (pauza albo gra wyłączona).",
+            Service().Answer(Msg("!tf_data")));
+    }
+
+    [Fact]
+    public void Firma_shows_balance_value_profit_and_fleet()
+    {
+        Assert.Equal("@Kermit33 firma streamera: saldo $ 1 234 567, wartość firmy $ 9 876 543, zysk w 1922 $ 120 000 (1921: $ -50 000), "
+            + "4 linie, 3 pojazdy.", Service().Answer(Msg("!tf_firma")));
+    }
+
+    [Fact]
+    public void Najlepsza_and_najgorsza_line_or_viewer_company()
+    {
+        var service = Service();
+
+        Assert.Equal("@Kermit33 najlepsza linia: Linia 1 (estiv0), zysk (12 mies.) $ 653 957. https://gin.estfosoft.com/#line=30",
+            service.Answer(Msg("!tf_najlepsza", id: "1")));
+        Assert.Equal("@Kermit33 najgorsza linia: Linia 3, zysk (12 mies.) $ -457 279. https://gin.estfosoft.com/#line=32",
+            service.Answer(Msg("!tf_najgorsza linia", id: "2")));
+        Assert.Equal("@Kermit33 najlepsza firma widza: estiv0, zysk linii (12 mies.) $ 833 881 (2 linie). https://gin.estfosoft.com/#owner=estiv0",
+            service.Answer(Msg("!tf_najlepsza firma", id: "3")));
+        Assert.Equal("@Kermit33 najgorsza firma widza: ala, zysk linii (12 mies.) $ 1 000 (1 linia). https://gin.estfosoft.com/#owner=ala",
+            service.Answer(Msg("!tf_najgorszy firma", id: "4")));
+        Assert.Equal("@Kermit33 użyj: !tf_najlepsza [linia|firma]", service.Answer(Msg("!tf_najlepsza miasto", id: "5")));
     }
 
     [Fact]
@@ -104,7 +228,7 @@ public sealed class ChatCommandTests : IDisposable
     [InlineData(12, "12 miast")]
     [InlineData(22, "22 miasta")]
     public void Polish_plurals(int n, string expected) =>
-        Assert.Equal(expected, ChatCommandService.Count(n, "miasto", "miasta", "miast"));
+        Assert.Equal(expected, ChatAnswers.Count(n, "miasto", "miasta", "miast"));
 
     private sealed class ManualTime : TimeProvider
     {

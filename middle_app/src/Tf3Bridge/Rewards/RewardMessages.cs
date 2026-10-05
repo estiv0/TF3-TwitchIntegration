@@ -84,14 +84,19 @@ public static class RewardMessages
         : $"zniszczone pojazdy: {n}";
 
     /// <summary>"https://site/#town=123": the site opens the object from the address (web/js/hash.js).</summary>
-    public static string? Link(string siteUrl, RewardKind kind, long entity)
+    public static string? Link(string siteUrl, RewardKind kind, long entity) =>
+        RewardKinds.TargetsOwner(kind) ? null // wiele zakładów: link do widza daje OwnerLink
+            : Link(siteUrl, RewardKinds.Target(kind), entity);
+
+    /// <summary>"https://site/#industry=123" for any object kind (stations: the station construction id).</summary>
+    public static string? Link(string siteUrl, GameObjectKind kind, long entity)
     {
         if (string.IsNullOrWhiteSpace(siteUrl)) return null;
-        if (RewardKinds.TargetsOwner(kind)) return null; // wiele zakładów: link do widza daje OwnerLink
-        var key = RewardKinds.Target(kind) switch
+        var key = kind switch
         {
             GameObjectKind.Town => "town",
             GameObjectKind.Industry => "industry",
+            GameObjectKind.Station => "station",
             _ => "line",
         };
         return $"{siteUrl.Trim().TrimEnd('/')}/#{key}={entity.ToString(CultureInfo.InvariantCulture)}";

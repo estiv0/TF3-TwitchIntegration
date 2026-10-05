@@ -120,10 +120,24 @@ Jak działa:
 
 ## Komendy z czatu
 
-Nasze komendy mają prefiks `!tf_`. Tylko czytają ostatni `dynamic.json` i odpowiadają na czacie jako streamer, nigdy nie wysyłają nic do gry (`Chat/ChatCommandService.cs`).
+Nasze komendy mają prefiks `!tf_`. Tylko czytają ostatni `dynamic.json` i odpowiadają na czacie jako streamer, nigdy nie wysyłają nic do gry (`Chat/ChatCommandService.cs`: lista komend i cooldowny, `Chat/ChatAnswers.cs`: treść odpowiedzi). Linki tylko przy ustawionym `Twitch:SiteUrl`. Nazwy obiektów są dopasowywane tak samo jak w nagrodach (`TargetResolver`): bez wielkości liter i polskich znaków, najpierw dokładnie, potem po początku, potem po fragmencie; przy kilku pasujących odpowiedź je wymienia.
 
-- `!tf_majatek [widz]`: majątek widza (bez argumentu: pytającego), np. „@ala estiv0: 2 miasta (Szczecin – główne, Barcin), 1 zakład (Browar), 2 linie, 16 pojazdów, zysk linii (12 mies.) $ 833 881. Mapa: https://…/#owner=estiv0”. Grupowanie jak zakładka „Właściciele” na stronie (`Commands/OwnerAssets.cs`): bez rozróżniania wielkości liter, główne miasto = największe, stacje nazwane od kupionego miasta nie są widza. Link tylko przy ustawionym `Twitch:SiteUrl`. Działa też `!tf_majątek`.
-- Jeden widz dostaje najwyżej jedną odpowiedź na 10 s.
+| Komenda | Aliasy | Odpowiedź | Cooldown (cały czat) |
+|---|---|---|---|
+| `!tf_pomoc` | `!tf_komendy`, `!tf_help` | lista komend | 30 s |
+| `!tf_mapa` | | link do strony | 30 s |
+| `!tf_majatek [widz]` | `!tf_majątek` | majątek widza (bez argumentu: pytającego), np. „@ala estiv0: 2 miasta (Szczecin – główne, Barcin), 1 zakład (Browar), 2 linie, 16 pojazdów, zysk linii (12 mies.) $ 833 881. Mapa: https://…/#owner=estiv0”. Grupowanie jak zakładka „Właściciele” (`Commands/OwnerAssets.cs`): bez rozróżniania wielkości liter, główne miasto = największe, stacje nazwane od kupionego miasta nie są widza | 30 s |
+| `!tf_miasto <nazwa>` | | właściciel, pojemność, wzrost od startu gry, zaspokojenie potrzeb, aktywne efekty z nagród (z datą końca i kupującym), link | 30 s |
+| `!tf_zaklad <nazwa>` | `!tf_zakład` | właściciel, poziom, produktywność, produkcja z ostatniego roku, efekty, link | 30 s |
+| `!tf_linia <nazwa>` | | właściciel, pojazdy (i ile zatrzymanych), zysk z 12 mies., zapełnienie, przewiezione w roku, efekty, link | 30 s |
+| `!tf_ranking` | `!tf_top` | 5 widzów z największym majątkiem: najpierw liczba miast, potem zakładów, linii, zysk linii | 60 s |
+| `!tf_wolne [miasta\|zaklady]` | | obiekty bez właściciela do kupienia za punkty: 5 największych miast i zakładów o najwyższym poziomie, z liczbą wszystkich | 60 s |
+| `!tf_data` | | data w grze; gdy eksport jest starszy niż 2 min, dopisek „pauza albo gra wyłączona” | 30 s |
+| `!tf_firma` | | firma streamera: saldo, wartość firmy, zysk w tym i poprzednim roku (tabela Finanse), linie, pojazdy | 60 s |
+| `!tf_najlepsza [linia\|firma]` | `!tf_najlepszy` | linia z najwyższym zyskiem z 12 mies. albo (`firma`) widz z najwyższym łącznym zyskiem swoich linii | 60 s |
+| `!tf_najgorsza [linia\|firma]` | `!tf_najgorszy` | jak wyżej, najniższy zysk | 60 s |
+
+- Cooldowny są dwa, oba ciche (bez odpowiedzi): jeden widz dostaje najwyżej jedną odpowiedź na 10 s (dowolna komenda), a ta sama komenda z tym samym argumentem jest powtarzana na czacie najwyżej raz na czas z tabeli. Argument porównujemy bez wielkości liter i polskich znaków, więc `!tf_miasto Łódź` i `!tf_miasto lodz` to ta sama odpowiedź. `!tf_majatek` bez argumentu liczy się osobno dla każdego widza.
 - Z serwerem testowym Twitch CLI odpowiedź trafia tylko do logu (serwer nie ma czatu).
 
 **Test bez Twitcha (Twitch CLI):**
@@ -240,7 +254,8 @@ middle_app/
     Commands/ModCommandQueue.cs   kolejka queue.lua, odczyt wyników z results.lua, wygasanie
     Commands/GameObjects.cs       cele akcji z dynamic.json, nazwy „Nazwa | Właściciel”
     Commands/OwnerAssets.cs       majątek widzów z dynamic.json (jak zakładka Właściciele na stronie)
-    Chat/ChatCommandService.cs    komendy z czatu (!tf_majatek), tylko odpowiedzi, bez zmian w grze
+    Chat/ChatCommandService.cs    komendy z czatu (!tf_...): lista, aliasy, cooldowny; bez zmian w grze
+    Chat/ChatAnswers.cs           treść odpowiedzi na komendy z czatu (z dynamic.json)
     Ui/CommandTestDialog.cs       test bez Twitcha: symulacja nagrody i ręczna zmiana nazwy
     Rewards/RewardSettings.cs     nagrody (rodzaje, koszty, miesiące, mnożniki), zapis rewards.json
     Rewards/TargetResolver.cs     dopasowanie tekstu od widza do miasta, zakładu albo linii

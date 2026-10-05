@@ -1,7 +1,7 @@
-using System.Globalization;
+using System.Text.Json;
 using Microsoft.Extensions.Options;
-using Tf3Bridge.Commands;
 using Tf3Bridge.Processing;
+using Tf3Bridge.Rewards;
 using Tf3Bridge.Twitch;
 
 namespace Tf3Bridge.Chat;
@@ -9,14 +9,33 @@ namespace Tf3Bridge.Chat;
 /// <summary>
 /// Informational chat commands (prefix "!tf_"). They only read the latest dynamic.json and answer in chat;
 /// they never queue game commands (the game changes only through channel points, see CommandSource).
-/// <list type="bullet">
-/// <item><c>!tf_majatek [widz]</c>: what the viewer owns (the asker without an argument) and a link to the Owners tab.</item>
-/// </list>
+/// Texts: <see cref="ChatAnswers"/>; list for viewers: <c>!tf_pomoc</c>.
+/// Two cooldowns, both silent (no answer): one viewer gets at most one answer per <see cref="Cooldown"/>,
+/// and the same command with the same argument is answered at most once per its own cooldown for the whole chat.
 /// </summary>
 public sealed class ChatCommandService
 {
     /// <summary>One viewer gets at most one answer per this time (chat spam).</summary>
     internal static readonly TimeSpan Cooldown = TimeSpan.FromSeconds(10);
+
+    private sealed record Command(string Name, TimeSpan Cooldown, bool NeedsData, Func<ChatRequest, string> Run);
+
+    private static readonly Dictionary<string, Command> Commands = Build(
+        (new("pomoc", TimeSpan.FromSeconds(30), false, ChatAnswers.Help), ["!tf_pomoc", "!tf_komendy", "!tf_help"]),
+        (new("mapa", TimeSpan.FromSeconds(30), false, ChatAnswers.Map), ["!tf_mapa"]),
+        (new("majatek", TimeSpan.FromSeconds(30), true, ChatAnswers.Assets), ["!tf_majatek", "!tf_majątek"]),
+        (new("miasto", TimeSpan.FromSeconds(30), true, ChatAnswers.Town), ["!tf_miasto"]),
+        (new("zaklad", TimeSpan.FromSeconds(30), true, ChatAnswers.Industry), ["!tf_zaklad", "!tf_zakład"]),
+        (new("linia", TimeSpan.FromSeconds(30), true, ChatAnswers.Line), ["!tf_linia"]),
+        (new("ranking", TimeSpan.FromSeconds(60), true, ChatAnswers.Ranking), ["!tf_ranking", "!tf_top"]),
+        (new("wolne", TimeSpan.FromSeconds(60), true, ChatAnswers.Free), ["!tf_wolne"]),
+        (new("data", TimeSpan.FromSeconds(30), true, ChatAnswers.Date), ["!tf_data"]),
+        (new("firma", TimeSpan.FromSeconds(60), true, ChatAnswers.Company), ["!tf_firma"]),
+        (new("najlepsza", TimeSpan.FromSeconds(60), true, r => ChatAnswers.Extreme(r, best: true)), ["!tf_najlepsza", "!tf_najlepszy"]),
+        (new("najgorsza", TimeSpan.FromSeconds(60), true, r => ChatAnswers.Extreme(r, best: false)), ["!tf_najgorsza", "!tf_najgorszy"]));
+
+    private static Dictionary<string, Command> Build(params (Command Command, string[] Aliases)[] list) =>
+        list.SelectMany(x => x.Aliases.Select(a => (Alias: a, x.Command))).ToDictionary(x => x.Alias, x => x.Command);
 
     private readonly ChatApi _chat;
     private readonly bool _mock;
@@ -26,6 +45,7 @@ public sealed class ChatCommandService
     private readonly ILogger _log;
     private readonly Lock _gate = new();
     private readonly Dictionary<string, DateTimeOffset> _lastAnswer = []; // id widza -> czas ostatniej odpowiedzi
+    private readonly Dictionary<string, DateTimeOffset> _lastCommand = []; // komenda + argument -> czas ostatniej odpowiedzi
 
     public ChatCommandService(TwitchSession session, EventSubClient eventSub, IOptions<BridgeOptions> options,
         IOptions<TwitchOptions> twitch, ILogger<ChatCommandService> log)
@@ -72,67 +92,40 @@ public sealed class ChatCommandService
     {
         var text = m.Text.Trim();
         var space = text.IndexOfAny([' ', '\t']);
-        var command = (space < 0 ? text : text[..space]).ToLowerInvariant();
+        var name = (space < 0 ? text : text[..space]).ToLowerInvariant();
         var arg = space < 0 ? "" : text[(space + 1)..].Trim().TrimStart('@').Trim();
-        if (command is not ("!tf_majatek" or "!tf_majątek")) return null;
+        if (!Commands.TryGetValue(name, out var command)) return null;
 
+        // "!tf_majatek" bez argumentu to majątek pytającego: inna odpowiedź dla każdego widza.
+        var key = command.Name + "|" + (arg.Length == 0 && command.Name == "majatek" ? "@" + m.ChatterLogin : TargetResolver.Normalize(arg));
         lock (_gate)
         {
             var now = _time.GetUtcNow();
             if (_lastAnswer.TryGetValue(m.ChatterId, out var last) && now - last < Cooldown) return null;
+            if (_lastCommand.TryGetValue(key, out var lastCommand) && now - lastCommand < command.Cooldown) return null;
             _lastAnswer[m.ChatterId] = now;
+            _lastCommand[key] = now;
         }
-        return Assets(m, arg);
+
+        var asker = new ChatAsker(m.ChatterName.Length > 0 ? m.ChatterName : m.ChatterLogin, m.ChatterLogin);
+        if (!command.NeedsData) return command.Run(new ChatRequest(asker, arg, _siteUrl));
+        using var doc = LoadDynamic();
+        if (doc is null) return $"@{asker.Name} nie mam jeszcze danych z gry.";
+        var age = _time.GetUtcNow() - new DateTimeOffset(File.GetLastWriteTimeUtc(_dynamicPath), TimeSpan.Zero);
+        return command.Run(new ChatRequest(asker, arg, _siteUrl, doc.RootElement, age));
     }
 
-    private string Assets(ChatMessage m, string arg)
+    // Ostatni opublikowany dynamic.json; null, gdy go nie ma albo jest nieczytelny.
+    private JsonDocument? LoadDynamic()
     {
-        var asker = "@" + (m.ChatterName.Length > 0 ? m.ChatterName : m.ChatterLogin);
-        var owners = OwnerIndex.Load(_dynamicPath);
-        if (owners is null) return $"{asker} nie mam jeszcze danych z gry.";
-
-        var self = arg.Length == 0;
-        var who = self ? m.ChatterName : arg;
-        if (!owners.TryGetValue(OwnerIndex.Key(who), out var o) && !(self && owners.TryGetValue(OwnerIndex.Key(m.ChatterLogin), out o)))
-            return self ? $"{asker} nie masz jeszcze nic w grze." : $"{asker} {who} nie ma jeszcze nic w grze.";
-        return AssetsText(o, asker, OwnerLink(_siteUrl, o.Key));
-    }
-
-    /// <summary>"@ala estiv0: 3 miasta (Szczecin – główne, Barcin, Barczewo), 1 zakład (Browar), 2 linie, 16 pojazdów, zysk linii (12 mies.) $ 833 881. Mapa: …"</summary>
-    internal static string AssetsText(OwnerAssets o, string asker, string? link)
-    {
-        var parts = new List<string>();
-        if (o.Towns.Count > 0)
-            parts.Add($"{Count(o.Towns.Count, "miasto", "miasta", "miast")} ({Names([o.Towns[0] + " – główne", .. o.Towns.Skip(1)], 5)})");
-        if (o.Industries.Count > 0)
-            parts.Add($"{Count(o.Industries.Count, "zakład", "zakłady", "zakładów")} ({Names(o.Industries, 3)})");
-        if (o.Stations > 0) parts.Add(Count(o.Stations, "stacja", "stacje", "stacji"));
-        if (o.Lines > 0)
+        if (!File.Exists(_dynamicPath)) return null;
+        try
         {
-            parts.Add(Count(o.Lines, "linia", "linie", "linii"));
-            if (o.Vehicles > 0) parts.Add(Count(o.Vehicles, "pojazd", "pojazdy", "pojazdów"));
-            if (o.Profit12m is { } p) parts.Add($"zysk linii (12 mies.) {Money(p)}");
+            var doc = JsonDocument.Parse(File.ReadAllBytes(_dynamicPath));
+            if (doc.RootElement.ValueKind == JsonValueKind.Object) return doc;
+            doc.Dispose();
+            return null;
         }
-        var text = $"{asker} {o.Name}: {string.Join(", ", parts)}.";
-        return link is null ? text : $"{text} Mapa: {link}";
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return null; }
     }
-
-    /// <summary>"https://site/#owner=estiv0": the site opens the owner's assets (web/js/hash.js).</summary>
-    internal static string? OwnerLink(string siteUrl, string key) =>
-        string.IsNullOrWhiteSpace(siteUrl) ? null : $"{siteUrl.Trim().TrimEnd('/')}/#owner={Uri.EscapeDataString(key)}";
-
-    // Pierwsze `max` nazw, reszta jako "i 4 inne".
-    private static string Names(IReadOnlyList<string> names, int max) =>
-        names.Count <= max ? string.Join(", ", names) : $"{string.Join(", ", names.Take(max))} i {names.Count - max} inne";
-
-    /// <summary>Polish plural: 1 miasto, 2 miasta, 5 miast, 22 miasta.</summary>
-    internal static string Count(int n, string one, string few, string many)
-    {
-        var word = n == 1 ? one : n % 10 is >= 2 and <= 4 && n % 100 is < 12 or > 14 ? few : many;
-        return $"{n} {word}";
-    }
-
-    // Jak na stronie: "$ 833 881", "$ -457 279".
-    private static string Money(double v) =>
-        "$ " + Math.Round(v).ToString("#,0", CultureInfo.GetCultureInfo("pl-PL")).Replace(' ', ' ');
 }
