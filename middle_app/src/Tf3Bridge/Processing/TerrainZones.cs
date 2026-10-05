@@ -23,11 +23,11 @@ public enum IndustryZone { Any, Mountains, NearWater, Lowland, Inland }
 /// </summary>
 public sealed class TerrainZones
 {
-    public const double Radius = 1000;
+    public const double Radius = 700;
     /// <summary>Average slope (rise / run) from which land may count as mountains.</summary>
     public const double MinMountainSlope = 0.08;
     public const double MaxMountainShare = 0.15;
-    public const double MaxLowlandSlope = 0.03;
+    public const double MaxLowlandSlope = 0.05;
 
     private const byte MountainsBit = 1, NearWaterBit = 2, LowlandBit = 4, OnWaterBit = 8;
 

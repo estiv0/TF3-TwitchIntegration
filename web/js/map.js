@@ -435,7 +435,7 @@ export class MapView {
     this.requestDraw();
   }
 
-  // mode: "pin" | "build" | null - co wskaże następne kliknięcie w mapę.
+  // mode: "pin" | "build" | null - co wskaże następne kliknięcie w mapę ("build": każde, aż do wyłączenia).
   setPlaceMode(mode) {
     this.placeMode = mode;
     this.canvas.style.cursor = mode ? "crosshair" : "grab";
@@ -975,7 +975,8 @@ export class MapView {
     const rect = this.canvas.getBoundingClientRect();
     const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
     const [px, py] = this.toWorld(sx, sy);
-    this.setPlaceMode(null);
+    // Pinezka: jedno kliknięcie i koniec. Budowa: tryb trwa, kolejne kliknięcia przestawiają miejsce (js/build.js).
+    if (mode !== "build") this.setPlaceMode(null);
     this.onPlace?.({ x: Math.round(px), y: Math.round(-py), sx, sy, mode });
   }
 

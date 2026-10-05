@@ -1,5 +1,5 @@
-// Budowa za punkty kanału: widz wskazuje miejsce na mapie, wybiera miasto albo zakład i nazwę,
-// a strona daje kod do wklejenia w nagrodę na Twitchu (Twitch nie ma linku, który wypełnia tekst nagrody).
+// Budowa za punkty kanału: przycisk otwiera okienko (miasto albo zakład, nazwa), a każde kliknięcie
+// w mapę, dopóki okienko jest otwarte, stawia albo przestawia miejsce budowy. Strona daje kod do wklejenia w nagrodę na Twitchu (Twitch nie ma linku, który wypełnia tekst nagrody).
 // Tf3Bridge czyta kod (middle_app/src/Tf3Bridge/Rewards/BuildCode.cs), sprawdza miejsce jeszcze raz
 // i wysyła komendę do moda (lua_mod/content/tf3export/create.lua).
 //
@@ -34,11 +34,10 @@ export function buildCode({ x, y, type, name }) {
 
 export class BuildController {
   /** getDynamic() - ostatni dynamic.json (nazwy już bez " | właściciel", patrz splitAllOwners). */
-  constructor(map, { form, button, wrap, getDynamic }) {
+  constructor(map, { form, button, getDynamic }) {
     this.map = map;
     this.form = form;
     this.button = button;
-    this.wrap = wrap;
     this.getDynamic = getDynamic;
     this.kindInputs = [...form.querySelectorAll("input[name=build-kind]")];
     this.typeRow = form.querySelector("[data-build-type]");
@@ -57,6 +56,7 @@ export class BuildController {
     if (config.twitchUrl) this.twitch.href = config.twitchUrl;
     else this.twitch.hidden = true;
 
+    // Tryb "build" trwa tak długo jak okienko: włączenie je otwiera, wyłączenie zamyka (modeChanged).
     button.addEventListener("click", () => map.setPlaceMode(map.placeMode === "build" ? null : "build"));
     for (const input of this.kindInputs) input.addEventListener("change", () => this.update());
     this.type.addEventListener("change", () => this.update());
@@ -65,14 +65,13 @@ export class BuildController {
       e.preventDefault();
       this.copy();
     });
-    form.querySelector("[data-build-close]").addEventListener("click", () => this.close());
+    form.querySelector("[data-build-close]").addEventListener("click", () => map.setPlaceMode(null));
     this.code.addEventListener("focus", () => this.code.select());
 
     document.addEventListener("keydown", (e) => {
       if (e.key !== "Escape") return;
-      if (map.placeMode === "build") map.setPlaceMode(null);
-      else if (!form.hidden) this.close();
-      else return;
+      if (map.placeMode !== "build") return;
+      map.setPlaceMode(null);
       e.preventDefault(); // obsłużone - main.js nie odznacza już zaznaczenia
     });
   }
@@ -81,10 +80,20 @@ export class BuildController {
     return this.kindInputs.find((i) => i.checked)?.value === "industry";
   }
 
-  // Wywoływane przez MapView (onPlaceMode).
+  // Wywoływane przez MapView (onPlaceMode): okienko otwarte dokładnie wtedy, gdy trwa tryb budowy.
   modeChanged(on) {
     this.button.setAttribute("aria-pressed", String(on));
-    this.showOverlay();
+    if (on && this.form.hidden) this.open();
+    else if (!on && !this.form.hidden) this.close();
+  }
+
+  // Okienko od razu, miejsce wskazuje się potem na mapie (i można je zmieniać do woli).
+  open() {
+    this.draft = null;
+    this.fillTypes();
+    this.form.hidden = false;
+    this.update();
+    this.name.focus();
   }
 
   // Nowy teren z DataFeed: { info, sites, zones } (obrazki = ImageBitmap albo null).
@@ -120,27 +129,17 @@ export class BuildController {
 
   // Czerwone miejsca, gdzie nie wolno budować wybranego miasta albo zakładu: przy wybieraniu miejsca i w okienku budowy.
   showOverlay() {
-    const building = this.map.placeMode === "build" || !this.form.hidden;
+    const building = !this.form.hidden;
     if (this.industry && !this.type.value) this.fillTypes(); // przed pierwszym okienkiem lista rodzajów jest pusta
     const type = this.selectedType;
     this.map.setOverlay(building && this.ground && (!this.industry || type) ? this.ground.overlay(type, this.zoneOf(type)) : null);
   }
 
-  // Wywoływane przez MapView (onPlace): miejsce budowy + formularz obok.
-  place({ x, y, sx, sy }) {
+  // Wywoływane przez MapView (onPlace): kliknięcie w mapę przy otwartym okienku stawia/przestawia miejsce.
+  place({ x, y }) {
+    if (this.form.hidden) return;
     this.draft = { x, y };
-    this.fillTypes();
-    this.form.hidden = false;
     this.update();
-    this.position(sx, sy);
-    this.name.focus();
-  }
-
-  position(sx, sy) {
-    const w = this.wrap.clientWidth, h = this.wrap.clientHeight;
-    const fw = this.form.offsetWidth, fh = this.form.offsetHeight;
-    this.form.style.left = `${Math.max(8, Math.min(sx + 16, w - fw - 8))}px`;
-    this.form.style.top = `${Math.max(8, Math.min(sy - 24, h - fh - 8))}px`;
   }
 
   // Rodzaje zakładów, które są na tej mapie (Tf3Bridge przyjmuje tylko takie), po nazwie.
@@ -156,12 +155,23 @@ export class BuildController {
   }
 
   update() {
-    if (!this.draft) return;
+    if (this.form.hidden) return;
     const industry = this.industry;
     this.typeRow.hidden = !industry;
     this.showOverlay();
     this.name.placeholder = t(industry ? "build.industryPlaceholder" : "build.townPlaceholder");
     this.how.textContent = t("build.how", { reward: t(industry ? "build.rewardIndustry" : "build.rewardTown") });
+    this.copyBtn.textContent = t("build.copy");
+
+    if (!this.draft) {
+      // Jeszcze bez miejsca: podpowiedź zamiast sprawdzania, bez kodu i znacznika.
+      this.check.textContent = t("build.pick");
+      this.check.classList.remove("neg");
+      this.code.value = "";
+      this.copyBtn.disabled = true;
+      this.map.setMarker(null);
+      return;
+    }
 
     const name = cleanName(this.name.value);
     const type = industry ? this.type.value || null : null;
@@ -172,7 +182,6 @@ export class BuildController {
     const ready = name.length >= MIN_NAME && (!industry || type) && !this.groundProblem(industry, type);
     this.code.value = ready ? buildCode({ ...this.draft, type, name }) : "";
     this.copyBtn.disabled = !ready;
-    this.copyBtn.textContent = t("build.copy");
     this.map.setMarker({
       ...this.draft,
       label: name || t(industry ? "build.industry" : "build.town"),
@@ -258,7 +267,7 @@ export class BuildController {
 
   // Nowe dane albo inny język: rodzaje zakładów i sprawdzenie miejsca w otwartym okienku od nowa.
   refresh() {
-    if (this.form.hidden || !this.draft) return;
+    if (this.form.hidden) return;
     this.fillTypes();
     this.update();
   }

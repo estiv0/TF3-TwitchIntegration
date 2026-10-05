@@ -62,7 +62,7 @@ const map = new MapView($("#map"), {
 });
 
 const pins = new PinController(map, { form: $("#pin-form"), button: $("#pin"), wrap: $(".map-wrap") });
-const build = new BuildController(map, { form: $("#build-form"), button: $("#build"), wrap: $(".map-wrap"), getDynamic: () => lastDynamic });
+const build = new BuildController(map, { form: $("#build-form"), button: $("#build"), getDynamic: () => lastDynamic });
 
 const sidebar = new Sidebar($("#sidebar"), $("#detail"), {
   onPick(kind, id) {

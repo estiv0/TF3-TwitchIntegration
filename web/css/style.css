@@ -142,7 +142,8 @@ button { font: inherit; color: inherit; }
 .map-tools button[aria-pressed="true"]#build { border-color: var(--accent); }
 
 /* Budowa za punkty kanału (js/build.js): ten sam wygląd co formularz pinezki, kilka pól więcej. */
-.build-form { width: 300px; max-height: calc(100% - 16px); overflow-y: auto; }
+/* Stałe miejsce w rogu mapy: okienko nie skacze, gdy widz przestawia miejsce budowy kliknięciami. */
+.build-form { top: 12px; left: 12px; width: 300px; max-height: calc(100% - 24px); overflow-y: auto; }
 .build-form > strong { font-size: 14px; }
 .build-field { display: grid; gap: 4px; }
 .build-kind { display: flex; gap: 14px; font-size: 13px; }
