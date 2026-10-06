@@ -9,6 +9,8 @@
 --
 -- Efekt na tym samym celu (np. drugi boost tego samego miasta) przedłuża czas zamiast się kumulować;
 -- gdy nowe wykupienie ma silniejszy mnożnik (zmiana ustawień), efekt dostaje ten silniejszy.
+-- Paliwo (premium / chrzczone) to jedna kolejka na linię: inne paliwo kupione w trakcie nie mnoży się
+-- z obecnym, tylko czeka i zaczyna działać, gdy obecne się skończy (queue niżej).
 --
 -- Produktywność zakładu i prędkość pojazdu ustawia jeden sterownik na obiekt (Controller niżej):
 -- różne efekty na tym samym zakładzie (boost ×2 i strajk ×0,01) mnożą się, zamiast walczyć o wartość.
@@ -25,6 +27,7 @@ local MIN_MONTHS, MAX_MONTHS = 1, 60
 local SETTLE_POLLS = 3 -- tyle odczytów (~s) czekamy, aż gra przyjmie ustawioną wartość
 
 local active = nil -- key -> efekt (same dane, bez funkcji); nil = jeszcze nie wczytane ze stanu
+local lastNow = nil -- ostatni znany czas gry (sterowniki pomijają efekty czekające w kolejce)
 
 ---------------------------------------------------------------- pomocnicze
 local function send(cmd)
@@ -75,6 +78,10 @@ local function Controller(name, read, write)
 			return true
 		end
 		if near(v, en.applied) then return false end
+		if near(v, en.target) then -- gra przyjęła nasz cel z opóźnieniem: to nie nowa baza (inaczej mnożnik dwa razy)
+			en.applied = v
+			return true
+		end
 		en.rebases = (en.rebases or 0) + 1
 		if en.rebases <= 3 then
 			util.log(string.format("%s %s: changed by the game %s -> %s, new base (x%s)",
@@ -199,6 +206,7 @@ local vehicles = Controller("speed", speedScale, setSpeedScale)
 --  * group = "industry" | "speed": efekt tylko podaje mnożnik (range = dozwolony zakres), resztę robi
 --    sterownik; multi = efekt na wielu zakładach naraz (e.entities), klucz po c.target;
 --  * apply(e) -> verify albo nil, błąd; revert(e) cofa (lineStop, lineHold, townBoost).
+-- queue = nazwa kolejki: efekty z tą samą kolejką na tym samym celu działają po kolei, nie naraz.
 local TYPES = {}
 
 -- Miasto: mnożymy sizeFactors (mieszkalne, usługowe, przemysłowe). Budynki dorastają do nowego
@@ -238,8 +246,8 @@ TYPES.industryStrike = { group = "industry", range = { 0.01, 1.0 } }
 TYPES.industryTaxRaid = { group = "industry", range = { 0.01, 1.0 }, multi = true }
 
 -- Linia: prędkość maksymalna wszystkich jej pojazdów (także dokupionych w trakcie efektu).
-TYPES.lineFuelPremium = { group = "speed", range = { 1.0, 3.0 } }
-TYPES.lineFuelBad = { group = "speed", range = { 0.1, 1.0 } }
+TYPES.lineFuelPremium = { group = "speed", range = { 1.0, 3.0 }, queue = "fuel" }
+TYPES.lineFuelBad = { group = "speed", range = { 0.1, 1.0 }, queue = "fuel" }
 
 -- Linia, wariant "stop": jak przycisk zatrzymania w grze; pojazd staje tam, gdzie jest (także na szlaku).
 -- Pojazdy zatrzymane wcześniej przez gracza zostawiamy w spokoju (nie ruszamy ich też przy cofaniu).
@@ -300,13 +308,41 @@ local function targets(e)
 	return e.entities or { e.entity }
 end
 
+-- Efekt czeka w kolejce (jego czas jeszcze nie nadszedł).
+local function waiting(e, now)
+	return now ~= nil and e.startTime ~= nil and now < e.startTime
+end
+
+-- Inne efekty z tej samej kolejki na tym samym celu.
+local function queueMates(e)
+	local out = {}
+	local q = TYPES[e.type].queue
+	if not q then return out end
+	for _, o in pairs(active) do
+		if o ~= e and TYPES[o.type].queue == q and o.entity == e.entity then out[#out + 1] = o end
+	end
+	return out
+end
+
+-- Przesuwa w czasie efekty z kolejki, które startują po końcu e (po przedłużeniu albo przerwaniu e).
+local function shiftQueue(e, from, delta)
+	for _, o in ipairs(queueMates(e)) do
+		if o.startTime and o.startTime >= from - 1e-6 then
+			o.startTime = o.startTime + delta
+			o.untilTime = o.untilTime + delta
+		end
+	end
+end
+
 ---------------------------------------------------------------- sterowniki
 -- Mnożniki ze wszystkich aktywnych efektów -> sterowniki. True = zmiana do zapisania w stanie.
 local function syncControllers()
 	local prod, lineSpeed, speed = {}, {}, {}
 	for _, e in pairs(active) do
 		local t = TYPES[e.type]
-		if t.group == "industry" then
+		if waiting(e, lastNow) then
+			-- jeszcze w kolejce: bez wpływu na grę
+		elseif t.group == "industry" then
 			for _, id in ipairs(targets(e)) do prod[id] = (prod[id] or 1.0) * e.factor end
 		elseif t.group == "speed" then
 			lineSpeed[e.entity] = (lineSpeed[e.entity] or 1.0) * e.factor
@@ -358,6 +394,7 @@ end
 -- Co sekundę z guiUpdate: wygasanie i pilnowanie efektów.
 function E.update(now, shared)
 	if active == nil then load(shared) end
+	lastNow = now
 	local changed = false
 	for key, e in pairs(active) do
 		if now >= e.untilTime then
@@ -387,6 +424,10 @@ function E.abort(c)
 	local t = TYPES[e.type]
 	if t.revert then pcall(t.revert, e) end
 	active[key] = nil
+	if t.queue then -- następne w kolejce zaczynają wtedy, kiedy miał zacząć przerwany
+		local from = math.max(e.startTime or 0, lastNow or 0)
+		shiftQueue(e, e.untilTime, from - e.untilTime)
+	end
 	pcall(syncControllers)
 	persist()
 	util.log("effect " .. key .. " aborted")
@@ -448,6 +489,7 @@ end
 -- { until = data końca w kalendarzu gry } dla wiadomości na czacie.
 function E.start(c, now)
 	if active == nil then return nil, "effects not loaded yet" end
+	if now ~= nil then lastNow = now end
 	local t = TYPES[c.effect]
 	local entity, months = tonumber(c.entity), tonumber(c.months)
 	if not t or not entity or not months or now == nil then return nil, "bad arguments" end
@@ -465,7 +507,9 @@ function E.start(c, now)
 
 	local existing = active[key]
 	if existing then -- przedłużenie; siła tylko mocniej (np. po zmianie mnożnika w ustawieniach)
+		local oldUntil = existing.untilTime
 		existing.untilTime = math.max(existing.untilTime, now) + months * monthLength()
+		if t.queue then shiftQueue(existing, oldUntil, existing.untilTime - oldUntil) end -- kolejne w kolejce później
 		local stronger = factor and existing.factor and math.abs(factor - 1) > math.abs(existing.factor - 1) + 1e-6
 		if stronger then
 			existing.factor = factor
@@ -479,13 +523,24 @@ function E.start(c, now)
 		return function() return true end, nil, { ["until"] = util.date(existing.untilTime) }
 	end
 
-	local e = { key = key, type = c.effect, entity = entity, entities = list, untilTime = now + months * monthLength(),
-		startTime = now, factor = factor, user = type(c.user) == "string" and c.user or nil }
+	-- kolejka (paliwo): inny efekt z tej kolejki jeszcze trwa -> ten zaczyna po jego końcu
+	local startAt = now
+	if t.queue then
+		for _, o in ipairs(queueMates({ type = c.effect, entity = entity })) do startAt = math.max(startAt, o.untilTime) end
+	end
+	local e = { key = key, type = c.effect, entity = entity, entities = list, untilTime = startAt + months * monthLength(),
+		startTime = startAt, factor = factor, user = type(c.user) == "string" and c.user or nil }
 	local verify, err
 	if t.group then
 		verify, err = startGroup(t, e)
 		if verify then
 			active[key] = e
+			if waiting(e, now) then
+				verify = function() return true end -- nic jeszcze nie ustawiamy, zacznie się samo
+				persist()
+				util.log(string.format("effect %s queued for %d months, starts in %.1f months", key, months, (startAt - now) / monthLength()))
+				return verify, nil, { ["until"] = util.date(e.untilTime) }
+			end
 			syncControllers()
 		end
 	else
