@@ -283,7 +283,7 @@ export class Sidebar {
           <li class="row" data-kind="owner" data-id="${esc(o.key)}" aria-current="${isSel("owner", o.key)}">
             <span class="row-name">${esc(o.name)}</span>
             ${assetCounts(o)}
-            <span class="row-value">${this.ownerSort === "profit" ? money(o.profit12m) : ""}</span>
+            <span class="row-value">${this.ownerSort === "profit" ? money(o.profit12m) : scoreHtml(o)}</span>
           </li>`).join("");
     } else if (this.tab === "industries") {
       const { mode, cargo } = this.industryFilter;
@@ -354,7 +354,11 @@ export class Sidebar {
     if (this.tab === "owners") {
       const btn = (key) =>
         `<button type="button" data-sort="${key}" aria-pressed="${this.ownerSort === key}">${esc(t(`owners.sort.${key}`))}</button>`;
-      this.carriers.innerHTML = btn("assets") + btn("profit") + btn("name");
+      // "?" z opisem punktów majątku: najechanie albo dotknięcie (fokus) pokazuje dymek.
+      const lines = t("owners.scoreHint").split("\n").map((l) => `<span>${esc(l)}</span>`).join("");
+      const help = `<span class="help" tabindex="0" role="button" aria-label="${esc(t("owners.scoreHelp"))}">?`
+        + `<span class="help-tip" role="tooltip"><b>${esc(t("owners.scoreHelp"))}</b>${lines}</span></span>`;
+      this.carriers.innerHTML = btn("assets") + btn("profit") + btn("name") + help;
       return;
     }
     if (!(this.tab in this.typeFilter)) return;
@@ -530,6 +534,9 @@ function ownerLinesHtml(o) {
 }
 
 // Majątek widza: podsumowanie i klikalne obiekty (data-pick, linie: data-line); główne (największe) miasto pierwsze.
+// Majątek widza w punktach (owners.js: score), z opisem wzoru w podpowiedzi.
+const scoreHtml = (o) => `<span title="${esc(t("owners.scoreHint"))}">${esc(t("owners.points", { n: fmtInt(o.score) }))}</span>`;
+
 function ownerDetail(o, stationIndustry) {
   const link = (pick, name, icon, value = "", x = null) => `
     <li><button type="button" data-pick="${pick}">
@@ -556,6 +563,7 @@ function ownerDetail(o, stationIndustry) {
     <h2>${esc(o.name)}${copyBtn(o.name)}</h2>
     <p class="detail-sub">${esc(t("owner"))}${mainTown}</p>
     <dl class="stats">
+      ${stat(t("owners.sort.assets"), scoreHtml(o))}
       ${o.towns.length ? stat(t("tab.towns"), fmtInt(o.towns.length)) + stat(t("owners.size"), fmtInt(o.size)) : ""}
       ${o.industries.length ? stat(t("tab.industries"), fmtInt(o.industries.length)) : ""}
       ${o.stations.length ? stat(t("tab.stations"), fmtInt(o.stations.length)) : ""}

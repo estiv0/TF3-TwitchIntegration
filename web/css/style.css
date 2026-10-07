@@ -247,6 +247,22 @@ button { font: inherit; color: inherit; }
 .filters button:hover { color: var(--text); }
 .filters button[aria-pressed="true"] { color: var(--text); border-color: var(--accent); }
 .filters button span { opacity: .7; margin-left: 2px; }
+/* "?" z dymkiem (opis punktów majątku): najechanie albo fokus (dotknięcie na telefonie). */
+.help {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; align-self: center;
+  width: 20px; height: 20px; margin-left: auto; border-radius: 50%; cursor: help;
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); font-size: 12px; font-weight: 600;
+}
+.help:hover, .help:focus { color: var(--text); border-color: var(--accent); outline: none; }
+.help-tip {
+  display: none; position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; width: min(300px, 80vw);
+  padding: 8px 10px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--border);
+  color: var(--text); font-size: 12px; font-weight: 400; line-height: 1.45; text-align: left; cursor: default;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .4);
+}
+.help-tip b { display: block; margin-bottom: 4px; }
+.help-tip span { display: block; }
+.help:hover .help-tip, .help:focus .help-tip, .help:focus-within .help-tip { display: block; }
 /* Zakłady: przełącznik produkcja/zużycie w osobnym wierszu, ładunki jako ikonki z liczbą. */
 .filter-modes { display: flex; gap: 6px; width: 100%; }
 .filters .cargo-btn { display: inline-flex; align-items: center; padding: 3px 8px 3px 6px; }
