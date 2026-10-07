@@ -39,7 +39,8 @@ Zrobione:
   głównym mieście); najechanie na obiekt podświetla go na mapie;
 - pojazdy na liniach widza: liczba (też na liście), podział według nośnika, w drodze / na przystanku /
   zatrzymane (z `vehicles[]`; bez nich tylko suma `lines[].vehicleCount`); statystyki jego linii razem:
-  zysk z 12 miesięcy i z poprzedniego roku, przewiezione, przepustowość (sumy), zapełnienie (średnia ważona
+  zysk z 12 miesięcy, z poprzedniego roku i sumaryczny ze wszystkich zakończonych lat (`stats.profitTotal`,
+  „Sumaryczny zarobek” albo „Sumaryczna strata”), przewiezione, przepustowość (sumy), zapełnienie (średnia ważona
   liczbą pojazdów) i ładunek w pojazdach teraz (suma per ładunek);
 - nazwa właściciela w szczegółach każdego obiektu jest linkiem do jego majątku;
 - adres `#owner=<klucz>` (nazwa małymi literami, `encodeURIComponent`), działa też otwarty od zera;

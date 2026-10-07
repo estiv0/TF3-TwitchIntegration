@@ -87,6 +87,8 @@ local S = {
 	lineStats = {},          -- id linii -> statystyki (collectors.lineStats), odświeżane co miesiąc gry
 	lineStatsKey = nil,      -- miesiąc kalendarza, z którego pochodzi cache
 	prevYear = nil,          -- { year, from, to } poprzedniego roku kalendarzowego albo nil
+	profitTotals = {},       -- id linii -> zysk z zakończonych lat (collectors.lineProfitTotal), raz na rok gry
+	profitTotalsYear = nil,  -- prevYear.year, z którego pochodzi cache
 	vehiclePos = true,       -- pozycje pojazdów w tej sesji (wyłączane po przekroczeniu budżetu)
 	vehiclePosMs = {},       -- czasy zbierania pozycji z ostatnich eksportów (ms)
 	dyn = nil,               -- bieżące zadanie eksportu dynamicznego
@@ -109,6 +111,7 @@ local function newSession(now)
 	S.rows, S.net, S.netDirtyWall, S.lastNetworkWall = nil, nil, nil, nil
 	S.seqTerrain, S.terrain, S.terrainSig, S.lastTerrainCheckWall = 0, nil, nil, nil
 	S.lineStats, S.lineStatsKey, S.prevYear = {}, nil, nil
+	S.profitTotals, S.profitTotalsYear = {}, nil
 	S.vehiclePos, S.vehiclePosMs, S.dyn = cfg.vehiclePositions, {}, nil
 	S.company, S.companyKey = nil, nil
 	commands.reset()
@@ -170,6 +173,8 @@ local function lineStatsMonth(now)
 			local okP, ps = pcall(util.yearStart, ys - 1)
 			if okP and ps then S.prevYear = { year = d.year - 1, from = ps, to = ys } end
 		end
+		local year = S.prevYear and S.prevYear.year
+		if year ~= S.profitTotalsYear then S.profitTotals, S.profitTotalsYear = {}, year end
 	end
 end
 
@@ -182,6 +187,14 @@ local function attachLineStats(l, now)
 		if not ok then util.log("lineStats failed for " .. tostring(l.id) .. ": " .. tostring(st)) end
 	end
 	l.stats = S.lineStats[l.id] or nil
+	-- zysk z zakończonych lat: cała historia księgowa linii, więc tylko raz na rok gry
+	if l.stats and S.prevYear then
+		if S.profitTotals[l.id] == nil then
+			S.profitTotals[l.id] = collectors.lineProfitTotal(l.id, S.prevYear.to) or false
+			fresh = true
+		end
+		l.stats.profitTotal = S.profitTotals[l.id] or nil
+	end
 	return fresh
 end
 

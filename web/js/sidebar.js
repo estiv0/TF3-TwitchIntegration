@@ -815,6 +815,7 @@ function lineStats(s) {
   return `
       ${stat(t("line.profit12m"), money(s.profit12m))}
       ${s.prevYear != null ? stat(t("line.profitYear", { year: s.prevYear }), money(s.profitPrevYear)) : ""}
+      ${s.profitTotal != null ? stat(t(s.profitTotal < 0 ? "line.lossTotal" : "line.profitTotal", { year: s.prevYear }), money(s.profitTotal)) : ""}
       ${stat(t("line.transported12m"), fmtInt(s.transported12m))}
       ${stat(t("line.rate"), fmtInt(s.rate))}
       ${stat(t("line.load"), fmtPercent(s.load))}`;

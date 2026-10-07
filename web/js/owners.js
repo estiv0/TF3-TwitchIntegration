@@ -55,7 +55,7 @@ export function ownersIndex(dynamic, stationIndustry = industryOfStation(dynamic
 const sumOf = (items, get) => items.reduce((sum, x) => (get(x) == null ? sum : (sum ?? 0) + get(x)), null);
 
 /**
- * Statystyki linii widza razem (lines[].stats z moda): zysk, przewiezione i przepustowość - sumy;
+ * Statystyki linii widza razem (lines[].stats z moda): zysk (też sumaryczny z zakończonych lat), przewiezione i przepustowość - sumy;
  * zapełnienie - średnia ważona liczbą pojazdów linii; ładunek w pojazdach teraz - suma per ładunek.
  * null, gdy żadna linia nie ma statystyk.
  */
@@ -82,6 +82,7 @@ function lineTotals(lines) {
     profit12m: sumOf(withStats, (l) => l.stats.profit12m),
     prevYear,
     profitPrevYear: prevYear == null ? null : sumOf(withStats, (l) => (l.stats.prevYear === prevYear ? l.stats.profitPrevYear : null)),
+    profitTotal: prevYear == null ? null : sumOf(withStats, (l) => (l.stats.prevYear === prevYear ? l.stats.profitTotal : null)),
     transported12m: sumOf(withStats, (l) => l.stats.transported12m),
     rate: sumOf(withStats, (l) => l.stats.rate),
     load: loadWeight ? loadSum / loadWeight : null,

@@ -507,6 +507,14 @@ function C.lineStats(id, now, prevYear)
 	return s
 end
 
+-- Zysk linii ze wszystkich zakończonych lat: od początku gry do yearStart (początek bieżącego roku).
+-- Zmienia się tylko na przełomie roku, więc skrypt liczy go raz na rok gry (nil = brak danych).
+function C.lineProfitTotal(id, yearStart)
+	local ok, v = pcall(function() return api.engine.util.finance.calculateBalance({ id }, 0, yearStart, true) end)
+	if ok and type(v) == "number" then return v end
+	return nil
+end
+
 -- stationKinds: encja stacji -> rodzaj (z C.stations); nośnik linii bez pojazdów.
 -- vehicles = nil (pojazdy wyłączone): vehicleCount = nil, nośnik tylko z rodzaju stacji.
 function C.lines(vehicles, stationKinds)
