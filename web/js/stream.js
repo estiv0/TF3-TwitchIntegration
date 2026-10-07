@@ -56,7 +56,7 @@ export class StreamPlayer {
       if (!this.frame.firstChild) {
         const src = `https://player.twitch.tv/?channel=${encodeURIComponent(this.channel)}`
           + `&parent=${encodeURIComponent(location.hostname)}&muted=true&autoplay=true`;
-        this.frame.innerHTML = `<iframe src="${src}" allow="autoplay; fullscreen" allowfullscreen title="Twitch"></iframe>`;
+        this.frame.innerHTML = `<iframe src="${src}" allow="autoplay; fullscreen" title="Twitch"></iframe>`;
       }
       // pierwsze otwarcie: prawy górny róg mapy, obok przycisków mapy
       if (!this.windows.saved) {
