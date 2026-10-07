@@ -13,7 +13,7 @@ public sealed class ModSettingsTests : IDisposable
     public void Store_round_trips()
     {
         var path = Path.Combine(_dir, "settings.lua");
-        var settings = new ModSettings(5, 30, 2, Vehicles: false, Terrain: false, TerrainStepM: 40);
+        var settings = new ModSettings(5, 30, 2, Vehicles: false, VehicleDetails: false, Terrain: false, TerrainStepM: 40);
 
         ModSettingsStore.Save(settings, path);
 
@@ -28,6 +28,7 @@ public sealed class ModSettingsTests : IDisposable
 
         Assert.Contains("function data()\r\nreturn {\r\n", lua);
         Assert.Contains("\tvehicles = true,\r\n", lua);
+        Assert.Contains("\tvehicleDetails = true,\r\n", lua);
         Assert.EndsWith("}\r\nend\r\n", lua);
     }
 

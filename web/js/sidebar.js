@@ -3,7 +3,7 @@
 
 import {
   STATION_ORDER, carrierIcon, carrierName, cargoImg, cargoLabel, cargoName, escapeHtml as esc, iconHtml, landUseName, stationName,
-  fmtDate, fmtDec, fmtInt, fmtMoney, fmtMoneyShort, fmtPercent, fmtSignedPercent, industryOfStation, linesByIndustry, linesByStation, rgb, stationImg,
+  fmtAge, fmtDate, fmtDec, fmtInt, fmtMoney, fmtMoneyShort, fmtPercent, fmtSignedPercent, industryOfStation, linesByIndustry, linesByStation, rgb, stationImg,
   stationUse, townGrowth, townSize,
 } from "./format.js";
 import { companyHtml } from "./company.js";
@@ -420,7 +420,7 @@ export class Sidebar {
     const close = `<button type="button" class="detail-close" data-close title="${esc(t("detail.close"))}" aria-label="${esc(t("detail.close"))}">×</button>`;
     this.detail.innerHTML = close + (sel.kind === "owner" ? ownerDetail(item, this.stationIndustry)
       : sel.kind === "town" ? townDetail(item, this.earnings.towns.get(item.id))
-      : sel.kind === "line" ? lineDetail(item, this.focusedStop)
+      : sel.kind === "line" ? lineDetail(item, this.focusedStop, d)
       : sel.kind === "station" ? stationDetail(item, this.stationLines.get(item.id) ?? [])
       : industryDetail(item, this.industryLines.get(item.id) ?? []));
   }
@@ -830,7 +830,8 @@ function highlight(text, filter) {
 }
 
 // Przystanek z pozycją jest klikalny (data-stop = indeks na linii) - przenosi mapę do niego.
-function lineDetail(l, focusedStop) {
+function lineDetail(l, focusedStop, dynamic) {
+  const fleet = lineFleet(l, dynamic);
   const stops = (l.stops ?? []).map((s, i) => {
     const name = esc(s.name ?? t("line.stop", { n: i + 1 }));
     if (!s.pos) return `<li>${name}</li>`;
@@ -843,10 +844,67 @@ function lineDetail(l, focusedStop) {
     <dl class="stats">
       ${stat(t("line.vehicles"), fmtInt(l.vehicleCount))}
       ${stat(t("line.stops"), fmtInt(l.stops?.length ?? 0))}
+      ${fleet ? fleetStats(fleet) : ""}
       ${l.stats ? lineStats(l.stats) : ""}
     </dl>
     ${l.stats?.cargo?.length ? `<h3>${esc(t("line.loadNow"))}</h3><ul class="chips">${l.stats.cargo.map((c) => `<li>${cargoLabel(c.cargo)}<span>${fmtInt(c.used)} / ${fmtInt(c.capacity)}</span></li>`).join("")}</ul>` : ""}
+    ${fleet ? fleetTable(fleet) : ""}
     ${stops ? `<h3>${esc(t("line.stops"))}</h3><ol class="stops">${stops}</ol>` : ""}`;
+}
+
+/**
+ * Szczegóły pojazdów linii (lua_mod: collectors.vehicleDetails): średni wiek i stan, liczba po żywotności
+ * i grupy według modelu (i długości składu). null, gdy dane nie mają szczegółów (wyłączone w modzie).
+ */
+function lineFleet(l, dynamic) {
+  const vs = (dynamic?.vehicles ?? []).filter((v) => v.line === l.id && (v.age != null || v.maint != null));
+  if (!vs.length) return null;
+  const avg = (key) => {
+    const xs = vs.map((v) => v[key]).filter((x) => x != null);
+    return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+  };
+  const groups = new Map();
+  for (const v of vs) {
+    const key = `${v.model}|${v.parts ?? 1}`;
+    let g = groups.get(key);
+    if (!g) groups.set(key, g = { name: dynamic.models?.[v.model] ?? "?", parts: v.parts, count: 0, ages: [], worst: null, overLife: false });
+    g.count++;
+    if (v.age != null) g.ages.push(v.age);
+    if (v.maint != null && (g.worst == null || v.maint < g.worst)) g.worst = v.maint;
+    if (v.wear >= 1) g.overLife = true;
+  }
+  return {
+    avgAge: avg("age"),
+    avgMaint: avg("maint"),
+    overLife: vs.filter((v) => v.wear >= 1).length,
+    groups: [...groups.values()].sort((a, b) => b.count - a.count),
+  };
+}
+
+function fleetStats(f) {
+  return `
+      ${stat(t("line.avgAge"), esc(fmtAge(f.avgAge)))}
+      ${stat(t("line.avgCondition"), `<span class="${f.avgMaint < 0.5 ? "neg" : ""}">${esc(fmtPercent(f.avgMaint))}</span>`)}
+      ${f.overLife ? stat(t("line.overLife"), `<span class="neg">${fmtInt(f.overLife)}</span>`) : ""}`;
+}
+
+function fleetTable(f) {
+  const rows = f.groups.map((g) => {
+    const age = g.ages.length ? g.ages.reduce((a, b) => a + b, 0) / g.ages.length : null;
+    return `<tr>
+      <td>${esc(g.name)}${g.parts ? ` <span class="muted">${esc(t("vehicle.parts", { n: g.parts }))}</span>` : ""}</td>
+      <td class="num">${fmtInt(g.count)}</td>
+      <td class="num${g.overLife ? " neg" : ""}">${esc(fmtAge(age))}</td>
+      <td class="num${g.worst < 0.5 ? " neg" : ""}">${esc(fmtPercent(g.worst))}</td>
+    </tr>`;
+  }).join("");
+  return `<h3>${esc(t("line.fleet"))}</h3>
+    <table class="fleet-table">
+      <thead><tr><th>${esc(t("fleet.model"))}</th><th class="num">${esc(t("line.vehicles"))}</th>`
+      + `<th class="num" title="${esc(t("fleet.ageHint"))}">${esc(t("fleet.age"))}</th>`
+      + `<th class="num" title="${esc(t("fleet.conditionHint"))}">${esc(t("fleet.condition"))}</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
 }
 
 // Statystyki z moda, odświeżane raz na miesiąc gry (lua_mod: collectors.lineStats).

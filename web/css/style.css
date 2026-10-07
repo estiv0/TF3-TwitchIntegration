@@ -484,6 +484,14 @@ body.resizing { cursor: col-resize; user-select: none; }
 .fin .fin-balance th { color: var(--text); }
 .fin .ico { width: 14px; height: 14px; vertical-align: -2px; }
 
+/* tabor linii: model, liczba, wiek, stan (sidebar.js: fleetTable) */
+.fleet-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.fleet-table th, .fleet-table td { padding: 4px 6px; text-align: left; border-bottom: 1px solid var(--border); }
+.fleet-table th { color: var(--muted); font-weight: 600; }
+.fleet-table th[title] { cursor: help; }
+.fleet-table .num { text-align: right; white-space: nowrap; }
+.fleet-table .muted { color: var(--muted); white-space: nowrap; }
+
 /* magazyny zakładu */
 .stock { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
 .stock li { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 2px 8px; font-size: 13px; }

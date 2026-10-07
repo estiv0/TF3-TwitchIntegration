@@ -460,6 +460,93 @@ function C.vehiclePosition(v)
 	return true
 end
 
+-- Model z api.res: { name, lifespan (w jednostkach gameTime) }, z cache (modeli jest kilkadziesiąt).
+-- Nazwa i żywotność jak w oknie pojazdu (gui/line_vehicle_mgmt/vehicle_util.tl, vehicle_store_util.tl).
+local modelCache = {}
+local function modelInfo(modelId)
+	local key = util.scalar(modelId)
+	if key == nil then return {} end
+	if modelCache[key] == nil then
+		local info = {}
+		pcall(function()
+			local md = api.res.modelRep.get(modelId).metadata
+			info.name = md.description.name
+			info.lifespan = md.maintenance.lifespan * 1000
+		end)
+		modelCache[key] = info
+	end
+	return modelCache[key]
+end
+
+-- Nazwa zespołu trakcyjnego (multiple unit) z pliku w transportVehicleConfig.muFileNames, z cache.
+local muCache = {}
+local function muName(file)
+	if muCache[file] == nil then
+		local ok, name = pcall(function()
+			local rep = api.res.multipleUnitRep
+			return rep.get(rep.find(file)).name
+		end)
+		muCache[file] = (ok and type(name) == "string" and name ~= "") and name or false
+	end
+	return muCache[file] or nil
+end
+
+-- Data gry jako ułamek roku (2031.5 = około 1 lipca 2031); nil bez kalendarza.
+local function fracYear(t)
+	local d = util.date(t)
+	if not d or type(d.year) ~= "number" then return nil end
+	return d.year + ((d.month or 1) - 1) / 12 + ((d.day or 1) - 1) / 365
+end
+C.fracYear = fracYear
+
+-- Dopisuje do pojazdu (wpis z C.vehicles) szczegóły ze składu (transportVehicleConfig) i config:
+--   model    = id modelu czoła składu (nazwa w models)
+--   parts    = liczba części składu (lokomotywa + wagony), tylko gdy więcej niż 1
+--   age      = wiek najstarszej części w latach kalendarza gry (jak "Wiek" w oknie pojazdu)
+--   wear     = wiek / żywotność tej części (1 = koniec żywotności, jak procent w oknie linii)
+--   maint    = średni stan techniczny części, 0..1 (vehicle_util.getAvgMaintenanceState)
+--   cap      = pojemność według ładunku { [nazwa ładunku] = liczba }
+-- models: tabela "id modelu" -> nazwa (klucze tekstowe, żeby JSON dał obiekt), uzupełniana o modele tego pojazdu.
+function C.vehicleDetails(v, now, nowYear, models)
+	local tv = util.comp(v.id, ct.TRANSPORT_VEHICLE)
+	if not tv then return end
+	local cfgTv = util.field(tv, "transportVehicleConfig")
+	local parts = util.list(cfgTv and util.field(cfgTv, "vehicles"))
+	if #parts > 0 then
+		local head = util.field(util.field(parts[1], "part"), "modelId")
+		v.model = util.scalar(head)
+		if #parts > 1 then v.parts = #parts end
+		local key = v.model ~= nil and tostring(v.model)
+		if key and models[key] == nil then
+			local mu = util.list(util.field(cfgTv, "muFileNames"))[1]
+			models[key] = (type(mu) == "string" and mu ~= "" and muName(mu)) or modelInfo(head).name
+		end
+		-- najstarsza część (przy równym czasie zakupu ta z krótszą żywotnością), jak getMinPurchaseTimeAndLifespan
+		local bought, lifespan, maintSum, maintN = nil, nil, 0, 0
+		for _, p in ipairs(parts) do
+			local t = util.field(p, "purchaseTime")
+			local life = modelInfo(util.field(util.field(p, "part"), "modelId")).lifespan
+			if type(t) == "number" and (bought == nil or t < bought or (t == bought and life and (lifespan == nil or life < lifespan))) then
+				bought, lifespan = t, life
+			end
+			local m = util.field(p, "maintenanceState")
+			if type(m) == "number" then maintSum, maintN = maintSum + m, maintN + 1 end
+		end
+		if bought then
+			local boughtYear = fracYear(bought)
+			if nowYear and boughtYear then v.age = util.round(math.max(nowYear - boughtYear, 0), 1) end
+			if lifespan and lifespan > 0 then v.wear = util.round(math.max(now - bought, 0) / lifespan, 2) end
+		end
+		if maintN > 0 then v.maint = util.round(maintSum / maintN, 3) end
+	end
+	-- pojemności: tablica Lua od 1, CargoTypeId = indeks - 1 (jak getLineCapacityUsages w C.lineStats)
+	local cap = {}
+	for index, n in util.pairs(util.field(util.field(tv, "config"), "capacities")) do
+		if type(index) == "number" and type(n) == "number" and n > 0 then cap[C.cargoName(index - 1)] = n end
+	end
+	if next(cap) then v.cap = cap end
+end
+
 -- Statystyki linii jak w oknie linii i statystykach gry (gui/line_vehicle_mgmt/line_react_util.tl,
 -- gui/statistics/statistic_lines.tl). prevYear = { year, from, to } albo nil.
 -- Każde pole osobno w pcall: błąd jednego API nie kasuje reszty.

@@ -36,6 +36,7 @@ local cfg = {
 	historyMaxPoints = 300,        -- najwyżej tyle punktów na serię historii (saldo, wartość firmy, mieszkańcy)
 	vehicles = true,               -- pojazdy (lista, pozycje, liczba na linii); false = bez pojazdów w eksporcie
 	vehiclePositions = true,       -- pozycja i prędkość pojazdów (płynny ruch na stronie); false = wyłączone
+	vehicleDetails = true,         -- model, wiek, stan techniczny i pojemność pojazdów; false = wyłączone
 	vehiclePositionsMaxMs = 30,    -- pozycje liczone porcjami w budżecie klatki; jeśli łącznie trwają dłużej
 	                               -- (średnio z 3 eksportów), wyłączamy je do końca sesji (log: "vehicle positions")
 	benchmark = false,             -- jednorazowy pomiar formatu zapisu (bench.lua), wyniki w docs
@@ -60,6 +61,7 @@ local SETTINGS = {
 	minDynamicWallSec = { "number", 2, 300 },
 	dynamicBudgetMs = { "number", 1, 10 },
 	vehicles = { "boolean" },
+	vehicleDetails = { "boolean" },
 	terrain = { "boolean" },
 	terrainStepM = { "number", 5, 100 },
 }
@@ -249,6 +251,21 @@ local DYN_STEPS = {
 		end
 		return true
 	end },
+	{ "details", function(job, deadline)
+		local vs = job.snap.vehicles
+		if not vs or not cfg.vehicleDetails then return true end
+		if job.i == 1 then job.models, job.nowYear = {}, collectors.fracYear(job.now) end
+		while job.i <= #vs do
+			-- nowe API: błąd jednego pojazdu nie blokuje eksportu
+			local ok, err = pcall(collectors.vehicleDetails, vs[job.i], job.now, job.nowYear, job.models)
+			if not ok and not job.detailsError then
+				job.detailsError = true
+				util.log("vehicle details failed for " .. tostring(vs[job.i].id) .. ": " .. tostring(err))
+			end
+			if nextItem(job, deadline) then return false end
+		end
+		return true
+	end },
 	{ "stations", function(job)
 		-- stacje to nowe, niesprawdzone API: błąd nie może zablokować reszty eksportu
 		local ok, stations, kinds = pcall(collectors.stations)
@@ -329,6 +346,7 @@ local DYN_STEPS = {
 			player = job.snap.player,
 			company = job.snap.company,
 			effects = effects.list(), -- aktywne efekty z nagród za punkty kanału (effects.lua)
+			models = job.models and (next(job.models) and job.models or json.EMPTY_OBJECT), -- id modelu -> nazwa (vehicles[].model)
 		}):sub(1, -2) -- bez zamykającej klamry
 		local out = { head }
 		for _, key in ipairs(DYN_ARRAYS) do
@@ -356,10 +374,10 @@ local function finishDynamic(job)
 	local nVehicles = #(job.snap.vehicles or {})
 	if S.vehiclePos and job.snap.vehicles then trackVehiclePositions(nVehicles, ms("positions")) end
 	util.log(string.format("dynamic #%d: work %.0f ms in %d frames (max %.0f ms/frame), %.2f s wall; "
-		.. "vehicles %.0f, positions %.0f (%d vehicles), stations %.0f, lines %.0f, line stats %.0f (%d lines), "
+		.. "vehicles %.0f, positions %.0f, details %.0f (%d vehicles), stations %.0f, lines %.0f, line stats %.0f (%d lines), "
 		.. "towns %.0f, industries %.0f, player %.0f, company %.0f%s, encode %.0f, write %.0f ms; %d B",
 		job.seq, job.work * 1000, job.frames, job.maxFrame * 1000, util.clock() - job.t0,
-		ms("vehicles"), ms("positions"), nVehicles, ms("stations"), ms("lines"), ms("lineStats"), job.statsCount,
+		ms("vehicles"), ms("positions"), ms("details"), nVehicles, ms("stations"), ms("lines"), ms("lineStats"), job.statsCount,
 		ms("towns"), ms("industries"), ms("player"), ms("company"), job.companyFresh and " (refreshed)" or "",
 		ms("encode"), ms("write"), #(job.content or "")))
 end

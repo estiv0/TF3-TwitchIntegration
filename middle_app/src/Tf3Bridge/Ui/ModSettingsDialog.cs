@@ -7,6 +7,7 @@ public sealed class ModSettingsDialog : Form
     private readonly NumericUpDown _minWallSec = Number(ModSettings.MinDynamicWallSecRange);
     private readonly NumericUpDown _budgetMs = Number(ModSettings.DynamicBudgetMsRange);
     private readonly CheckBox _vehicles = new() { Text = "Pojazdy (ruch na mapie, flota, liczba pojazdów na liniach)", AutoSize = true };
+    private readonly CheckBox _vehicleDetails = new() { Text = "Szczegóły pojazdów (model, wiek, stan techniczny, pojemność)", AutoSize = true };
     private readonly CheckBox _terrain = new() { Text = "Eksport terenu (tło mapy)", AutoSize = true };
     private readonly NumericUpDown _terrainStep = Number(ModSettings.TerrainStepMRange);
 
@@ -40,6 +41,7 @@ public sealed class ModSettingsDialog : Form
         AddRow(form, "…ale nie częściej niż co:", _minWallSec, "s");
         AddRow(form, "Czas pracy na klatkę:", _budgetMs, "ms");
         AddWide(form, _vehicles);
+        AddWide(form, _vehicleDetails);
         AddWide(form, _terrain);
         AddRow(form, "Dokładność terenu:", _terrainStep, "m między próbkami");
 
@@ -58,11 +60,12 @@ public sealed class ModSettingsDialog : Form
         Controls.Add(root);
 
         Fill(current);
+        _vehicles.CheckedChanged += (_, _) => _vehicleDetails.Enabled = _vehicles.Checked;
         _terrain.CheckedChanged += (_, _) => _terrainStep.Enabled = _terrain.Checked;
         defaults.Click += (_, _) => Fill(ModSettings.Default);
         ok.Click += (_, _) => Settings = new ModSettings(
             (int)_everyDays.Value, (int)_minWallSec.Value, (int)_budgetMs.Value,
-            _vehicles.Checked, _terrain.Checked, (int)_terrainStep.Value);
+            _vehicles.Checked, _vehicleDetails.Checked, _terrain.Checked, (int)_terrainStep.Value);
     }
 
     private void Fill(ModSettings s)
@@ -71,6 +74,8 @@ public sealed class ModSettingsDialog : Form
         _minWallSec.Value = s.MinDynamicWallSec;
         _budgetMs.Value = s.DynamicBudgetMs;
         _vehicles.Checked = s.Vehicles;
+        _vehicleDetails.Checked = s.VehicleDetails;
+        _vehicleDetails.Enabled = s.Vehicles;
         _terrain.Checked = s.Terrain;
         _terrainStep.Value = s.TerrainStepM;
         _terrainStep.Enabled = s.Terrain;

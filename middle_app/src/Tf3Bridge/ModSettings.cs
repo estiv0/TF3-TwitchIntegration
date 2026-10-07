@@ -16,6 +16,7 @@ public sealed record ModSettings(
     int MinDynamicWallSec = 10,
     int DynamicBudgetMs = 3,
     bool Vehicles = true,
+    bool VehicleDetails = true,
     bool Terrain = true,
     int TerrainStepM = 20)
 {
@@ -67,6 +68,7 @@ public static partial class ModSettingsStore
             Int("minDynamicWallSec", d.MinDynamicWallSec, ModSettings.MinDynamicWallSecRange),
             Int("dynamicBudgetMs", d.DynamicBudgetMs, ModSettings.DynamicBudgetMsRange),
             Bool("vehicles", d.Vehicles),
+            Bool("vehicleDetails", d.VehicleDetails),
             Bool("terrain", d.Terrain),
             Int("terrainStepM", d.TerrainStepM, ModSettings.TerrainStepMRange));
     }
@@ -82,6 +84,7 @@ public static partial class ModSettingsStore
         sb.Append(CultureInfo.InvariantCulture, $"\tminDynamicWallSec = {s.MinDynamicWallSec},\r\n");
         sb.Append(CultureInfo.InvariantCulture, $"\tdynamicBudgetMs = {s.DynamicBudgetMs},\r\n");
         sb.Append($"\tvehicles = {B(s.Vehicles)},\r\n");
+        sb.Append($"\tvehicleDetails = {B(s.VehicleDetails)},\r\n");
         sb.Append($"\tterrain = {B(s.Terrain)},\r\n");
         sb.Append(CultureInfo.InvariantCulture, $"\tterrainStepM = {s.TerrainStepM},\r\n");
         sb.Append("}\r\nend\r\n");

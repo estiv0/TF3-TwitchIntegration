@@ -74,12 +74,13 @@ end
 Middle app wyciąga `json = "..."`, odwraca escapowanie Lua (`\"`, `\\`, `\n`, `\r`, `\t`, `\ddd`), wysyła dane i usuwa plik. Nie wiadomo, czy zapis jest atomowy, więc gdy plik jest niekompletny (brak końcowego `end`), middle app ponawia odczyt.
 
 - **`session`**: losowe ID wątku GUI. Nowe powstaje przy starcie gry i przy cofnięciu czasu gry, czyli po wczytaniu starszego save'a. `seq` liczy się od 1 w każdej sesji, osobno dla `dynamic` i `network`.
-- **`dynamic`**: `{ v, kind, session, seq, gameTime, date{year,month,day}, player{id,name,balance}, company, towns[], industries[], stations[], lines[], vehicles[] }`
+- **`dynamic`**: `{ v, kind, session, seq, gameTime, date{year,month,day}, player{id,name,balance}, company, models, towns[], industries[], stations[], lines[], vehicles[] }`
   - `company` (liczone raz na miesiąc gry): `finance` = tabela z okna Finanse (`computeFinanceTable`, `cfg.financeYears` lat): `{ header[], rows[{ carrier, type, maintenance, construction, values[] }], total[], balance[], interest[], loan[] }`, gdzie `type` itd. to nazwy enumów `JournalEntry` (`INCOME`, `MAINTENANCE`/`VEHICLE`…), a `values[i]` to kwota w roku `header[i]`; `history` = serie z logbooka świata `companyBalance`, `companyTotalValue`, `townResidentialCount`, `townCommercialCount`, `townIndustrialCount` (pojemność dzielnic wszystkich miast) jako `[[rok z ułamkiem, wartość], …]`, najwyżej `cfg.historyMaxPoints` punktów;
   - `towns[].supply`: zaspokojenie potrzeb `[{ cargo, supply, demand }]` z `townBuildingSystem.getCargoSupplyAndLimit` (`demand` -1 = bez limitu);
   - `industries[]`: `stocks[]` mają `amount` (stan magazynu), `input` i `consumedYear` (zużycie na rok); `producedYear` = ładunek -> produkcja na rok; `year` = `{ produced, consumed, destroyed }` z logbooka zakładu za ostatni rok;
   - ładunki są podawane jako nazwy zasobów, np. `"::/cargos/logs/logs.cargo"`;
   - `carrier` i `state` pojazdów to nazwy enumów (`RAIL`, `EN_ROUTE`…);
+  - szczegóły pojazdu (`collectors.vehicleDetails`, wyłącznik „Szczegóły pojazdów” w ustawieniach moda): `model` = id modelu czoła składu (nazwa w `models`: `{ "id": nazwa }`, z `api.res.modelRep` albo nazwa zespołu trakcyjnego z `muFileNames`), `parts` = liczba części składu (tylko gdy > 1), `age` = wiek najstarszej części w latach kalendarza gry, `wear` = wiek / żywotność tej części (≥ 1 = po żywotności, jak procent w oknie linii), `maint` = średni stan techniczny części 0..1 (jak `vehicle_util.getAvgMaintenanceState`), `cap` = pojemność `{ [ładunek] = liczba }` z `config.capacities`. Bez szczegółów nie ma klucza `models` ani tych pól. **Jeszcze niesprawdzone w grze** (zwłaszcza indeksy `capacities` i nazwy modeli);
   - `stations[]`: jeden wiersz na konstrukcję stacji `{ id, kind, industry, carriers[], name, file, pos, owner, passengers, cargo, groups[], stations[] }`, gdzie `kind` to `RAIL`, `ROAD`, `WATER`, `AIR` (rzadko `TRAM`, `OTHER` = nierozpoznana stacja przemysłu), a `industry` to id zakładu, gdy stacja jest jego częścią, wyznaczany ze ścieżki konstrukcji, a dla stacji z modów z `carriers` (nośniki całej grupy stacji). Przystanki (bez konstrukcji, `small_stops`, `underground_station`) są pomijane;
   - przystanek linii (`lines[].stops[]`) ma `entity` = encja stacji, którą można dopasować do `stations[].stations`;
   - `carrier` linii bierze się z jej pojazdów, a gdy linia nie ma pojazdów, z rodzaju jej stacji.
@@ -180,7 +181,7 @@ Gra nie ma wypadków (brak komendy, stanu ani zdarzenia kolizji), więc „wypad
 
 W logu gry (`crash_dump\stdout.txt`) szukaj linii `[tf3export]`:
 - `new session … (writer mode 'userdata'|'log')`: początek sesji;
-- `dynamic #N: work … ms in … frames (max … ms/frame), … s wall; vehicles …, positions … (… vehicles), stations …, lines …, line stats … (… lines), towns …, industries …, player …, encode …, write … ms; … B`: czas pracy łącznie i w najgorszej klatce oraz czasy kroków. Krok, który sam przekracza budżet (np. `towns`), to kandydat do podziału na porcje;
+- `dynamic #N: work … ms in … frames (max … ms/frame), … s wall; vehicles …, positions …, details … (… vehicles), stations …, lines …, line stats … (… lines), towns …, industries …, player …, encode …, write … ms; … B`: czas pracy łącznie i w najgorszej klatce oraz czasy kroków. Krok, który sam przekracza budżet (np. `towns`), to kandydat do podziału na porcje;
 - `vehicle positions: … ms for … vehicles (max … ms) - disabled for this session`: pozycje pojazdów wyłączone automatycznie, bo łącznie trwały za długo;
 - `network #N (full): … edges (initial, …)` oraz `networkDelta #N: … changed, … removed (build event, …)`;
 - `network: no change (periodic|build event, …)`: przebudowa nie znalazła zmian;

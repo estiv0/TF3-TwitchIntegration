@@ -22,6 +22,13 @@ export const fmtMoneyShort = (n) => (n == null ? "–" : `$ ${nf("compact").form
 export const fmtShort = (n) => (n == null ? "–" : nf("compact").format(n));
 export const fmtPercent = (n) => (n == null ? "–" : `${Math.round(n * 100)}%`);
 export const fmtSignedPercent = (n) => (n == null ? "–" : `${n > 0 ? "+" : ""}${Math.round(n * 100)}%`);
+/** Wiek w latach: "1 rok", "3 lata", "2,5 roku" / "1 year", "2.5 years". */
+export function fmtAge(years) {
+  if (years == null) return "–";
+  const n = Math.round(years * 10) / 10;
+  const forms = dict().years;
+  return `${fmtDec(n)} ${forms[new Intl.PluralRules(locale()).select(n)] ?? forms.other}`;
+}
 export const fmtDate = (d) => (d ? `${d.day} ${dict().months[d.month - 1] ?? d.month} ${d.year}` : "–");
 
 const cargoKey = (res) => String(res ?? "").split("/").pop().replace(/\.cargo$/, "");
