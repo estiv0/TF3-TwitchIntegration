@@ -218,9 +218,7 @@ function tooltipHtml(item) {
 function vehicleDetailsTip(v) {
   const m = lastDynamic?.models?.[v.model];
   const model = m?.name;
-  const age = v.age != null
-    ? t("vehicle.age", { age: fmtAge(v.age) }) + (v.wear != null ? ` (${t("vehicle.ageOfLife", { p: fmtPercent(v.wear) })})` : "")
-    : null;
+  const age = v.age != null ? t("vehicle.age", { age: fmtAge(v.age) }) : null;
   const cap = Object.entries(v.cap ?? {});
   const loaded = v.load != null;
   return vehicleImgHtml(m, "tip-veh")
