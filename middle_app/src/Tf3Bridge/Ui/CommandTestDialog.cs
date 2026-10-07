@@ -193,7 +193,7 @@ public sealed class CommandTestDialog : Form
         var o = Selected;
         var command = _queue.Enqueue(ModCommand.Notify(RewardMessages.NotificationTitle(viewer, test: true),
             o is null ? $"{viewer} testuje powiadomienia Tf3Bridge." : $"{viewer} testuje powiadomienia Tf3Bridge: {o.Name}.",
-            o?.Entity, RewardService.NotificationDismissMs, CommandSource.Test, viewer));
+            o?.Entity, _rewards.Settings.NotificationDismissMs, CommandSource.Test, viewer));
         _lastId = command.Id;
         _result.ForeColor = SystemColors.ControlText;
         _result.Text = $"Wysłano powiadomienie #{command.Id}, czekam na grę…";

@@ -663,6 +663,33 @@ public sealed class RewardTests : IDisposable
     }
 
     [Fact]
+    public async Task Game_notification_stays_on_screen_as_long_as_set()
+    {
+        var service = Service();
+        service.UpdateSettings(service.Settings with { NotificationSeconds = 12 });
+        service.Simulate(RewardKind.AdoptTown, "lodz", "widz", false, out _);
+
+        ModReports("ok");
+
+        Assert.Contains("dismissMs = 12000", await WaitForNotify());
+    }
+
+    [Fact]
+    public void Notification_seconds_round_trip_and_are_clamped()
+    {
+        var path = Path.Combine(_dir, "notify.json");
+        Assert.Equal(30, RewardSettingsStore.Load(path).NotificationSeconds); // brak pliku = domyślne
+
+        RewardSettingsStore.Save(RewardSettings.Default with { NotificationSeconds = 45 }, path);
+        Assert.Equal(45, RewardSettingsStore.Load(path).NotificationSeconds);
+
+        File.WriteAllText(path, File.ReadAllText(path).Replace("\"NotificationSeconds\": 45,", "")); // plik sprzed ustawienia
+        Assert.Equal(30, RewardSettingsStore.Load(path).NotificationSeconds);
+        Assert.Equal(300, (RewardSettings.Default with { NotificationSeconds = 9999 }).Normalized().NotificationSeconds);
+        Assert.Equal(3, (RewardSettings.Default with { NotificationSeconds = 1 }).Normalized().NotificationSeconds);
+    }
+
+    [Fact]
     public async Task No_game_notification_when_turned_off()
     {
         var service = Service();

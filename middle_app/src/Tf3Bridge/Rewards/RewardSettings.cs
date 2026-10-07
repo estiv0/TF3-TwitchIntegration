@@ -203,6 +203,14 @@ public sealed record RewardSettings(IReadOnlyList<RewardConfig> Rewards, string 
     /// <summary>Show an in-game notification (Twitch icon) once a redemption is done and its points are taken.</summary>
     public bool GameNotifications { get; init; } = true;
 
+    /// <summary>How long the in-game notification stays on screen; it stays in the game's notification log anyway.</summary>
+    public int NotificationSeconds { get; init; } = DefaultNotificationSeconds;
+
+    public const int DefaultNotificationSeconds = 30;
+    public static readonly (int Min, int Max) NotificationSecondsRange = (3, 300);
+
+    public int NotificationDismissMs => NotificationSeconds * 1000;
+
     /// <summary>Industry type ("coal_mine") -> where viewers may build it (<see cref="IndustryZones"/>); null = defaults.</summary>
     public IReadOnlyDictionary<string, IndustryZone>? Zones { get; init; }
 
@@ -227,6 +235,8 @@ public sealed record RewardSettings(IReadOnlyList<RewardConfig> Rewards, string 
             var r => Migrate(r, d),
         }).Select(r => r.Normalized())],
         Zones = IndustryZones.Normalize(Zones),
+        NotificationSeconds = NotificationSeconds <= 0 ? DefaultNotificationSeconds // plik sprzed tego ustawienia
+            : Math.Clamp(NotificationSeconds, NotificationSecondsRange.Min, NotificationSecondsRange.Max),
     };
 
     private static RewardConfig Migrate(RewardConfig r, RewardConfig d) => r with

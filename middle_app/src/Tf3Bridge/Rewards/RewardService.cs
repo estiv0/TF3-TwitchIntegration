@@ -33,8 +33,6 @@ public sealed class RewardService
 {
     /// <summary>Redemptions waiting longer than this (e.g. while Tf3Bridge was off) are refunded.</summary>
     internal static readonly TimeSpan MaxRedemptionAge = TimeSpan.FromMinutes(5);
-    /// <summary>How long the in-game notification stays on screen (it stays in the game's notification log).</summary>
-    internal const int NotificationDismissMs = 30_000;
     /// <summary>No export for this long = game not running: rewards are disabled on Twitch.</summary>
     internal static readonly TimeSpan GameIdleAfter = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan LoopEvery = TimeSpan.FromSeconds(15);
@@ -405,7 +403,7 @@ public sealed class RewardService
         var text = RewardMessages.Notification(Settings.Get(outcome.Kind), outcome.User, target, outcome.Until, outcome.Count, outcome.Total);
         try
         {
-            _queue.Enqueue(ModCommand.Notify(RewardMessages.NotificationTitle(outcome.User, test), text, entity, NotificationDismissMs,
+            _queue.Enqueue(ModCommand.Notify(RewardMessages.NotificationTitle(outcome.User, test), text, entity, Settings.NotificationDismissMs,
                 test ? CommandSource.Test : CommandSource.ChannelPoints, outcome.User));
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)

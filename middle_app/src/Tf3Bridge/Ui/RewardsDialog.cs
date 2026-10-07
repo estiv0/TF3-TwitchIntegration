@@ -25,6 +25,11 @@ public sealed class RewardsDialog : Form
     {
         AutoSize = true, Text = "Powiadomienie w grze z logo Twitcha po wykonanej nagrodzie (gdy punkty zostały pobrane)",
     };
+    private readonly NumericUpDown _notifySeconds = new()
+    {
+        Minimum = RewardSettings.NotificationSecondsRange.Min, Maximum = RewardSettings.NotificationSecondsRange.Max,
+        Width = 60, TextAlign = HorizontalAlignment.Right, Margin = new Padding(12, 0, 4, 0),
+    };
     private readonly DataGridView _zonesGrid = new()
     {
         Width = 420, Height = 230, AllowUserToAddRows = false, AllowUserToDeleteRows = false,
@@ -52,16 +57,23 @@ public sealed class RewardsDialog : Form
     public bool GameNotifications { get; private set; }
 
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public int NotificationSeconds { get; private set; }
+
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public IReadOnlyDictionary<string, IndustryZone> Zones { get; private set; }
 
     /// <summary>The streamer's own TF3 rewards; only <see cref="ExtraReward.Enabled"/> changes here.</summary>
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public IReadOnlyList<ExtraReward> Extras { get; private set; }
 
-    public RewardsDialog(IReadOnlyList<RewardConfig> rewards, bool chatMessages, bool gameNotifications,
+    public RewardsDialog(IReadOnlyList<RewardConfig> rewards, bool chatMessages, bool gameNotifications, int notificationSeconds,
         IReadOnlyDictionary<string, IndustryZone>? zones, IReadOnlyList<ExtraReward> extras, string status)
     {
         GameNotifications = _notify.Checked = gameNotifications;
+        NotificationSeconds = notificationSeconds;
+        _notifySeconds.Value = Math.Clamp(notificationSeconds, RewardSettings.NotificationSecondsRange.Min, RewardSettings.NotificationSecondsRange.Max);
+        _notifySeconds.Enabled = gameNotifications;
+        _notify.CheckedChanged += (_, _) => _notifySeconds.Enabled = _notify.Checked;
         Extras = extras;
         Zones = IndustryZones.Normalize(zones);
         _original = Rewards = rewards;
@@ -166,8 +178,13 @@ public sealed class RewardsDialog : Form
         buttons.Controls.AddRange([cancel, ok, defaults]);
         CancelButton = cancel;
 
+        var notifyRow = new FlowLayoutPanel { AutoSize = true, Margin = Padding.Empty, WrapContents = false };
+        notifyRow.Controls.AddRange([_notify, _notifySeconds,
+            new Label { AutoSize = true, Text = "s na ekranie (potem zostaje w dzienniku powiadomień gry)", Margin = new Padding(0, 3, 0, 0) }]);
+        _notify.Margin = new Padding(0, 3, 0, 0);
+
         var root = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, Padding = new Padding(14), Dock = DockStyle.Fill };
-        root.Controls.AddRange([hint, _grid, _chat, _notify, zonesRow, extrasHint, _extrasGrid, _error, buttons]);
+        root.Controls.AddRange([hint, _grid, _chat, notifyRow, zonesRow, extrasHint, _extrasGrid, _error, buttons]);
         Controls.Add(root);
 
         ok.Click += (_, _) =>
@@ -177,6 +194,7 @@ public sealed class RewardsDialog : Form
                 Rewards = list;
                 ChatMessages = _chat.Checked;
                 GameNotifications = _notify.Checked;
+                NotificationSeconds = (int)_notifySeconds.Value;
                 Zones = ReadZones();
                 Extras = ReadExtras();
                 DialogResult = DialogResult.OK;
@@ -188,6 +206,7 @@ public sealed class RewardsDialog : Form
             Rewards = RewardKinds.Defaults;
             ChatMessages = true;
             GameNotifications = true;
+            NotificationSeconds = RewardSettings.DefaultNotificationSeconds;
             Zones = IndustryZones.Normalize(null);
             DialogResult = DialogResult.OK;
         };
