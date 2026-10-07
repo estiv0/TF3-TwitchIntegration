@@ -909,15 +909,16 @@ export class MapView {
     const { ctx } = this;
     const [x, y] = this.toScreen(t.px, t.py);
     if (x < -50 || y < -50 || x > this.w + 50 || y > this.h + 50) return;
+    const r = this.townRadius(t);
     ctx.fillStyle = css("--town");
     ctx.strokeStyle = css("--map-bg");
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(x, y, t.r, 0, Math.PI * 2);
+    ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
     const marked = !labels || this.isMarked(t);
-    if (marked) this.ring(x, y, t.r * 2);
+    if (marked) this.ring(x, y, r * 2);
 
     ctx.font = `600 12px ${css("--font")}`;
     ctx.textBaseline = "middle";
@@ -927,7 +928,7 @@ export class MapView {
     const nameW = ctx.measureText(text).width;
     ctx.font = `600 10px ${css("--font")}`;
     const ownerW = owner ? ctx.measureText(owner).width : 0;
-    const box = { x: x + t.r + 4, y: y - 8, w: Math.max(nameW, ownerW) + 6, h: owner ? 28 : 16 };
+    const box = { x: x + r + 4, y: y - 8, w: Math.max(nameW, ownerW) + 6, h: owner ? 28 : 16 };
     if (labels && !marked && labels.some((b) => overlaps(b, box))) return;
     labels?.push(box);
     ctx.lineWidth = 3;
@@ -941,6 +942,13 @@ export class MapView {
     ctx.strokeText(text, box.x, y);
     ctx.fillStyle = marked ? css("--accent") : css("--town-label");
     ctx.fillText(text, box.x, y);
+  }
+
+  // Promień kulki miasta na ekranie: pełny od przybliżenia jak po wybraniu miasta (0.25),
+  // na oddaleniu płynnie mniejszy, do połowy.
+  townRadius(t) {
+    const k = Math.min(1, 0.5 + 2 * this.view.scale);
+    return Math.max(3, t.r * k);
   }
 
   isMarked(item) {
@@ -966,7 +974,7 @@ export class MapView {
       const d = Math.hypot(x - sx, y - sy);
       if (d <= radius && d < bestD) { best = item; bestD = d; }
     };
-    for (const t of this.towns) consider(t, t.r + 4);
+    for (const t of this.towns) consider(t, this.townRadius(t) + 4);
     if (this.showIndustries) for (const i of this.industries) consider(i, 8);
     if (this.showStations) {
       const r = this.view.scale >= STATION_ICON_SCALE ? 11 : 6;
