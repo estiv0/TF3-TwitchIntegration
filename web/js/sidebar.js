@@ -3,7 +3,7 @@
 
 import {
   STATION_ORDER, carrierIcon, carrierName, cargoImg, cargoLabel, cargoName, escapeHtml as esc, iconHtml, landUseName, stationName,
-  fmtDate, fmtDec, fmtInt, fmtMoney, fmtPercent, fmtSignedPercent, industryOfStation, linesByIndustry, linesByStation, rgb, stationImg,
+  fmtDate, fmtDec, fmtInt, fmtMoney, fmtMoneyShort, fmtPercent, fmtSignedPercent, industryOfStation, linesByIndustry, linesByStation, rgb, stationImg,
   stationUse, townGrowth, townSize,
 } from "./format.js";
 import { companyHtml } from "./company.js";
@@ -41,16 +41,22 @@ export class Sidebar {
     this.industryLines = new Map();                // id zakładu -> linie jego stacji
     this.stationIndustry = new Map();              // id stacji -> id zakładu (stacje przemysłu)
     this.owners = new Map();                       // klucz widza -> majątek (ownersIndex)
-    this.ownerSort = "assets";                     // lista właścicieli: "assets" (majątek), "profit", "name"
+    this.ownerSort = { key: "assets", desc: true }; // tabelka właścicieli: kolumna "name", "assets", "profit", "total"
 
     root.querySelectorAll("[data-tab]").forEach((btn) =>
       btn.addEventListener("click", () => this.showTab(btn.dataset.tab)));
+    // Zakładki, które się nie mieszczą: kółko myszy przewija pasek w poziomie (touchpad i palec przewijają same).
+    const tabBar = root.querySelector(".tabs");
+    tabBar.addEventListener("wheel", (e) => {
+      if (tabBar.scrollWidth <= tabBar.clientWidth || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      e.preventDefault();
+      tabBar.scrollLeft += e.deltaY;
+    }, { passive: false });
 
     this.carriers.addEventListener("click", (e) => {
       const sort = e.target.closest("[data-sort]");
       if (sort) {
-        if (this.tab === "owners") this.ownerSort = sort.dataset.sort;
-        else this.townSort = sort.dataset.sort;
+        this.townSort = sort.dataset.sort;
         this.renderCarriers();
         this.renderList();
         return;
@@ -88,6 +94,14 @@ export class Sidebar {
     });
 
     this.list.addEventListener("click", (e) => {
+      // Nagłówek tabelki właścicieli: ta sama kolumna odwraca kolejność, nowa zaczyna od największych (nazwa od A).
+      const sort = e.target.closest("[data-owner-sort]");
+      if (sort) {
+        const key = sort.dataset.ownerSort;
+        this.ownerSort = key === this.ownerSort.key ? { key, desc: !this.ownerSort.desc } : { key, desc: key !== "name" };
+        this.renderList();
+        return;
+      }
       const row = e.target.closest("[data-kind]");
       if (row) this.onPick(row.dataset.kind, selId(row.dataset.kind, row.dataset.id));
     });
@@ -274,17 +288,15 @@ export class Sidebar {
       // Szukanie po nazwie widza i po nazwach jego obiektów ("Gdańsk" pokaże właściciela Gdańska).
       const matchOwner = (o) => match(o.name)
         || [o.towns, o.industries, o.stations, o.lines].some((xs) => xs.some((x) => match(x.name)));
-      const byName = (a, b) => a.name.localeCompare(b.name, locale());
-      const order = this.ownerSort === "profit"
-        ? (a, b) => (b.profit12m ?? -Infinity) - (a.profit12m ?? -Infinity) || b.score - a.score
-        : this.ownerSort === "name" ? byName : (a, b) => b.score - a.score || byName(a, b);
-      html = [...this.owners.values()].filter(matchOwner).sort(order)
+      const rows = [...this.owners.values()].filter(matchOwner).sort(ownerOrder(this.ownerSort))
         .map((o) => `
-          <li class="row" data-kind="owner" data-id="${esc(o.key)}" aria-current="${isSel("owner", o.key)}">
-            <span class="row-name">${esc(o.name)}</span>
-            ${assetCounts(o)}
-            <span class="row-value">${this.ownerSort === "profit" ? money(o.profit12m) : scoreHtml(o)}</span>
+          <li class="row own-row" data-kind="owner" data-id="${esc(o.key)}" aria-current="${isSel("owner", o.key)}">
+            <span class="row-main"><span class="row-name">${esc(o.name)}</span>${assetCounts(o)}</span>
+            <span class="own-num">${scoreHtml(o)}</span>
+            <span class="own-num">${moneyShort(o.profit12m)}</span>
+            <span class="own-num">${moneyShort(ownerTotal(o))}</span>
           </li>`).join("");
+      html = rows && ownerHeadHtml(this.ownerSort) + rows;
     } else if (this.tab === "industries") {
       const { mode, cargo } = this.industryFilter;
       const hasCargo = (i) => !cargo || industryCargos(i, mode).has(cargo);
@@ -340,7 +352,7 @@ export class Sidebar {
 
   // Przyciski typów linii / rodzajów stacji: tylko typy obecne w danych, z liczbą pozycji.
   renderCarriers() {
-    this.carriers.hidden = !(this.tab in this.typeFilter || ["towns", "industries", "owners"].includes(this.tab));
+    this.carriers.hidden = !(this.tab in this.typeFilter || ["towns", "industries"].includes(this.tab));
     if (this.tab === "industries") {
       this.carriers.innerHTML = this.industryFilterHtml();
       return;
@@ -349,16 +361,6 @@ export class Sidebar {
       const btn = (key) =>
         `<button type="button" data-sort="${key}" aria-pressed="${this.townSort === key}">${esc(t(`town.sort.${key}`))}</button>`;
       this.carriers.innerHTML = btn("size") + btn("profit") + btn("growth");
-      return;
-    }
-    if (this.tab === "owners") {
-      const btn = (key) =>
-        `<button type="button" data-sort="${key}" aria-pressed="${this.ownerSort === key}">${esc(t(`owners.sort.${key}`))}</button>`;
-      // "?" z opisem punktów majątku: najechanie albo dotknięcie (fokus) pokazuje dymek.
-      const lines = t("owners.scoreHint").split("\n").map((l) => `<span>${esc(l)}</span>`).join("");
-      const help = `<span class="help" tabindex="0" role="button" aria-label="${esc(t("owners.scoreHelp"))}">?`
-        + `<span class="help-tip" role="tooltip"><b>${esc(t("owners.scoreHelp"))}</b>${lines}</span></span>`;
-      this.carriers.innerHTML = btn("assets") + btn("profit") + btn("name") + help;
       return;
     }
     if (!(this.tab in this.typeFilter)) return;
@@ -536,6 +538,35 @@ function ownerLinesHtml(o) {
 // Majątek widza: podsumowanie i klikalne obiekty (data-pick, linie: data-line); główne (największe) miasto pierwsze.
 // Majątek widza w punktach (owners.js: score), z opisem wzoru w podpowiedzi.
 const scoreHtml = (o) => `<span title="${esc(t("owners.scoreHint"))}">${esc(t("owners.points", { n: fmtInt(o.score) }))}</span>`;
+
+// Zarobek sumaryczny widza: jego linie z zakończonych lat (owners.js: lineStats.profitTotal).
+const ownerTotal = (o) => o.lineStats?.profitTotal ?? null;
+
+// Kolejność tabelki właścicieli; brak wartości (np. widz bez linii) zawsze na końcu, remis - po majątku i nazwie.
+function ownerOrder({ key, desc }) {
+  const byName = (a, b) => a.name.localeCompare(b.name, locale());
+  if (key === "name") return (a, b) => (desc ? -1 : 1) * byName(a, b);
+  const value = { assets: (o) => o.score, profit: (o) => o.profit12m, total: ownerTotal }[key];
+  return (a, b) => {
+    const x = value(a), y = value(b);
+    if (x == null || y == null) return (x == null) - (y == null) || b.score - a.score || byName(a, b);
+    return (desc ? y - x : x - y) || b.score - a.score || byName(a, b);
+  };
+}
+
+// Nagłówek tabelki właścicieli: klikalne kolumny ze strzałką kierunku, "?" z opisem punktów majątku
+// (najechanie albo dotknięcie - fokus - pokazuje dymek).
+function ownerHeadHtml(sort) {
+  const col = (key) => {
+    const on = sort.key === key;
+    return `<button type="button" class="own-col" data-owner-sort="${key}" title="${esc(t(`owners.sort.${key}`))}"
+      aria-pressed="${on}">${esc(t(`owners.col.${key}`))}${on ? (sort.desc ? " ▼" : " ▲") : ""}</button>`;
+  };
+  const lines = t("owners.scoreHint").split("\n").map((l) => `<span>${esc(l)}</span>`).join("");
+  const help = `<span class="help" tabindex="0" role="button" aria-label="${esc(t("owners.scoreHelp"))}">?`
+    + `<span class="help-tip" role="tooltip"><b>${esc(t("owners.scoreHelp"))}</b>${lines}</span></span>`;
+  return `<li class="own-head">${col("name")}<span class="own-col-help">${help}${col("assets")}</span>${col("profit")}${col("total")}</li>`;
+}
 
 function ownerDetail(o, stationIndustry) {
   const link = (pick, name, icon, value = "", x = null) => `
@@ -831,5 +862,8 @@ function lineStats(s) {
 
 // Kwota w kolorze: zysk na zielono, strata na czerwono; brak danych -> "–".
 const money = (n) => (n == null ? "–" : `<span class="${n < 0 ? "neg" : "pos"}">${esc(fmtMoney(Math.round(n)))}</span>`);
+// Krótka kwota do wąskich kolumn ("$ 87,5 mln"), pełna w podpowiedzi.
+const moneyShort = (n) => (n == null ? "–"
+  : `<span class="${n < 0 ? "neg" : "pos"}" title="${esc(fmtMoney(Math.round(n)))}">${esc(fmtMoneyShort(n))}</span>`);
 
 const stat = (label, value) => `<div><dt>${esc(label)}</dt><dd>${value}</dd></div>`;

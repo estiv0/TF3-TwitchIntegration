@@ -3,7 +3,8 @@
 // Mapa dopasowuje się sama (ResizeObserver w MapView).
 
 const KEY = "tf3-sidebar-width";
-const DEFAULT = 360, MIN = 280, MAP_MIN = 320, STEP = 20;
+// MIN: tyle potrzebują wszystkie zakładki panelu (PL i EN); węższy zapisany panel rozszerza się do MIN.
+const DEFAULT = 520, MIN = 520, MAP_MIN = 320, STEP = 20;
 
 export function initSidebarResize(layout, handle) {
   const max = () => Math.max(MIN, Math.min(900, window.innerWidth - MAP_MIN));

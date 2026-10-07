@@ -89,7 +89,7 @@ button { font: inherit; color: inherit; }
 /* ---------------------------------------------------------------- układ */
 .layout {
   display: grid;
-  grid-template-columns: 1fr var(--sidebar-w, 360px); /* --sidebar-w: uchwyt panelu (js/resize.js) */
+  grid-template-columns: 1fr var(--sidebar-w, 520px); /* --sidebar-w: uchwyt panelu (js/resize.js) */
   min-height: 0;
 }
 
@@ -323,6 +323,25 @@ button { font: inherit; color: inherit; }
 .own-count .ico { width: 14px; height: 14px; }
 .own-line { width: 10px; height: 3px; border-radius: 2px; background: var(--muted); }
 .own-main { color: var(--accent); }
+/* Tabelka właścicieli: nazwa z licznikami obiektów i trzy kolumny liczb; nagłówek przyklejony, kolumny sortują. */
+.own-head, .row.own-row { display: grid; grid-template-columns: minmax(0, 1fr) 84px 64px 64px; gap: 6px; }
+.own-row .row-main { gap: 2px; }
+.own-row .own-counts { gap: 8px; font-size: 11px; }
+.own-num { text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--muted); }
+.own-head {
+  position: sticky; top: 0; z-index: 2; align-items: center; padding: 6px 8px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.own-col {
+  padding: 0; border: 0; background: none; cursor: pointer; font: inherit; font-size: 11px; font-weight: 600;
+  color: var(--muted); text-align: right; white-space: nowrap; text-transform: uppercase; letter-spacing: .02em;
+}
+.own-col[data-owner-sort="name"] { text-align: left; }
+.own-col:hover, .own-col[aria-pressed="true"] { color: var(--text); }
+.own-col-help { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+/* Dymek "?" na całą szerokość nagłówka (inaczej wychodziłby poza listę). */
+.own-head .help { position: static; width: 16px; height: 16px; margin: 0; font-size: 10px; flex: none; }
+.own-head .help-tip { left: 0; right: 0; width: auto; top: 100%; text-transform: none; letter-spacing: 0; }
 .own-fleet { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; font-size: 13px; font-variant-numeric: tabular-nums; }
 .own-fleet span { display: inline-flex; align-items: center; gap: 4px; }
 .own-lines { margin-top: 10px; } /* lista linii pod ich statystykami razem */
