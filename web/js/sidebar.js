@@ -3,7 +3,7 @@
 
 import {
   STATION_ORDER, carrierIcon, carrierName, cargoImg, cargoLabel, cargoName, escapeHtml as esc, iconHtml, landUseName, stationName,
-  fmtAge, fmtDate, fmtDec, fmtInt, fmtMoney, fmtMoneyShort, fmtPercent, fmtSignedPercent, industryOfStation, linesByIndustry, linesByStation, rgb, stationImg,
+  fmtAge, fmtDate, vehicleImgHtml, fmtDec, fmtInt, fmtMoney, fmtMoneyShort, fmtPercent, fmtSignedPercent, industryOfStation, linesByIndustry, linesByStation, rgb, stationImg,
   stationUse, townGrowth, townSize,
 } from "./format.js";
 import { companyHtml } from "./company.js";
@@ -867,7 +867,7 @@ function lineFleet(l, dynamic) {
   for (const v of vs) {
     const key = `${v.model}|${v.parts ?? 1}`;
     let g = groups.get(key);
-    if (!g) groups.set(key, g = { name: dynamic.models?.[v.model] ?? "?", parts: v.parts, count: 0, ages: [], worst: null, overLife: false });
+    if (!g) groups.set(key, g = { model: dynamic.models?.[v.model], parts: v.parts, count: 0, ages: [], worst: null, overLife: false });
     g.count++;
     if (v.age != null) g.ages.push(v.age);
     if (v.maint != null && (g.worst == null || v.maint < g.worst)) g.worst = v.maint;
@@ -892,7 +892,7 @@ function fleetTable(f) {
   const rows = f.groups.map((g) => {
     const age = g.ages.length ? g.ages.reduce((a, b) => a + b, 0) / g.ages.length : null;
     return `<tr>
-      <td>${esc(g.name)}${g.parts ? ` <span class="muted">${esc(t("vehicle.parts", { n: g.parts }))}</span>` : ""}</td>
+      <td>${vehicleImgHtml(g.model, "fleet-img")}${esc(g.model?.name ?? "?")}${g.parts ? ` <span class="muted">${esc(t("vehicle.parts", { n: g.parts }))}</span>` : ""}</td>
       <td class="num">${fmtInt(g.count)}</td>
       <td class="num${g.overLife ? " neg" : ""}">${esc(fmtAge(age))}</td>
       <td class="num${g.worst < 0.5 ? " neg" : ""}">${esc(fmtPercent(g.worst))}</td>

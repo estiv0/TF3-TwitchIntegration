@@ -346,7 +346,7 @@ local DYN_STEPS = {
 			player = job.snap.player,
 			company = job.snap.company,
 			effects = effects.list(), -- aktywne efekty z nagród za punkty kanału (effects.lua)
-			models = job.models and (next(job.models) and job.models or json.EMPTY_OBJECT), -- id modelu -> nazwa (vehicles[].model)
+			models = job.models and (next(job.models) and job.models or json.EMPTY_OBJECT), -- id modelu -> { name, icon } (vehicles[].model)
 		}):sub(1, -2) -- bez zamykającej klamry
 		local out = { head }
 		for _, key in ipairs(DYN_ARRAYS) do

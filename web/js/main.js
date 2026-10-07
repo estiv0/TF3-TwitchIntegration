@@ -3,7 +3,7 @@
 import { config } from "../config.js";
 import { DataFeed } from "./api.js";
 import {
-  carrierIcon, carrierName, cargoIcon, cargoLabel, cargoName, escapeHtml as esc, fmtAge, fmtDate, fmtInt, fmtMoney, fmtPercent,
+  carrierIcon, carrierName, cargoIcon, cargoLabel, cargoName, escapeHtml as esc, fmtAge, fmtDate, fmtSpeed, vehicleImgHtml, fmtInt, fmtMoney, fmtPercent,
   fmtSignedPercent, iconHtml, linesByIndustry, linesByStation, rgb, stationImg, stationName, splitAllOwners, attachEffects, stationUse, townGrowth, townSize,
 } from "./format.js";
 import { balanceSparkline } from "./company.js";
@@ -188,6 +188,7 @@ function tooltipHtml(item) {
     return `<strong><span class="swatch" style="background:${rgb(line?.color)}"></span> ${carrierIcon(d.carrier)} ${esc(line?.name ?? t("line"))}</strong>`
       + vehicleDetailsTip(d)
       + `<span>${esc(where)}</span>`
+      + (d.speed != null && d.state === "EN_ROUTE" ? `<span>${esc(t("vehicle.speed", { v: fmtSpeed(d.speed) }))}</span>` : "")
       + (d.stopped ? `<span class="neg">${esc(t("vehicle.stopped"))}</span>` : "");
   }
   if (item.kind === "town") {
@@ -213,14 +214,16 @@ function tooltipHtml(item) {
     + (n ? lines(n) : "");
 }
 
-// Model, wiek, stan i pojemność pojazdu (lua_mod: collectors.vehicleDetails); bez szczegółów w danych - nic.
+// Obrazek, model, wiek, stan i pojemność pojazdu (lua_mod: collectors.vehicleDetails); bez szczegółów w danych - nic.
 function vehicleDetailsTip(v) {
-  const model = lastDynamic?.models?.[v.model];
+  const m = lastDynamic?.models?.[v.model];
+  const model = m?.name;
   const age = v.age != null
     ? t("vehicle.age", { age: fmtAge(v.age) }) + (v.wear != null ? ` (${t("vehicle.ageOfLife", { p: fmtPercent(v.wear) })})` : "")
     : null;
   const cap = Object.entries(v.cap ?? {});
-  return (model ? `<span>${esc(model)}${v.parts ? ` · ${esc(t("vehicle.parts", { n: v.parts }))}` : ""}</span>` : "")
+  return vehicleImgHtml(m, "tip-veh")
+    + (model ? `<span>${esc(model)}${v.parts ? ` · ${esc(t("vehicle.parts", { n: v.parts }))}` : ""}</span>` : "")
     + (age ? `<span class="${v.wear >= 1 ? "neg" : ""}">${esc(age)}</span>` : "")
     + (v.maint != null ? `<span class="${v.maint < 0.5 ? "neg" : ""}">${esc(t("vehicle.condition", { p: fmtPercent(v.maint) }))}</span>` : "")
     + (cap.length ? `<span class="tip-cargo">${esc(t("vehicle.capacity"))} ${cap.map(([c, n]) =>

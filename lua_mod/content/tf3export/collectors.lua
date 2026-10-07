@@ -460,7 +460,7 @@ function C.vehiclePosition(v)
 	return true
 end
 
--- Model z api.res: { name, lifespan (w jednostkach gameTime) }, z cache (modeli jest kilkadziesiąt).
+-- Model z api.res: { name, lifespan (w jednostkach gameTime), icon }, z cache (modeli jest kilkadziesiąt).
 -- Nazwa i żywotność jak w oknie pojazdu (gui/line_vehicle_mgmt/vehicle_util.tl, vehicle_store_util.tl).
 local modelCache = {}
 local function modelInfo(modelId)
@@ -473,6 +473,10 @@ local function modelInfo(modelId)
 			info.name = md.description.name
 			info.lifespan = md.maintenance.lifespan * 1000
 		end)
+		-- "vehicle/bus/mb_o405g.mdl" -> "mb_o405g": nazwa ikonki na stronie (web/img/vehicles/<icon>.png,
+		-- wyciągane z plików gry przez tools/extract_vehicle_icons.py)
+		local okF, file = pcall(function() return api.res.modelRep.getName(modelId) end)
+		if okF and type(file) == "string" then info.icon = file:match("([^/\\]+)%.mdl$") end
 		modelCache[key] = info
 	end
 	return modelCache[key]
@@ -500,13 +504,13 @@ end
 C.fracYear = fracYear
 
 -- Dopisuje do pojazdu (wpis z C.vehicles) szczegóły ze składu (transportVehicleConfig) i config:
---   model    = id modelu czoła składu (nazwa w models)
+--   model    = id modelu czoła składu (nazwa i ikonka w models)
 --   parts    = liczba części składu (lokomotywa + wagony), tylko gdy więcej niż 1
 --   age      = wiek najstarszej części w latach kalendarza gry (jak "Wiek" w oknie pojazdu)
 --   wear     = wiek / żywotność tej części (1 = koniec żywotności, jak procent w oknie linii)
 --   maint    = średni stan techniczny części, 0..1 (vehicle_util.getAvgMaintenanceState)
 --   cap      = pojemność według ładunku { [nazwa ładunku] = liczba }
--- models: tabela "id modelu" -> nazwa (klucze tekstowe, żeby JSON dał obiekt), uzupełniana o modele tego pojazdu.
+-- models: tabela "id modelu" -> { name, icon } (klucze tekstowe, żeby JSON dał obiekt), uzupełniana o modele tego pojazdu.
 function C.vehicleDetails(v, now, nowYear, models)
 	local tv = util.comp(v.id, ct.TRANSPORT_VEHICLE)
 	if not tv then return end
@@ -519,7 +523,8 @@ function C.vehicleDetails(v, now, nowYear, models)
 		local key = v.model ~= nil and tostring(v.model)
 		if key and models[key] == nil then
 			local mu = util.list(util.field(cfgTv, "muFileNames"))[1]
-			models[key] = (type(mu) == "string" and mu ~= "" and muName(mu)) or modelInfo(head).name
+			local info = modelInfo(head)
+			models[key] = { name = (type(mu) == "string" and mu ~= "" and muName(mu)) or info.name, icon = info.icon }
 		end
 		-- najstarsza część (przy równym czasie zakupu ta z krótszą żywotnością), jak getMinPurchaseTimeAndLifespan
 		local bought, lifespan, maintSum, maintN = nil, nil, 0, 0

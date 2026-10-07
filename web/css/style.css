@@ -490,6 +490,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 .fleet-table th { color: var(--muted); font-weight: 600; }
 .fleet-table th[title] { cursor: help; }
 .fleet-table .num { text-align: right; white-space: nowrap; }
+.fleet-table .fleet-img { display: block; width: auto; height: auto; max-width: min(140px, 100%); max-height: 24px; margin-bottom: 2px; }
 .fleet-table .muted { color: var(--muted); white-space: nowrap; }
 
 /* magazyny zakładu */
@@ -501,6 +502,8 @@ body.resizing { cursor: col-resize; user-select: none; }
 .stock-bar { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
 .stock-bar b { display: block; height: 100%; background: var(--accent); }
 .chips li .cargo-ico { margin-right: 0; }
+/* obrazek modelu pojazdu z boku (@2x, wymiary różne: 68-3032 x 80-256 px), w ramce z zachowaniem proporcji */
+.tooltip .tip-veh { display: block; width: auto; height: auto; max-width: 220px; max-height: 48px; margin: 4px 0 2px; }
 .tooltip .tip-note { color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* Przełącznik języka PL | EN (main.js: renderLangSwitch) */

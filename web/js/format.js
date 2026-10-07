@@ -52,6 +52,19 @@ export function cargoImg(res) {
   return /^[a-z0-9_]+$/.test(key) ? `img/resources/${key}.png` : null;
 }
 
+/**
+ * Obrazek modelu pojazdu z boku (web/img/vehicles, z plików gry przez tools/extract_vehicle_icons.py).
+ * model = dynamic.models[id] ({ name, icon }); brak ikonki albo pliku -> nic.
+ */
+export function vehicleImgHtml(model, cls = "veh-img") {
+  const icon = model?.icon;
+  return icon && /^[A-Za-z0-9_.-]+$/.test(icon)
+    ? `<img class="${cls}" src="img/vehicles/${icon}.png" alt="" loading="lazy" onerror="this.remove()">` : "";
+}
+
+/** m/s -> "87 km/h" / "87 km/h". */
+export const fmtSpeed = (ms) => (ms == null ? "–" : `${nf("int").format(Math.round(ms * 3.6))} km/h`);
+
 /** Ikonka + nazwa ładunku (do chipów i list). */
 export const cargoLabel = (res) => `${cargoIcon(res)}${escapeHtml(cargoName(res))}`;
 
