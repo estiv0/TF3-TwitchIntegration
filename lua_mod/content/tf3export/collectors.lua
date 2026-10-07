@@ -510,6 +510,7 @@ C.fracYear = fracYear
 --   wear     = wiek / żywotność tej części (1 = koniec żywotności, jak procent w oknie linii)
 --   maint    = średni stan techniczny części, 0..1 (vehicle_util.getAvgMaintenanceState)
 --   cap      = pojemność według ładunku { [nazwa ładunku] = liczba }
+--   load     = ile teraz wiezie, te same klucze co cap (simEntityAtVehicleSystem)
 -- models: tabela "id modelu" -> { name, icon } (klucze tekstowe, żeby JSON dał obiekt), uzupełniana o modele tego pojazdu.
 function C.vehicleDetails(v, now, nowYear, models)
 	local tv = util.comp(v.id, ct.TRANSPORT_VEHICLE)
@@ -544,12 +545,20 @@ function C.vehicleDetails(v, now, nowYear, models)
 		end
 		if maintN > 0 then v.maint = util.round(maintSum / maintN, 3) end
 	end
-	-- pojemności: tablica Lua od 1, CargoTypeId = indeks - 1 (jak getLineCapacityUsages w C.lineStats)
-	local cap = {}
+	-- pojemności: tablica Lua od 1, CargoTypeId = indeks - 1 (jak gui/main/cargo_util.tl); ładunek na pokładzie
+	-- tym samym wywołaniem co okno gry, jedno na rodzaj ładunku z pojemnością
+	local sim = api.engine.system.simEntityAtVehicleSystem
+	local cap, load = {}, {}
 	for index, n in util.pairs(util.field(util.field(tv, "config"), "capacities")) do
-		if type(index) == "number" and type(n) == "number" and n > 0 then cap[C.cargoName(index - 1)] = n end
+		if type(index) == "number" and type(n) == "number" and n > 0 then
+			local cargo = C.cargoName(index - 1)
+			cap[cargo] = n
+			local ok, used = pcall(function() return sim.getVehicleSimEntitiesCountForCargoType(v.id, index - 1) end)
+			if ok and type(used) == "number" then load[cargo] = used end
+		end
 	end
 	if next(cap) then v.cap = cap end
+	if next(load) then v.load = load end
 end
 
 -- Statystyki linii jak w oknie linii i statystykach gry (gui/line_vehicle_mgmt/line_react_util.tl,

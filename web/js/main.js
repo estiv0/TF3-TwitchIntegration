@@ -214,7 +214,7 @@ function tooltipHtml(item) {
     + (n ? lines(n) : "");
 }
 
-// Obrazek, model, wiek, stan i pojemność pojazdu (lua_mod: collectors.vehicleDetails); bez szczegółów w danych - nic.
+// Obrazek, model, wiek, stan i ładunek / pojemność pojazdu (lua_mod: collectors.vehicleDetails); bez szczegółów w danych - nic.
 function vehicleDetailsTip(v) {
   const m = lastDynamic?.models?.[v.model];
   const model = m?.name;
@@ -222,12 +222,13 @@ function vehicleDetailsTip(v) {
     ? t("vehicle.age", { age: fmtAge(v.age) }) + (v.wear != null ? ` (${t("vehicle.ageOfLife", { p: fmtPercent(v.wear) })})` : "")
     : null;
   const cap = Object.entries(v.cap ?? {});
+  const loaded = v.load != null;
   return vehicleImgHtml(m, "tip-veh")
     + (model ? `<span>${esc(model)}${v.parts ? ` · ${esc(t("vehicle.parts", { n: v.parts }))}` : ""}</span>` : "")
     + (age ? `<span class="${v.wear >= 1 ? "neg" : ""}">${esc(age)}</span>` : "")
     + (v.maint != null ? `<span class="${v.maint < 0.5 ? "neg" : ""}">${esc(t("vehicle.condition", { p: fmtPercent(v.maint) }))}</span>` : "")
-    + (cap.length ? `<span class="tip-cargo">${esc(t("vehicle.capacity"))} ${cap.map(([c, n]) =>
-      `<span title="${esc(cargoName(c))}">${cargoIcon(c)}${fmtInt(n)}</span>`).join(" ")}</span>` : "");
+    + (cap.length ? `<span class="tip-cargo">${esc(t(loaded ? "vehicle.load" : "vehicle.capacity"))} ${cap.map(([c, n]) =>
+      `<span title="${esc(cargoName(c))}">${cargoIcon(c)}${v.load?.[c] != null ? `${fmtInt(v.load[c])} / ` : ""}${fmtInt(n)}</span>`).join(" ")}</span>` : "");
 }
 
 function renderHeader(dynamic) {
