@@ -9,7 +9,7 @@ Cel: odejść od punktów kanału Twitcha, bo nie da się ustawić, ile punktów
 | Warstwa | Stan |
 |---|---|
 | Mod | Eksport `dynamic` / `network` / `terrain`. Kolejka komend (`adopt`, `effect`, `wreck`, `createTown`, `createIndustry`, `notify`). Efekty czasowe ze wspólnym sterownikiem mnożników, zapisywane w save'ie. |
-| Tf3Bridge | EventSub (czat i wykupienia). 13 nagród z akcją w grze i 5 wykonywanych przez streamera. `TargetResolver`, zwroty przez CANCELED, auto-pauza nagród, odpowiedzi na czacie, `!tf_majatek`. |
+| Tf3Bridge | EventSub (czat i wykupienia). 13 nagród z akcją w grze i 5 wykonywanych przez streamera. `TargetResolver`, zwroty przez CANCELED, auto-pauza nagród, odpowiedzi na czacie, `!majatek`. |
 | Własność | Tylko w nazwie obiektu w grze (`Nazwa \| widz`). Bez rejestru i bez `user_id`. |
 | Strona | Mapa, zakładka „Właściciele”, efekty przy obiektach, kody budowy. |
 | Twitch | Kanał nie ma statusu Affiliate, więc punkty kanału i tak nie działają na żywo. |
@@ -63,17 +63,17 @@ Dzięki przyrostom sabotaż działa od razu (strajk zeruje produkcję w tym mies
 
 - **Koszt sabotażu zależy od celu:** atak na lidera (duży udział) tańszy, na słabego droższy. To mechanizm typu „niebieska skorupa”, który hamuje lidera.
 - **Odporność po ataku:** ten sam sabotaż na ten sam cel nie działa przez X miesięcy, żeby nikogo nie dało się zgnębić na stałe.
-- **Sojusz** (`!tf_sojusz @x`, za zgodą obu stron): członek dostaje np. 10% dywidendy sojuszników, sabotaż sojusznika jest zablokowany. Zerwanie ma cooldown, ale zdrada jest możliwa.
-- **Przelewy** (`!tf_przelej`) z podatkiem ~20%, żeby farmienie na multikontach się nie opłacało.
+- **Sojusz** (`!sojusz @x`, za zgodą obu stron): członek dostaje np. 10% dywidendy sojuszników, sabotaż sojusznika jest zablokowany. Zerwanie ma cooldown, ale zdrada jest możliwa.
+- **Przelewy** (`!przelej`) z podatkiem ~20%, żeby farmienie na multikontach się nie opłacało.
 - **Kontrakty na linie:** widz płaci za „zamówienie linii” do swojego zakładu (dziś ręczna nagroda „TF3: linia”). Podłączenie staje się usługą, a nie przysługą streamera.
 
 ## Ryzyka
 
 1. **Tożsamość po nazwie wyświetlanej.** Dziś zmiana nicka na Twitchu = utrata majątku. Przy własnej walucie potrzebny jest rejestr po `user_id` (w [owners-tab.md](owners-tab.md) „Odłożone: rejestr właścicieli”).
 2. **Wczytanie starszego save'a.** Portfel jest poza grą, majątek w save'ie. Wypłaty muszą pamiętać ostatni opłacony miesiąc gry dla danego zapisu. Po cofnięciu daty nie płacimy ponownie, dopóki gra nie dojdzie do poprzedniego maksimum. Punkty wydane na rzeczy, które zniknęły razem z save'em, przepadają, tak jak dziś ([game-time-and-pause.md](game-time-and-pause.md)).
-3. **Zasada „grę zmieniają tylko punkty kanału”** (`CommandSource`). Jej sens, czyli kontrola streamera nad kosztami i limitami, zostaje. Zmienia się źródło: nowy `CommandSource.Wallet`, a komendy czatu typu `!tf_kup` trafiają do kolejki dopiero po obciążeniu portfela. Cooldowny i limity musi pilnować Tf3Bridge, bo dziś robi to Twitch.
+3. **Zasada „grę zmieniają tylko punkty kanału”** (`CommandSource`). Jej sens, czyli kontrola streamera nad kosztami i limitami, zostaje. Zmienia się źródło: nowy `CommandSource.Wallet`, a komendy czatu typu `!kup` trafiają do kolejki dopiero po obciążeniu portfela. Cooldowny i limity musi pilnować Tf3Bridge, bo dziś robi to Twitch.
 4. **Multikonta** zbierające pulę za obecność: pulę za obecność dostają tylko konta z minimalną aktywnością na czacie, ewentualnie z minimalnym stażem obserwowania kanału.
-5. **Co tracimy:** natywne okno nagród Twitcha. Widz musi znać komendy, więc potrzebna jest ściąga na stronie i komenda `!tf_sklep`.
+5. **Co tracimy:** natywne okno nagród Twitcha. Widz musi znać komendy, więc potrzebna jest ściąga na stronie i komenda `!sklep`.
 
 ## Technicznie (bez nowej infrastruktury w Azure)
 

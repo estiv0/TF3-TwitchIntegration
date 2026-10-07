@@ -70,7 +70,7 @@ public sealed class ChatCommandTests : IDisposable
     [Fact]
     public async Task Majatek_with_a_name_describes_that_owner_and_links_to_the_site()
     {
-        var answer = await Service().HandleAsync(Msg("!tf_majatek @Estiv0"));
+        var answer = await Service().HandleAsync(Msg("!majatek @Estiv0"));
 
         Assert.Equal("@Kermit33 estiv0: 2 miasta (Szczecin – główne, Barcin), 1 zakład (Browar), 2 linie, 16 pojazdów, "
             + "zysk linii (12 mies.) $ 833 881. Mapa: https://gin.estfosoft.com/#owner=estiv0", answer);
@@ -82,9 +82,9 @@ public sealed class ChatCommandTests : IDisposable
         var service = Service(site: "");
 
         Assert.Equal("@estiv0 estiv0: 2 miasta (Szczecin – główne, Barcin), 1 zakład (Browar), 2 linie, 16 pojazdów, zysk linii (12 mies.) $ 833 881.",
-            service.Answer(Msg("!TF_majatek", "estiv0", "estiv0")));
-        Assert.Equal("@Kermit33 nie masz jeszcze nic w grze.", service.Answer(Msg("!tf_majątek", id: "8")));
-        Assert.Equal("@Kermit33 nikt nie ma jeszcze nic w grze.", service.Answer(Msg("!tf_majatek nikt", id: "9")));
+            service.Answer(Msg("!majatek", "estiv0", "estiv0")));
+        Assert.Equal("@Kermit33 nie masz jeszcze nic w grze.", service.Answer(Msg("!majątek", id: "8")));
+        Assert.Equal("@Kermit33 nikt nie ma jeszcze nic w grze.", service.Answer(Msg("!majatek nikt", id: "9")));
     }
 
     [Fact]
@@ -92,14 +92,13 @@ public sealed class ChatCommandTests : IDisposable
     {
         var service = Service();
 
-        Assert.Null(service.Answer(Msg("!majatek estiv0")));
-        Assert.Null(service.Answer(Msg("hej !tf_majatek")));
-        Assert.Null(service.Answer(Msg("!tf_nieznana")));
-        Assert.NotNull(service.Answer(Msg("!tf_majatek estiv0")));
-        Assert.Null(service.Answer(Msg("!tf_miasto Łódź"))); // ten sam widz, inna komenda
-        Assert.NotNull(service.Answer(Msg("!tf_majatek ala", id: "other")));
+        Assert.Null(service.Answer(Msg("hej !majatek")));
+        Assert.Null(service.Answer(Msg("!nieznana")));
+        Assert.NotNull(service.Answer(Msg("!majatek estiv0")));
+        Assert.Null(service.Answer(Msg("!miasto Łódź"))); // ten sam widz, inna komenda
+        Assert.NotNull(service.Answer(Msg("!majatek ala", id: "other")));
         _time.Now += ChatCommandService.Cooldown;
-        Assert.NotNull(service.Answer(Msg("!tf_miasto Łódź")));
+        Assert.NotNull(service.Answer(Msg("!miasto Łódź")));
     }
 
     [Fact]
@@ -107,30 +106,30 @@ public sealed class ChatCommandTests : IDisposable
     {
         var service = Service();
 
-        Assert.NotNull(service.Answer(Msg("!tf_miasto Łódź", id: "1")));
-        Assert.Null(service.Answer(Msg("!tf_miasto lodz", id: "2"))); // ta sama odpowiedź: bez powtórki na czacie
-        Assert.NotNull(service.Answer(Msg("!tf_miasto Kraków", id: "3")));
-        Assert.NotNull(service.Answer(Msg("!tf_ranking", id: "4")));
-        Assert.Null(service.Answer(Msg("!tf_top", id: "5"))); // alias tej samej komendy
-        Assert.NotNull(service.Answer(Msg("!tf_majatek", "a", "a", id: "6"))); // majątek pytającego: osobno dla każdego
-        Assert.NotNull(service.Answer(Msg("!tf_majatek", "b", "b", id: "7")));
+        Assert.NotNull(service.Answer(Msg("!miasto Łódź", id: "1")));
+        Assert.Null(service.Answer(Msg("!miasto lodz", id: "2"))); // ta sama odpowiedź: bez powtórki na czacie
+        Assert.NotNull(service.Answer(Msg("!miasto Kraków", id: "3")));
+        Assert.NotNull(service.Answer(Msg("!ranking", id: "4")));
+        Assert.Null(service.Answer(Msg("!top", id: "5"))); // alias tej samej komendy
+        Assert.NotNull(service.Answer(Msg("!majatek", "a", "a", id: "6"))); // majątek pytającego: osobno dla każdego
+        Assert.NotNull(service.Answer(Msg("!majatek", "b", "b", id: "7")));
 
         _time.Now += TimeSpan.FromSeconds(30);
-        Assert.NotNull(service.Answer(Msg("!tf_miasto lodz", id: "2")));
-        Assert.Null(service.Answer(Msg("!tf_ranking", id: "5"))); // ranking: 60 s
+        Assert.NotNull(service.Answer(Msg("!miasto lodz", id: "2")));
+        Assert.Null(service.Answer(Msg("!ranking", id: "5"))); // ranking: 60 s
         _time.Now += TimeSpan.FromSeconds(30);
-        Assert.NotNull(service.Answer(Msg("!tf_ranking", id: "5")));
+        Assert.NotNull(service.Answer(Msg("!ranking", id: "5")));
     }
 
     [Fact]
     public void Pomoc_and_mapa()
     {
-        var help = Service().Answer(Msg("!tf_pomoc"))!;
-        Assert.StartsWith("@Kermit33 Komendy TF3: !tf_majatek [widz], !tf_miasto <nazwa>", help);
+        var help = Service().Answer(Msg("!pomoc"))!;
+        Assert.StartsWith("@Kermit33 Komendy TF3: !majatek [widz], !miasto <nazwa>", help);
         Assert.True(help.Length <= 500, "limit wiadomości Twitcha");
 
-        Assert.Equal("@Kermit33 mapa na żywo: https://gin.estfosoft.com/", Service().Answer(Msg("!tf_mapa")));
-        Assert.Equal("@Kermit33 mapa nie jest jeszcze ustawiona.", Service(site: "").Answer(Msg("!tf_mapa")));
+        Assert.Equal("@Kermit33 mapa na żywo: https://gin.estfosoft.com/", Service().Answer(Msg("!mapa")));
+        Assert.Equal("@Kermit33 mapa nie jest jeszcze ustawiona.", Service(site: "").Answer(Msg("!mapa")));
     }
 
     [Fact]
@@ -140,11 +139,11 @@ public sealed class ChatCommandTests : IDisposable
 
         Assert.Equal("@Kermit33 Szczecin (właściciel: estiv0): pojemność 900, +13% od startu gry, zaspokojenie potrzeb 90%, "
             + "efekty: boost miasta +50% do 1 sierpnia 1922 (od ola). https://gin.estfosoft.com/#town=2",
-            service.Answer(Msg("!tf_miasto szczecin", id: "1")));
+            service.Answer(Msg("!miasto szczecin", id: "1")));
         Assert.Equal("@Kermit33 Łódź (bez właściciela): pojemność 900. https://gin.estfosoft.com/#town=3",
-            service.Answer(Msg("!tf_miasto lodz", id: "2")));
-        Assert.Equal("@Kermit33 nie znaleziono „Gdańsk”.", service.Answer(Msg("!tf_miasto Gdańsk", id: "3")));
-        Assert.Equal("@Kermit33 podaj nazwę, np. !tf_miasto Szczecin", service.Answer(Msg("!tf_miasto", id: "4")));
+            service.Answer(Msg("!miasto lodz", id: "2")));
+        Assert.Equal("@Kermit33 nie znaleziono „Gdańsk”.", service.Answer(Msg("!miasto Gdańsk", id: "3")));
+        Assert.Equal("@Kermit33 podaj nazwę, np. !miasto Szczecin", service.Answer(Msg("!miasto", id: "4")));
     }
 
     [Fact]
@@ -153,18 +152,18 @@ public sealed class ChatCommandTests : IDisposable
         var service = Service();
 
         Assert.Equal("@Kermit33 Browar (właściciel: estiv0): poziom 2/4, produktywność 120%, produkcja (rok) 1 234. "
-            + "https://gin.estfosoft.com/#industry=10", service.Answer(Msg("!tf_zakład browar", id: "1")));
+            + "https://gin.estfosoft.com/#industry=10", service.Answer(Msg("!zakład browar", id: "1")));
         Assert.Equal("@Kermit33 Linia 1 (właściciel: estiv0): 10 pojazdów (zatrzymane: 1), zysk (12 mies.) $ 653 957, "
             + "efekty: chrzczone paliwo -30% do 3 czerwca 1922 (od ola). https://gin.estfosoft.com/#line=30",
-            service.Answer(Msg("!tf_linia linia 1", id: "2")));
-        Assert.Equal("@Kermit33 „linia” pasuje do kilku: Linia 1, Linia 2, Linia 3, Linia 4.", service.Answer(Msg("!tf_linia linia", id: "3")));
+            service.Answer(Msg("!linia linia 1", id: "2")));
+        Assert.Equal("@Kermit33 „linia” pasuje do kilku: Linia 1, Linia 2, Linia 3, Linia 4.", service.Answer(Msg("!linia linia", id: "3")));
     }
 
     [Fact]
     public void Ranking_orders_viewers_by_towns_then_industries()
     {
         Assert.Equal("@Kermit33 ranking: 1. estiv0 (2 miasta, 1 zakład, 2 linie), 2. ala (1 linia). Wszyscy: https://gin.estfosoft.com/",
-            Service().Answer(Msg("!tf_ranking")));
+            Service().Answer(Msg("!ranking")));
     }
 
     [Fact]
@@ -173,10 +172,10 @@ public sealed class ChatCommandTests : IDisposable
         var service = Service(site: "");
 
         Assert.Equal("@Kermit33 wolne miasta (2): Kraków, Łódź; wolne zakłady (2): Tartak, Kopalnia węgla. Kupisz je za punkty kanału.",
-            service.Answer(Msg("!tf_wolne", id: "1")));
-        Assert.Equal("@Kermit33 wolne miasta (2): Kraków, Łódź. Kupisz je za punkty kanału.", service.Answer(Msg("!tf_wolne miasta", id: "2")));
-        Assert.Equal("@Kermit33 wolne zakłady (2): Tartak, Kopalnia węgla. Kupisz je za punkty kanału.", service.Answer(Msg("!tf_wolne zakłady", id: "3")));
-        Assert.Equal("@Kermit33 użyj: !tf_wolne [miasta|zaklady]", service.Answer(Msg("!tf_wolne stacje", id: "4")));
+            service.Answer(Msg("!wolne", id: "1")));
+        Assert.Equal("@Kermit33 wolne miasta (2): Kraków, Łódź. Kupisz je za punkty kanału.", service.Answer(Msg("!wolne miasta", id: "2")));
+        Assert.Equal("@Kermit33 wolne zakłady (2): Tartak, Kopalnia węgla. Kupisz je za punkty kanału.", service.Answer(Msg("!wolne zakłady", id: "3")));
+        Assert.Equal("@Kermit33 użyj: !wolne [miasta|zaklady]", service.Answer(Msg("!wolne stacje", id: "4")));
     }
 
     [Fact]
@@ -184,18 +183,18 @@ public sealed class ChatCommandTests : IDisposable
     {
         var path = Path.Combine(_dir, "latest", "dynamic.json");
         File.SetLastWriteTimeUtc(path, _time.Now.UtcDateTime.AddSeconds(-20));
-        Assert.Equal("@Kermit33 w grze jest 12 maja 1922.", Service().Answer(Msg("!tf_data")));
+        Assert.Equal("@Kermit33 w grze jest 12 maja 1922.", Service().Answer(Msg("!data")));
 
         File.SetLastWriteTimeUtc(path, _time.Now.UtcDateTime.AddMinutes(-5));
         Assert.Equal("@Kermit33 w grze jest 12 maja 1922. Ostatnie dane z gry sprzed 5 min (pauza albo gra wyłączona).",
-            Service().Answer(Msg("!tf_data")));
+            Service().Answer(Msg("!data")));
     }
 
     [Fact]
     public void Firma_shows_balance_value_profit_and_fleet()
     {
         Assert.Equal("@Kermit33 firma streamera: saldo $ 1 234 567, wartość firmy $ 9 876 543, zysk w 1922 $ 120 000 (1921: $ -50 000), "
-            + "4 linie, 3 pojazdy.", Service().Answer(Msg("!tf_firma")));
+            + "4 linie, 3 pojazdy.", Service().Answer(Msg("!firma")));
     }
 
     [Fact]
@@ -204,21 +203,21 @@ public sealed class ChatCommandTests : IDisposable
         var service = Service();
 
         Assert.Equal("@Kermit33 najlepsza linia: Linia 1 (estiv0), zysk (12 mies.) $ 653 957. https://gin.estfosoft.com/#line=30",
-            service.Answer(Msg("!tf_najlepsza", id: "1")));
+            service.Answer(Msg("!najlepsza", id: "1")));
         Assert.Equal("@Kermit33 najgorsza linia: Linia 3, zysk (12 mies.) $ -457 279. https://gin.estfosoft.com/#line=32",
-            service.Answer(Msg("!tf_najgorsza linia", id: "2")));
+            service.Answer(Msg("!najgorsza linia", id: "2")));
         Assert.Equal("@Kermit33 najlepsza firma widza: estiv0, zysk linii (12 mies.) $ 833 881 (2 linie). https://gin.estfosoft.com/#owner=estiv0",
-            service.Answer(Msg("!tf_najlepsza firma", id: "3")));
+            service.Answer(Msg("!najlepsza firma", id: "3")));
         Assert.Equal("@Kermit33 najgorsza firma widza: ala, zysk linii (12 mies.) $ 1 000 (1 linia). https://gin.estfosoft.com/#owner=ala",
-            service.Answer(Msg("!tf_najgorszy firma", id: "4")));
-        Assert.Equal("@Kermit33 użyj: !tf_najlepsza [linia|firma]", service.Answer(Msg("!tf_najlepsza miasto", id: "5")));
+            service.Answer(Msg("!najgorszy firma", id: "4")));
+        Assert.Equal("@Kermit33 użyj: !najlepsza [linia|firma]", service.Answer(Msg("!najlepsza miasto", id: "5")));
     }
 
     [Fact]
     public void Without_export_the_answer_says_there_is_no_data()
     {
         File.Delete(Path.Combine(_dir, "latest", "dynamic.json"));
-        Assert.Equal("@Kermit33 nie mam jeszcze danych z gry.", Service().Answer(Msg("!tf_majatek")));
+        Assert.Equal("@Kermit33 nie mam jeszcze danych z gry.", Service().Answer(Msg("!majatek")));
     }
 
     [Theory]

@@ -7,9 +7,9 @@ using Tf3Bridge.Twitch;
 namespace Tf3Bridge.Chat;
 
 /// <summary>
-/// Informational chat commands (prefix "!tf_"). They only read the latest dynamic.json and answer in chat;
+/// Informational chat commands (e.g. "!majatek"). They only read the latest dynamic.json and answer in chat;
 /// they never queue game commands (the game changes only through channel points, see CommandSource).
-/// Texts: <see cref="ChatAnswers"/>; list for viewers: <c>!tf_pomoc</c>.
+/// Texts: <see cref="ChatAnswers"/>; list for viewers: <c>!pomoc</c>.
 /// Two cooldowns, both silent (no answer): one viewer gets at most one answer per <see cref="Cooldown"/>,
 /// and the same command with the same argument is answered at most once per its own cooldown for the whole chat.
 /// </summary>
@@ -21,18 +21,18 @@ public sealed class ChatCommandService
     private sealed record Command(string Name, TimeSpan Cooldown, bool NeedsData, Func<ChatRequest, string> Run);
 
     private static readonly Dictionary<string, Command> Commands = Build(
-        (new("pomoc", TimeSpan.FromSeconds(30), false, ChatAnswers.Help), ["!tf_pomoc", "!tf_komendy", "!tf_help"]),
-        (new("mapa", TimeSpan.FromSeconds(30), false, ChatAnswers.Map), ["!tf_mapa"]),
-        (new("majatek", TimeSpan.FromSeconds(30), true, ChatAnswers.Assets), ["!tf_majatek", "!tf_majątek"]),
-        (new("miasto", TimeSpan.FromSeconds(30), true, ChatAnswers.Town), ["!tf_miasto"]),
-        (new("zaklad", TimeSpan.FromSeconds(30), true, ChatAnswers.Industry), ["!tf_zaklad", "!tf_zakład"]),
-        (new("linia", TimeSpan.FromSeconds(30), true, ChatAnswers.Line), ["!tf_linia"]),
-        (new("ranking", TimeSpan.FromSeconds(60), true, ChatAnswers.Ranking), ["!tf_ranking", "!tf_top"]),
-        (new("wolne", TimeSpan.FromSeconds(60), true, ChatAnswers.Free), ["!tf_wolne"]),
-        (new("data", TimeSpan.FromSeconds(30), true, ChatAnswers.Date), ["!tf_data"]),
-        (new("firma", TimeSpan.FromSeconds(60), true, ChatAnswers.Company), ["!tf_firma"]),
-        (new("najlepsza", TimeSpan.FromSeconds(60), true, r => ChatAnswers.Extreme(r, best: true)), ["!tf_najlepsza", "!tf_najlepszy"]),
-        (new("najgorsza", TimeSpan.FromSeconds(60), true, r => ChatAnswers.Extreme(r, best: false)), ["!tf_najgorsza", "!tf_najgorszy"]));
+        (new("pomoc", TimeSpan.FromSeconds(30), false, ChatAnswers.Help), ["!pomoc", "!komendy", "!help"]),
+        (new("mapa", TimeSpan.FromSeconds(30), false, ChatAnswers.Map), ["!mapa"]),
+        (new("majatek", TimeSpan.FromSeconds(30), true, ChatAnswers.Assets), ["!majatek", "!majątek"]),
+        (new("miasto", TimeSpan.FromSeconds(30), true, ChatAnswers.Town), ["!miasto"]),
+        (new("zaklad", TimeSpan.FromSeconds(30), true, ChatAnswers.Industry), ["!zaklad", "!zakład"]),
+        (new("linia", TimeSpan.FromSeconds(30), true, ChatAnswers.Line), ["!linia"]),
+        (new("ranking", TimeSpan.FromSeconds(60), true, ChatAnswers.Ranking), ["!ranking", "!top"]),
+        (new("wolne", TimeSpan.FromSeconds(60), true, ChatAnswers.Free), ["!wolne"]),
+        (new("data", TimeSpan.FromSeconds(30), true, ChatAnswers.Date), ["!data"]),
+        (new("firma", TimeSpan.FromSeconds(60), true, ChatAnswers.Company), ["!firma"]),
+        (new("najlepsza", TimeSpan.FromSeconds(60), true, r => ChatAnswers.Extreme(r, best: true)), ["!najlepsza", "!najlepszy"]),
+        (new("najgorsza", TimeSpan.FromSeconds(60), true, r => ChatAnswers.Extreme(r, best: false)), ["!najgorsza", "!najgorszy"]));
 
     private static Dictionary<string, Command> Build(params (Command Command, string[] Aliases)[] list) =>
         list.SelectMany(x => x.Aliases.Select(a => (Alias: a, x.Command))).ToDictionary(x => x.Alias, x => x.Command);
@@ -96,7 +96,7 @@ public sealed class ChatCommandService
         var arg = space < 0 ? "" : text[(space + 1)..].Trim().TrimStart('@').Trim();
         if (!Commands.TryGetValue(name, out var command)) return null;
 
-        // "!tf_majatek" bez argumentu to majątek pytającego: inna odpowiedź dla każdego widza.
+        // "!majatek" bez argumentu to majątek pytającego: inna odpowiedź dla każdego widza.
         var key = command.Name + "|" + (arg.Length == 0 && command.Name == "majatek" ? "@" + m.ChatterLogin : TargetResolver.Normalize(arg));
         lock (_gate)
         {

@@ -65,7 +65,7 @@ internal static class Program
         mirror.Configure(AzureSettingsStore.Load());
         var mod = ModInstaller.Sync(options.InputDir, host.Services.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(ModInstaller)));
         ModSettingsStore.EnsureExists(options.InputDir);
-        host.Services.GetRequiredService<ChatCommandService>(); // komendy z czatu (!tf_...): nasłuchuje EventSub od utworzenia
+        host.Services.GetRequiredService<ChatCommandService>(); // komendy z czatu (!...): nasłuchuje EventSub od utworzenia
 
         Application.Run(new MainForm(runner, mirror, host.Services.GetRequiredService<TwitchSession>(), host.Services.GetRequiredService<EventSubClient>(),
             host.Services.GetRequiredService<ModCommandQueue>(), host.Services.GetRequiredService<RewardService>(), options, mod, uiLog));

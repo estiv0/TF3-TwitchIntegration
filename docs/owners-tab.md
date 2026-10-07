@@ -1,6 +1,6 @@
 # Zakładka „Właściciele”: majątek widzów (2026-10-05)
 
-Stan: **etap 1 zrobiony bez mapy** (lista, szczegóły widza, link `#owner=`), **etap 2 (`!tf_majatek`) zrobiony.**
+Stan: **etap 1 zrobiony bez mapy** (lista, szczegóły widza, link `#owner=`), **etap 2 (`!majatek`) zrobiony.**
 Do zrobienia: podświetlenie majątku na mapie.
 
 ## Problem
@@ -54,12 +54,12 @@ zaznaczenie mapy (`main.js`, `onPick`). Potrzebne:
 
 ## Etap 2: komenda na czacie (Tf3Bridge) — zrobione, opis w `middle_app/README.md`
 
-`!tf_majatek [widz]` odpowiada np. „kinek: 2 miasta (Gdańsk, Sopot), 1 zakład, 3 linie, zysk linii
+`!majatek [widz]` odpowiada np. „kinek: 2 miasta (Gdańsk, Sopot), 1 zakład, 3 linie, zysk linii
 $1,2 mln, mapa: <link #owner=kinek>”. Bez argumentu pokazuje majątek pytającego. Komenda tylko czyta
 ostatni `dynamic.json` (`OwnerName.Split` w `GameObjects.cs`, grupowanie jak w `owners.js`) i **nic nie
 wysyła do gry**, zgodnie z zasadą, że grę zmieniają tylko punkty kanału (`CommandSource`). Wymaga czytania
-czatu (`user:read:chat`, `user:write:chat`), patrz `twitch-channel-points.md`, punkt 4. Nasze komendy mają
-prefiks `tf_`.
+czatu (`user:read:chat`, `user:write:chat`), patrz `twitch-channel-points.md`, punkt 4.
+Nasze komendy nie mają prefiksu.
 
 ## Odłożone: rejestr właścicieli w Tf3Bridge
 

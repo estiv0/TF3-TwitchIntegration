@@ -26,8 +26,8 @@ internal static class ChatAnswers
     private const int ListMax = 5;
 
     public static string Help(ChatRequest r) =>
-        $"{r.Mention} Komendy TF3: !tf_majatek [widz], !tf_miasto <nazwa>, !tf_zaklad <nazwa>, !tf_linia <nazwa>, !tf_ranking, "
-        + "!tf_wolne [miasta|zaklady], !tf_najlepsza / !tf_najgorsza [linia|firma], !tf_firma, !tf_data, !tf_mapa. "
+        $"{r.Mention} Komendy TF3: !majatek [widz], !miasto <nazwa>, !zaklad <nazwa>, !linia <nazwa>, !ranking, "
+        + "!wolne [miasta|zaklady], !najlepsza / !najgorsza [linia|firma], !firma, !data, !mapa. "
         + "Grę zmieniasz tylko punktami kanału.";
 
     public static string Map(ChatRequest r) =>
@@ -63,7 +63,7 @@ internal static class ChatAnswers
     }
 
     /// <summary>"@ala Szczecin (właściciel: estiv0): pojemność 900, +25% od startu gry, zaspokojenie potrzeb 80%, efekty: boost miasta +50% do 12 maja 1922 (od ola). link"</summary>
-    public static string Town(ChatRequest r) => Describe(r, GameObjectKind.Town, "!tf_miasto Szczecin", (x, parts) =>
+    public static string Town(ChatRequest r) => Describe(r, GameObjectKind.Town, "!miasto Szczecin", (x, parts) =>
     {
         var size = Sum(x, "capacities");
         parts.Add($"pojemność {Int(size)}");
@@ -73,7 +73,7 @@ internal static class ChatAnswers
     });
 
     /// <summary>"@ala Browar (właściciel: estiv0): poziom 2/4, produktywność 120%, produkcja (rok) 1 234, efekty: …. link"</summary>
-    public static string Industry(ChatRequest r) => Describe(r, GameObjectKind.Industry, "!tf_zaklad Browar", (x, parts) =>
+    public static string Industry(ChatRequest r) => Describe(r, GameObjectKind.Industry, "!zaklad Browar", (x, parts) =>
     {
         if (Num(x, "level") is { } level)
             parts.Add(Num(x, "maxLevel") is { } max ? $"poziom {Int(level)}/{Int(max)}" : $"poziom {Int(level)}");
@@ -82,7 +82,7 @@ internal static class ChatAnswers
     });
 
     /// <summary>"@ala Linia 1 (właściciel: estiv0): 10 pojazdów (zatrzymane: 2), zysk (12 mies.) $ 653 957, zapełnienie 64%, przewiezione (rok) 12 345. link"</summary>
-    public static string Line(ChatRequest r) => Describe(r, GameObjectKind.Line, "!tf_linia Linia 1", (x, parts) =>
+    public static string Line(ChatRequest r) => Describe(r, GameObjectKind.Line, "!linia Linia 1", (x, parts) =>
     {
         if (Num(x, "vehicleCount") is { } n)
         {
@@ -123,7 +123,7 @@ internal static class ChatAnswers
             .ThenByDescending(o => o.Lines).ThenByDescending(o => o.Profit12m ?? double.MinValue).ThenByDescending(o => o.Stations)
             .ThenBy(o => o.Name, StringComparer.CurrentCultureIgnoreCase)
             .Take(ListMax).ToList();
-        if (owners.Count == 0) return $"{r.Mention} nikt jeszcze nic nie kupił. Zobacz !tf_wolne";
+        if (owners.Count == 0) return $"{r.Mention} nikt jeszcze nic nie kupił. Zobacz !wolne";
 
         static string Summary(OwnerAssets o)
         {
@@ -145,7 +145,7 @@ internal static class ChatAnswers
         bool towns = true, industries = true;
         if (arg.StartsWith("miast", StringComparison.Ordinal)) industries = false;
         else if (arg.StartsWith("zaklad", StringComparison.Ordinal)) towns = false;
-        else if (arg.Length > 0) return $"{r.Mention} użyj: !tf_wolne [miasta|zaklady]";
+        else if (arg.Length > 0) return $"{r.Mention} użyj: !wolne [miasta|zaklady]";
 
         static bool Free(JsonElement x) => Str(x, "name") is { } n && OwnerName.Split(n).Owner is null;
         static string Name(JsonElement x) => OwnerName.Split(Str(x, "name")!).Name;
@@ -204,7 +204,7 @@ internal static class ChatAnswers
     }
 
     /// <summary>
-    /// "!tf_najlepsza [linia|firma]" / "!tf_najgorsza": the line, or the viewer's company (all lines of one owner),
+    /// "!najlepsza [linia|firma]" / "!najgorsza": the line, or the viewer's company (all lines of one owner),
     /// with the highest / lowest profit over 12 months.
     /// </summary>
     public static string Extreme(ChatRequest r, bool best)
@@ -230,7 +230,7 @@ internal static class ChatAnswers
             var text = $"{r.Mention} {word} firma widza: {o!.Name}, zysk linii (12 mies.) {Money(o.Profit12m!.Value)} ({Count(o.Lines, "linia", "linie", "linii")}).";
             return RewardMessages.OwnerLink(r.SiteUrl, o.Key) is { } link ? $"{text} {link}" : text;
         }
-        return $"{r.Mention} użyj: !tf_{word} [linia|firma]";
+        return $"{r.Mention} użyj: !{word} [linia|firma]";
     }
 
     // Aktywne efekty z nagród na obiekcie: "boost miasta +50% do 12 maja 1922 (od ola)".
