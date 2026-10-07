@@ -119,8 +119,7 @@ internal static class ChatAnswers
     public static string Ranking(ChatRequest r)
     {
         var owners = OwnerIndex.Parse(r.Root).Values
-            .OrderByDescending(o => o.Towns.Count).ThenByDescending(o => o.Industries.Count)
-            .ThenByDescending(o => o.Lines).ThenByDescending(o => o.Profit12m ?? double.MinValue).ThenByDescending(o => o.Stations)
+            .OrderByDescending(o => o.Score).ThenByDescending(o => o.Profit12m ?? double.MinValue)
             .ThenBy(o => o.Name, StringComparer.CurrentCultureIgnoreCase)
             .Take(ListMax).ToList();
         if (owners.Count == 0) return $"{r.Mention} nikt jeszcze nic nie kupił. Zobacz !wolne";

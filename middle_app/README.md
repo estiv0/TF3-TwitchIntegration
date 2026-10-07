@@ -130,7 +130,7 @@ Nasze komendy zaczynają się od `!` (bez prefiksu). Tylko czytają ostatni `dyn
 | `!miasto <nazwa>` | | właściciel, pojemność, wzrost od startu gry, zaspokojenie potrzeb, aktywne efekty z nagród (z datą końca i kupującym), link | 30 s |
 | `!zaklad <nazwa>` | `!zakład` | właściciel, poziom, produktywność, produkcja z ostatniego roku, efekty, link | 30 s |
 | `!linia <nazwa>` | | właściciel, pojazdy (i ile zatrzymanych), zysk z 12 mies., zapełnienie, przewiezione w roku, efekty, link | 30 s |
-| `!ranking` | `!top` | 5 widzów z największym majątkiem: najpierw liczba miast, potem zakładów, linii, zysk linii | 60 s |
+| `!ranking` | `!top` | 5 widzów z największym majątkiem jak na stronie: miasto 100 pkt + wielkość/25 + wzrost od startu gry ×100, zakład 50, stacja i linia 1, pojazd na liniach: pociąg/samolot 10, statek 2, drogowy 1; przy remisie zysk linii | 60 s |
 | `!wolne [miasta\|zaklady]` | | obiekty bez właściciela do kupienia za punkty: 5 największych miast i zakładów o najwyższym poziomie, z liczbą wszystkich | 60 s |
 | `!data` | | data w grze; gdy eksport jest starszy niż 2 min, dopisek „pauza albo gra wyłączona” | 30 s |
 | `!firma` | | firma streamera: saldo, wartość firmy, zysk w tym i poprzednim roku (tabela Finanse), linie, pojazdy | 60 s |

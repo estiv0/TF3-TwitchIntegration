@@ -33,7 +33,7 @@ Decyzje:
 Zrobione:
 - zakładka „Właściciele” z licznikiem widzów; wiersz to nazwa i liczniki obiektów (miasta, zakłady,
   stacje, linie, tylko niezerowe);
-- sortowanie: majątek (miasto i zakład ×3, stacja i linia ×1), zarobek linii (suma `stats.profit12m`), nazwa;
+- sortowanie: majątek (miasto 100 pkt + wielkość/25 + wzrost od startu gry ×100, zakład 50, stacja i linia 1, pojazd na liniach: pociąg/samolot 10, statek 2, drogowy 1; ten sam wzór w `!ranking`), zarobek linii (suma `stats.profit12m`), nazwa;
 - szukanie po nazwie widza i po nazwach jego obiektów („Szczecin” pokaże właściciela Szczecina);
 - szczegóły widza w pływającym okienku: główne miasto, podsumowanie, klikalne listy obiektów (★ przy
   głównym mieście); najechanie na obiekt podświetla go na mapie;

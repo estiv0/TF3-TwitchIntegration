@@ -68,6 +68,39 @@ public sealed class ChatCommandTests : IDisposable
     }
 
     [Fact]
+    public void Score_weighs_towns_by_size()
+    {
+        // Jak w zapisie gry: Szczecin (5172) i 2 linie wyżej niż dwa małe miasteczka (246, 286).
+        Assert.True(OwnerIndex.Score([OwnerIndex.TownWorth(5172, 0)], 0, 0, 2)
+            > OwnerIndex.Score([OwnerIndex.TownWorth(246, 0), OwnerIndex.TownWorth(286, 0)], 0, 0, 0));
+        Assert.Equal(100 + 10 + 50 + 1 + 1, OwnerIndex.Score([OwnerIndex.TownWorth(250, 0)], 1, 1, 1));
+    }
+
+    [Fact]
+    public void Town_growth_since_start_adds_points_but_shrinking_does_not_cost()
+    {
+        Assert.Equal(100 + 20 + 100, OwnerIndex.TownWorth(500, 250)); // podwojone
+        Assert.Equal(100 + 10, OwnerIndex.TownWorth(250, 300)); // zmalało
+        Assert.Equal(100 + 10, OwnerIndex.TownWorth(250, 0)); // brak danych o starcie
+        // Szczecin w danych testowych: 900 przy starcie 800.
+        using var doc = JsonDocument.Parse(Dynamic);
+        var o = OwnerIndex.Parse(doc.RootElement)["estiv0"];
+        Assert.Equal(OwnerIndex.TownWorth(900, 800) + OwnerIndex.TownWorth(160, 0) + 50 + 2 + 16, o.Score, 6); // zakład, 2 linie, 16 pojazdów bez nośnika
+    }
+
+    [Fact]
+    public void Vehicles_count_by_carrier()
+    {
+        Assert.Equal(10, OwnerIndex.VehicleWorth("RAIL"));
+        Assert.Equal(10, OwnerIndex.VehicleWorth("AIR"));
+        Assert.Equal(2, OwnerIndex.VehicleWorth("WATER"));
+        Assert.Equal(1, OwnerIndex.VehicleWorth("ROAD"));
+        Assert.Equal(1, OwnerIndex.VehicleWorth("TRAM"));
+        Assert.Equal(1, OwnerIndex.VehicleWorth(null));
+        Assert.Equal(1 + 3 * 10, OwnerIndex.Score([], 0, 0, 1, vehiclePoints: 3 * OwnerIndex.VehicleWorth("RAIL")));
+    }
+
+    [Fact]
     public async Task Majatek_with_a_name_describes_that_owner_and_links_to_the_site()
     {
         var answer = await Service().HandleAsync(Msg("!majatek @Estiv0"));
@@ -160,7 +193,7 @@ public sealed class ChatCommandTests : IDisposable
     }
 
     [Fact]
-    public void Ranking_orders_viewers_by_towns_then_industries()
+    public void Ranking_orders_viewers_by_score()
     {
         Assert.Equal("@Kermit33 ranking: 1. estiv0 (2 miasta, 1 zakład, 2 linie), 2. ala (1 linia). Wszyscy: https://gin.estfosoft.com/",
             Service().Answer(Msg("!ranking")));

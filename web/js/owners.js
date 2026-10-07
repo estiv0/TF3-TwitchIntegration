@@ -1,7 +1,7 @@
 // Majątek widzów: miasta, zakłady, stacje i linie z właścicielem w nazwie ("Nazwa | Widz", splitAllOwners).
 // Ten sam widz bywa zapisany różną wielkością liter ("Kinek" / "kinek") - grupujemy bez jej rozróżniania.
 
-import { industryOfStation, townSize } from "./format.js";
+import { industryOfStation, townGrowth, townSize } from "./format.js";
 
 /** Klucz właściciela (do grupowania, zaznaczenia i #owner= w adresie). */
 export const ownerKey = (name) => String(name ?? "").trim().toLocaleLowerCase();
@@ -45,11 +45,22 @@ export function ownersIndex(dynamic, stationIndustry = industryOfStation(dynamic
     o.profit12m = sumOf(o.lines, (l) => l.stats?.profit12m);
     o.lineStats = lineTotals(o.lines);
     o.fleet = fleetOf(o.lines, dynamic.vehicles);
-    // Miasto i zakład są warte więcej niż stacja czy linia.
-    o.score = 3 * (o.towns.length + o.industries.length) + o.stations.length + o.lines.length;
+    o.score = ownerScore(o);
   }
   return owners;
 }
+
+/**
+ * Majątek do sortowania (ten sam wzór co OwnerIndex.Score w Tf3Bridge, ranking !ranking): miasto 100 pkt plus
+ * wielkość / 25 plus wzrost od startu gry × 100 (podwojone miasto +100, zmalałe bez kary), zakład 50, stacja i
+ * linia po 1. Każde miasto dużo daje, duże i rozwinięte waży znacznie więcej. Do tego pojazdy na liniach widza według nośnika linii (vehicleWorth).
+ */
+const ownerScore = (o) =>
+  o.towns.reduce((n, t) => n + 100 + townSize(t) / 25 + 100 * Math.max(0, townGrowth(t) ?? 0), 0) + 50 * o.industries.length + o.stations.length + o.lines.length
+  + o.lines.reduce((n, l) => n + (l.vehicleCount ?? 0) * vehicleWorth(l.carrier), 0);
+
+// Pojazd: pociąg i samolot 10 pkt, statek 2, drogowy (też tramwaj i nieznany nośnik) 1.
+const vehicleWorth = (carrier) => (carrier === "RAIL" || carrier === "AIR" ? 10 : carrier === "WATER" ? 2 : 1);
 
 // Suma wartości, null gdy żadna pozycja jej nie ma (brak statystyk to nie zero).
 const sumOf = (items, get) => items.reduce((sum, x) => (get(x) == null ? sum : (sum ?? 0) + get(x)), null);

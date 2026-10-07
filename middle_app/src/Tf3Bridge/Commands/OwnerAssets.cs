@@ -7,14 +7,32 @@ namespace Tf3Bridge.Commands;
 /// Everything one viewer owns (game names "Name | Owner"), grouped the same way as the site's Owners tab
 /// (web/js/owners.js): case-insensitive owner, <see cref="Towns"/> largest first (the first is the main town).
 /// <see cref="Profit12m"/>: profit of the owner's lines over 12 months, null without line stats.
+/// <see cref="Score"/>: wealth for the ranking, same formula as the site (owners.js, <see cref="OwnerIndex.Score"/>).
 /// </summary>
 public sealed record OwnerAssets(string Key, string Name, IReadOnlyList<string> Towns, IReadOnlyList<string> Industries,
-    int Stations, int Lines, int Vehicles, double? Profit12m);
+    int Stations, int Lines, int Vehicles, double? Profit12m, double Score);
 
 public static class OwnerIndex
 {
     /// <summary>Grouping key, also used in the site link (#owner=…).</summary>
     public static string Key(string owner) => owner.Trim().ToLowerInvariant();
+
+    /// <summary>
+    /// Majątek do rankingu, jak score w owners.js: miasto <see cref="TownWorth"/>, zakład 50, stacja i linia po 1.
+    /// <paramref name="vehiclePoints"/>: pojazdy na liniach widza według nośnika (<see cref="VehicleWorth"/>).
+    /// </summary>
+    public static double Score(IEnumerable<double> townPoints, int industries, int stations, int lines, double vehiclePoints = 0) =>
+        townPoints.Sum() + 50 * industries + stations + lines + vehiclePoints;
+
+    /// <summary>
+    /// Miasto: 100 pkt plus wielkość / 25 plus wzrost od startu gry × 100 (podwojone miasto +100, zmalałe bez kary,
+    /// bez <paramref name="startSize"/> bez premii). Każde miasto dużo daje, duże i rozwinięte waży znacznie więcej.
+    /// </summary>
+    public static double TownWorth(double size, double startSize) =>
+        100 + size / 25 + (startSize > 0 ? 100 * Math.Max(0, size / startSize - 1) : 0);
+
+    /// <summary>Pojazd: pociąg i samolot 10 pkt, statek 2, drogowy (też tramwaj i nieznany nośnik) 1.</summary>
+    public static int VehicleWorth(string? carrier) => carrier switch { "RAIL" or "AIR" => 10, "WATER" => 2, _ => 1 };
 
     /// <summary>Owners from the latest published dynamic.json; null when it is missing or unreadable.</summary>
     public static Dictionary<string, OwnerAssets>? Load(string dynamicJsonPath)
@@ -56,7 +74,7 @@ public static class OwnerIndex
         }
 
         foreach (var t in towns)
-            if (Add(Str(t, "name")) is { } g) g.Towns.Add((g.LastName, TownSize(t)));
+            if (Add(Str(t, "name")) is { } g) g.Towns.Add((g.LastName, TownSize(t, "capacities"), TownSize(t, "initialCapacities")));
         var industryOwner = new Dictionary<long, string>();
         foreach (var i in industries)
         {
@@ -77,7 +95,9 @@ public static class OwnerIndex
         {
             if (Add(Str(l, "name")) is not { } g) continue;
             g.Lines++;
-            g.Vehicles += (int)(Num(l, "vehicleCount") ?? 0);
+            var vehicles = (int)(Num(l, "vehicleCount") ?? 0);
+            g.Vehicles += vehicles;
+            g.VehiclePoints += vehicles * VehicleWorth(Str(l, "carrier"));
             if (l.TryGetProperty("stats", out var st) && Num(st, "profit12m") is { } p) g.Profit12m = (g.Profit12m ?? 0) + p;
         }
 
@@ -87,7 +107,8 @@ public static class OwnerIndex
             return new OwnerAssets(kv.Key, g.Spellings.MaxBy(s => s.Value).Key,
                 [.. g.Towns.OrderByDescending(t => t.Size).Select(t => t.Name)],
                 [.. g.Industries.OrderByDescending(i => i.Level).Select(i => i.Name)],
-                g.Stations, g.Lines, g.Vehicles, g.Profit12m);
+                g.Stations, g.Lines, g.Vehicles, g.Profit12m,
+                Score(g.Towns.Select(t => TownWorth(t.Size, t.StartSize)), g.Industries.Count, g.Stations, g.Lines, g.VehiclePoints));
         });
     }
 
@@ -95,11 +116,12 @@ public static class OwnerIndex
     {
         public Dictionary<string, int> Spellings { get; } = [];
         public string LastName { get; set; } = "";
-        public List<(string Name, double Size)> Towns { get; } = [];
+        public List<(string Name, double Size, double StartSize)> Towns { get; } = [];
         public List<(string Name, double Level)> Industries { get; } = [];
         public int Stations { get; set; }
         public int Lines { get; set; }
         public int Vehicles { get; set; }
+        public int VehiclePoints { get; set; }
         public double? Profit12m { get; set; }
     }
 
@@ -116,8 +138,8 @@ public static class OwnerIndex
     private static long? Long(JsonElement x, string key) =>
         x.TryGetProperty(key, out var v) && v.TryGetInt64(out var id) ? id : null;
 
-    // Wielkość miasta jak na stronie (townSize): suma pojemności stref.
-    private static double TownSize(JsonElement t) =>
-        t.TryGetProperty("capacities", out var c) && c.ValueKind == JsonValueKind.Array
+    // Wielkość miasta jak na stronie (townSize): suma pojemności stref; "initialCapacities" = na starcie gry.
+    private static double TownSize(JsonElement t, string key) =>
+        t.TryGetProperty(key, out var c) && c.ValueKind == JsonValueKind.Array
             ? c.EnumerateArray().Where(v => v.ValueKind == JsonValueKind.Number).Sum(v => v.GetDouble()) : 0;
 }
