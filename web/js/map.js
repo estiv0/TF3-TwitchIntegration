@@ -95,7 +95,8 @@ export class MapView {
     this.showTerrain = true;
     this.overlay = null;        // canvas na prostokącie terenu: miejsca, gdzie miasto się nie zbuduje (js/build.js)
     this.selected = null;       // { kind, id }
-    this.focusedStop = null;    // { x, y } przystanku zaznaczonej linii wybranego w panelu
+    this.pinned = [];           // [{ kind, id }] - obiekty z przypiętymi okienkami: podświetlone jak zaznaczony
+    this.focusedStop = null;    // { line, x, y } przystanku linii wybranego w panelu
     this.hovered = null;
     this.fitted = false;
     this.frame = 0;
@@ -291,12 +292,11 @@ export class MapView {
     this.requestDraw();
   }
 
-  // Przystanek zaznaczonej linii: centrujemy na nim i obrysowujemy go do zmiany wyboru.
+  // Przystanek zaznaczonej albo przypiętej linii: centrujemy na nim i obrysowujemy go do zmiany wyboru.
   focusStop(lineId, index) {
     const pos = this.lines.get(lineId)?.stops?.[index]?.pos;
     if (!pos) return;
-    this.selected = { kind: "line", id: lineId };
-    this.focusedStop = { x: pos[0], y: -pos[1] };
+    this.focusedStop = { line: lineId, x: pos[0], y: -pos[1] };
     this.view.scale = Math.max(this.view.scale, 0.5);
     this.centerOn(this.focusedStop.x, this.focusedStop.y);
   }
@@ -305,6 +305,19 @@ export class MapView {
     this.focusedStop = null;
     this.selected = kind ? { kind, id } : null;
     this.requestDraw();
+  }
+
+  setPinned(pinned) {
+    this.pinned = pinned;
+    if (this.focusedStop && !this.selectedLines().has(this.focusedStop.line)) this.focusedStop = null;
+    this.requestDraw();
+  }
+
+  // Linie rysowane jako wybrane: przypięte i zaznaczona (o ile są w danych).
+  selectedLines() {
+    const ids = new Set();
+    for (const s of [...this.pinned, this.selected]) if (s?.kind === "line" && this.lines.has(s.id)) ids.add(s.id);
+    return ids;
   }
 
   toScreen(px, py) {
@@ -370,18 +383,19 @@ export class MapView {
     const hotLine = this.hotLine();
     const spotLine = this.spotLine(hotLine);
     const spot = this.spotItem(spotLine === null ? this.listHover : this.selected);
-    const focusLine = hotLine ?? (this.selected?.kind === "line" ? this.selected.id : null);
+    const selLines = this.selectedLines();
+    const focusLines = hotLine !== null ? new Set([hotLine]) : selLines;
     ctx.globalAlpha = spot || spotLine !== null ? DIM : 1;
-    if (this.linesView) this.drawVisibleLines(hotLine);
-    else if (this.selected?.kind === "line") this.drawLine(this.selected.id);
+    if (this.linesView) this.drawVisibleLines(hotLine, selLines);
+    else for (const id of selLines) this.drawLine(id);
     if (this.showIndustries) this.drawIndustries(spot);
     if (this.showStations) this.drawStations(spot);
     // pojazdy innych linii przygaszone raz (gdy reszta mapy już jest przygaszona - bez dodatkowego DIM)
-    if (this.showVehicles) this.drawVehicles((v) => v.line !== focusLine, focusLine === null || ctx.globalAlpha < 1 ? 1 : DIM);
+    if (this.showVehicles) this.drawVehicles((v) => !focusLines.has(v.line), !focusLines.size || ctx.globalAlpha < 1 ? 1 : DIM);
     this.drawTowns(spot);
     ctx.globalAlpha = 1;
     if (spotLine !== null) this.drawLine(spotLine);
-    if (this.showVehicles && focusLine !== null) this.drawVehicles((v) => v.line === focusLine);
+    if (this.showVehicles && focusLines.size) this.drawVehicles((v) => focusLines.has(v.line));
     if (spot?.kind === "industry") this.drawIndustry(spot);
     else if (spot?.kind === "station") this.drawStation(spot);
     else if (spot?.kind === "town") this.drawTown(spot, null);
@@ -406,7 +420,7 @@ export class MapView {
   // bez zaznaczonej linii, o ile linia jest wśród narysowanych); inaczej null.
   spotLine(hot) {
     if (hot === null) return null;
-    return this.linesView && this.selected?.kind !== "line" && this.visibleIds.has(hot) ? null : hot;
+    return this.linesView && !this.selectedLines().size && this.visibleIds.has(hot) ? null : hot;
   }
 
   // Miasto / zakład / stacja ({ kind, id }), o ile jest na ekranie; inaczej null.
@@ -559,10 +573,10 @@ export class MapView {
     return route;
   }
 
-  // Wszystkie linie przecinające ekran (i pasujące do filtrów panelu); zaznaczona linia - tylko ona.
+  // Wszystkie linie przecinające ekran (i pasujące do filtrów panelu); z zaznaczonymi / przypiętymi - tylko one.
   // Zestaw linii na ekranie zgłaszamy panelowi (lista linii), gdy się zmieni.
   // hotLine: linia wskazana (na liście albo przez pojazd) - na wierzchu, szersza, reszta przygaszona.
-  drawVisibleLines(hotLine) {
+  drawVisibleLines(hotLine, selLines) {
     const [minX, minY] = this.toWorld(0, 0);
     const [maxX, maxY] = this.toWorld(this.w, this.h);
     const rect = { minX, minY, maxX, maxY };
@@ -573,7 +587,7 @@ export class MapView {
     // Linia wskazana: pozostałe półprzezroczyste, ona na wierzchu i 50% szersza.
     this.visibleIds = new Set(visible.map((l) => l.id));
     const hot = hotLine !== null && this.visibleIds.has(hotLine) ? hotLine : null;
-    if (this.selected?.kind === "line") this.drawLine(this.selected.id);
+    if (selLines.size) for (const id of selLines) this.drawLine(id);
     else {
       const alpha = this.ctx.globalAlpha; // już przygaszone, gdy wskazano miasto / zakład / stację
       this.ctx.globalAlpha = hot === null ? alpha : DIM;
@@ -624,7 +638,7 @@ export class MapView {
       ctx.fill();
       ctx.stroke();
     }
-    if (this.focusedStop && !compact) {
+    if (this.focusedStop?.line === id && !compact) {
       const [x, y] = this.toScreen(this.focusedStop.x, this.focusedStop.y);
       this.ring(x, y, 10);
     }
@@ -953,7 +967,7 @@ export class MapView {
 
   isMarked(item) {
     const m = (s) => s && s.kind === item.kind && s.id === item.id;
-    return m(this.selected) || m(this.hovered) || m(this.listHover);
+    return m(this.selected) || m(this.hovered) || m(this.listHover) || this.pinned.some(m);
   }
 
   ring(x, y, size) {

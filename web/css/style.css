@@ -86,6 +86,24 @@ button { font: inherit; color: inherit; }
 .status[data-state="stale"]::before { background: var(--stale); }
 .status[data-state="error"]::before { background: var(--error); }
 
+/* Przycisk streamu (js/stream.js): kolor Twitcha; czerwona pulsująca kropka, gdy gra wysyła świeże dane. */
+.stream-btn {
+  display: inline-flex; align-items: center; gap: 8px; flex: none;
+  padding: 6px 12px; border-radius: 999px; cursor: pointer;
+  background: #9146ff; color: #fff; text-decoration: none;
+  font-size: 12px; font-weight: 600; white-space: nowrap;
+}
+.stream-btn:hover { background: #772ce8; }
+.stream-btn[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px #9146ff; }
+.stream-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255, 255, 255, .55); flex: none; }
+.stream-btn[data-live="true"] .stream-dot, .stream-card .stream-dot { background: #ff4a4a; animation: stream-pulse 1.6s ease-out infinite; }
+.stream-card .stream-dot { display: inline-block; vertical-align: middle; margin-right: 4px; }
+@keyframes stream-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(255, 74, 74, .7); }
+  100% { box-shadow: 0 0 0 7px rgba(255, 74, 74, 0); }
+}
+@media (prefers-reduced-motion: reduce) { .stream-dot { animation: none !important; } }
+
 /* ---------------------------------------------------------------- układ */
 .layout {
   display: grid;
@@ -281,25 +299,49 @@ button { font: inherit; color: inherit; }
 .row-hint { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-hint mark { background: none; color: var(--accent); }
 
-/* Szczegóły: pływające okienko nad mapą (js/float.js ustawia left/top/max-height), przewijane w środku. */
-.detail {
-  position: absolute; top: 12px; left: 12px; z-index: 2;
+/* Szczegóły: osobne pływające okienka nad mapą (zaznaczony obiekt i przypięte; js/float.js ustawia
+   left/top/max-height/z-index każdego), przewijane w środku. Warstwa na całą mapę przepuszcza kliknięcia. */
+.detail { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+.detail-card {
+  position: absolute; top: 12px; left: 12px;
   width: min(360px, calc(100% - 24px)); overflow-y: auto; overscroll-behavior: contain;
-  padding: 14px; border-radius: var(--radius);
+  padding: 14px; border-radius: var(--radius); pointer-events: auto;
   background: var(--panel-2); border: 1px solid var(--border);
   box-shadow: 0 12px 32px rgba(0, 0, 0, .45);
 }
+.detail-card[data-pinned="true"] { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.detail-card[data-pinned="true"][aria-current="true"] { border-color: var(--accent); }
+/* zwinięte przypięte okienko: sam nagłówek */
+.detail-card.collapsed { padding-block: 10px; }
+.detail-card.collapsed > :not(h2, .detail-tools) { display: none; }
 .detail h2, .detail .detail-sub { cursor: move; user-select: none; }
-.detail.dragging { opacity: .92; }
-.detail h2 { font-size: 16px; padding-right: 24px; }
-/* × zostaje w rogu przy przewijaniu treści */
-.detail-close {
+.detail-card.dragging { opacity: .92; }
+.detail h2 { font-size: 16px; padding-right: 64px; }
+.detail-card[data-pinned="true"] h2 { padding-right: 88px; }
+/* przyciski zostają w rogu przy przewijaniu treści */
+.detail-tools {
   position: sticky; top: 0; float: right; z-index: 1; margin: -6px -6px 0 0;
-  width: 24px; height: 24px; padding: 0;
-  border: 0; border-radius: 6px; background: var(--panel-2); cursor: pointer;
-  color: var(--muted); font-size: 18px; line-height: 1;
+  display: flex; gap: 2px; border-radius: 6px; background: var(--panel-2);
 }
-.detail-close:hover { color: var(--text); background: var(--bg); }
+.detail-tool {
+  width: 24px; height: 24px; padding: 0;
+  border: 0; border-radius: 6px; background: transparent; cursor: pointer;
+  color: var(--muted); font-size: 14px; line-height: 1;
+}
+.detail-tool:hover { color: var(--text); background: var(--bg); }
+.detail-close { font-size: 18px; }
+/* pinezka szara, dopóki nie przypięta */
+.detail-pin { filter: grayscale(1); opacity: .6; }
+.detail-pin:hover { opacity: 1; }
+.detail-pin[aria-pressed="true"] { filter: none; opacity: 1; }
+/* Mini-player streamu: własna warstwa nad okienkami szczegółów. Szerokość do zmiany za prawy dolny róg;
+   Twitch wymaga playera min. 400x300 px. W czasie przeciągania iframe nie łapie myszy. */
+.stream-layer { z-index: 3; }
+.stream-card { width: 560px; min-width: 430px; max-width: calc(100% - 24px); resize: horizontal; overflow: hidden; }
+.stream-card .detail-tools a { display: inline-grid; place-items: center; text-decoration: none; }
+.stream-frame { margin-top: 10px; width: 100%; aspect-ratio: 16 / 9; min-height: 300px; border-radius: 6px; overflow: hidden; background: #000; }
+.stream-frame iframe { display: block; width: 100%; height: 100%; border: 0; }
+.stream-card.dragging iframe { pointer-events: none; }
 .detail-copy {
   margin-left: 6px; width: 22px; height: 22px; padding: 0; vertical-align: middle;
   border: 0; border-radius: 6px; background: transparent; cursor: pointer;
@@ -406,6 +448,9 @@ button { font: inherit; color: inherit; }
   /* sam kolorowy punkt; opis stanu i czas aktualizacji w podpowiedzi (title) */
   .status { font-size: 0; gap: 0; padding: 7px; }
   .lang-switch button { padding: 3px 8px; font-size: 11px; }
+  /* telefon: przycisk streamu to sam link do Twitcha (bez playera), kompaktowy */
+  .stream-btn { padding: 5px 10px; font-size: 11px; gap: 6px; }
+  .stream-layer { display: none !important; }
   .kpis {
     order: 3; width: 100%; margin: 0; gap: 14px;
     overflow-x: auto; scrollbar-width: none; /* na bardzo wąskich ekranach przewijane w bok */
@@ -432,9 +477,13 @@ button { font: inherit; color: inherit; }
   }
   /* legenda zabiera telefonowi za dużo mapy */
   .legend { display: none; }
-  /* okienko szczegółów na dole mapy nad przyciskiem, na pół mapy (zaznaczony obiekt zostaje widoczny nad nim),
-     bez przesuwania (!important: wygrywa z left/top/max-height z js/float.js) */
-  .detail { top: auto !important; left: 8px !important; right: 8px; bottom: 60px; width: auto; max-height: 45% !important; }
+  /* okienka szczegółów jedno pod drugim na dole mapy nad przyciskiem, razem na pół mapy (zaznaczony obiekt
+     zostaje widoczny nad nimi), bez przesuwania (js/float.js zdejmuje im left/top/max-height) */
+  .detail {
+    inset: auto 8px 60px; max-height: 45%; overflow-y: auto; overscroll-behavior: contain;
+    display: flex; flex-direction: column; gap: 8px; pointer-events: auto;
+  }
+  .detail-card { position: static; flex: none; width: auto; overflow: visible; }
   .detail h2, .detail .detail-sub { cursor: auto; }
 }
 .chips li { align-items: center; }

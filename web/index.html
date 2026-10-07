@@ -25,6 +25,10 @@
       <div><dt data-i18n="kpi.fleet">Flota</dt><dd id="fleet" class="fleet">–</dd></div>
       <div class="kpi-edges"><dt data-i18n="kpi.edges">Odcinki sieci</dt><dd id="edges">–</dd></div>
     </dl>
+    <!-- Stream na Twitchu: link, a na szerokim ekranie przełącznik mini-playera nad mapą (js/stream.js). -->
+    <a id="stream-btn" class="stream-btn" target="_blank" rel="noopener" aria-controls="stream" aria-expanded="false" data-live="false">
+      <span class="stream-dot" aria-hidden="true"></span><span data-i18n="stream.label">Stream</span>
+    </a>
     <span id="status" class="status" data-state="waiting">Czekam na dane…</span>
     <div id="lang" class="lang-switch" role="group" aria-label="Język" data-i18n-aria="lang.label"></div>
   </header>
@@ -35,6 +39,17 @@
       <div id="tooltip" class="tooltip" hidden></div>
       <!-- Szczegóły zaznaczonego obiektu: pływające okienko nad mapą (js/float.js), treść z js/sidebar.js. -->
       <section id="detail" class="detail" data-detail hidden></section>
+      <!-- Mini-player streamu: pływające okienko (js/float.js), iframe wstawia js/stream.js po otwarciu. -->
+      <section id="stream" class="detail stream-layer" hidden>
+        <div class="detail-card stream-card" data-card="stream">
+          <div class="detail-tools">
+            <a class="detail-tool" data-stream-link target="_blank" rel="noopener" title="Otwórz na Twitchu" data-i18n-title="stream.open" aria-label="Otwórz na Twitchu" data-i18n-aria="stream.open">↗</a>
+            <button type="button" class="detail-tool detail-close" data-stream-close title="Zamknij" data-i18n-title="stream.hide" aria-label="Zamknij" data-i18n-aria="stream.hide">×</button>
+          </div>
+          <h2><span class="stream-dot" aria-hidden="true"></span> <span data-stream-name>Twitch</span></h2>
+          <div class="stream-frame" data-stream-frame></div>
+        </div>
+      </section>
       <div class="map-tools">
         <button id="fit" type="button" title="Pokaż całą mapę" data-i18n-title="map.fit">⤢</button>
         <button id="terrain" type="button" title="Teren (rzeźba)" data-i18n-title="map.terrain" aria-pressed="true">⛰</button>

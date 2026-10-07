@@ -13,10 +13,12 @@ import { industryKind, industryOutputs } from "./map.js";
 import { ownerKey, ownersIndex } from "./owners.js";
 
 export class Sidebar {
-  constructor(root, detail, { onPick, onStop, onClose, onLinesView, onHoverItem }) {
+  constructor(root, detail, { windows, onPick, onStop, onClose, onPins, onLinesView, onHoverItem }) {
     this.root = root;
+    this.windows = windows;         // FloatingWindows (js/float.js): pozycje okienek szczegółów
     this.onPick = onPick;
     this.onStop = onStop;
+    this.onPins = onPins;           // zmiana przypiętych obiektów -> mapa je podświetla
     this.onLinesView = onLinesView; // { match } albo null - co mapa ma rysować na zakładce Linie
     this.viewportOnly = loadViewportOnly(); // "oko": linie na mapie i na liście tylko z widoku mapy
     this.visibleLines = null;               // Set id linii na ekranie mapy (od mapy), null = bez filtra
@@ -24,7 +26,11 @@ export class Sidebar {
     this.filter = "";
     this.dynamic = null;
     this.selected = null;
-    this.focusedStop = null;    // indeks przystanku zaznaczonej linii, na który przeniesiono mapę
+    // Przypięte okienka szczegółów ({ kind, id }): zostają otwarte przy wyborze innych obiektów.
+    this.pinned = [];
+    this.collapsed = new Set();
+    this.cardHtml = new WeakMap(); // okienko -> ostatnio wpisana treść (ta sama = bez przerysowania)  // klucze ("rodzaj:id") przypiętych okienek zwiniętych do nagłówka
+    this.focusedStop = null;    // { line, index } - przystanek linii, na który przeniesiono mapę
 
     this.list = root.querySelector("[data-list]");
     this.company = root.querySelector("[data-company]");
@@ -127,8 +133,24 @@ export class Sidebar {
     this.detail.addEventListener("mouseleave", () => onHoverItem?.(null));
 
     this.detail.addEventListener("click", (e) => {
+      const [cardKind, cardRaw] = splitPick(e.target.closest("[data-card]"), "card");
+      if (!cardKind) return;
+      const cardId = selId(cardKind, cardRaw);
+      const isActive = this.selected?.kind === cardKind && this.selected?.id === cardId;
       if (e.target.closest("[data-close]")) {
-        onClose?.();
+        // × przypiętego okienka odpina je; zaznaczony obiekt (jak Esc) dodatkowo odznacza
+        if (this.isPinned(cardKind, cardId)) this.togglePin(cardKind, cardId);
+        if (isActive) onClose?.();
+        return;
+      }
+      if (e.target.closest("[data-pin]")) {
+        this.togglePin(cardKind, cardId);
+        return;
+      }
+      if (e.target.closest("[data-collapse]")) {
+        const key = `${cardKind}:${cardId}`;
+        if (!this.collapsed.delete(key)) this.collapsed.add(key);
+        this.renderDetail();
         return;
       }
       const copy = e.target.closest("[data-copy]");
@@ -148,9 +170,9 @@ export class Sidebar {
         return;
       }
       const stop = e.target.closest("[data-stop]");
-      if (!stop || this.selected?.kind !== "line") return;
-      this.focusedStop = Number(stop.dataset.stop);
-      this.onStop?.(this.selected.id, this.focusedStop);
+      if (!stop || cardKind !== "line") return;
+      this.focusedStop = { line: cardId, index: Number(stop.dataset.stop) };
+      this.onStop?.(cardId, this.focusedStop.index);
       this.renderDetail();
     });
 
@@ -177,6 +199,12 @@ export class Sidebar {
     this.industryLines = linesByIndustry(dynamic, this.stationLines, this.stationIndustry);
     this.earnings = townEarnings(dynamic);
     this.owners = ownersIndex(dynamic, this.stationIndustry);
+    // przypięte obiekty, których już nie ma (usunięta linia, zburzony zakład), znikają
+    const pinned = this.pinned.filter((p) => this.findItem(p));
+    if (pinned.length !== this.pinned.length) {
+      this.pinned = pinned;
+      this.onPins?.([...pinned]);
+    }
     this.root.querySelector('[data-count="towns"]').textContent = dynamic.towns?.length ?? 0;
     this.root.querySelector('[data-count="industries"]').textContent = dynamic.industries?.length ?? 0;
     this.root.querySelector('[data-count="stations"]').textContent = dynamic.stations?.length ?? 0;
@@ -215,7 +243,35 @@ export class Sidebar {
     this.focusedStop = null;
     this.renderList();
     this.renderDetail();
-    if (changed) this.detail.scrollTop = 0; // nowy obiekt - okienko od góry
+    if (changed && kind) this.windows?.front(`${kind}:${id}`); // nowe albo wskazane przypięte okienko na wierzch
+  }
+
+  isPinned(kind, id) {
+    return this.pinned.some((p) => p.kind === kind && p.id === id);
+  }
+
+  // Przypina / odpina okienko obiektu. Odpięte okienko niezaznaczonego obiektu się zamyka.
+  togglePin(kind, id) {
+    if (this.isPinned(kind, id)) {
+      this.pinned = this.pinned.filter((p) => p.kind !== kind || p.id !== id);
+      this.collapsed.delete(`${kind}:${id}`);
+      this.windows?.unpin(`${kind}:${id}`);
+    } else {
+      this.pinned.push({ kind, id });
+    }
+    this.onPins?.([...this.pinned]);
+    this.renderList();
+    this.renderDetail();
+    // przypięte okienko zapamiętuje swoje miejsce (następny wybrany obiekt otworzy się w domyślnym)
+    if (this.isPinned(kind, id)) this.windows?.pin(`${kind}:${id}`);
+  }
+
+  // Obiekt z danych dla { kind, id } albo undefined.
+  findItem(sel) {
+    const d = this.dynamic;
+    if (sel.kind === "owner") return this.owners.get(sel.id);
+    const list = { town: d?.towns, industry: d?.industries, station: d?.stations, line: d?.lines }[sel.kind] ?? [];
+    return list.find((x) => x.id === sel.id);
   }
 
   // Wszystko, co zależy od danych albo języka (po zmianie języka wołane z main.js).
@@ -245,7 +301,7 @@ export class Sidebar {
     if (!d) return;
     const match = (name) => !this.filter || String(name ?? "").toLowerCase().includes(this.filter);
     const matchItem = (x) => match(x.name) || (x.owner && match(x.owner));
-    const isSel = (kind, id) => this.selected?.kind === kind && this.selected?.id === id;
+    const isSel = (kind, id) => (this.selected?.kind === kind && this.selected?.id === id) || this.isPinned(kind, id);
     let html = "";
 
     // Firma: zamiast listy osobna sekcja (tabela finansów, wykresy).
@@ -403,26 +459,66 @@ export class Sidebar {
   }
 
   // ---------------------------------------------------------------- szczegóły
+  // Osobne okienka: przypięte (w kolejności przypinania) i zaznaczony obiekt, o ile nie jest przypięty.
+  // Elementy okienek zostają między odświeżeniami danych (pozycja, przewinięcie, przeciąganie),
+  // zmienia się tylko ich treść; okienko obiektu, którego już nie pokazujemy, znika.
   renderDetail() {
-    const d = this.dynamic;
     const sel = this.selected;
-    if (!d || !sel) {
-      this.detail.hidden = true;
-      return;
+    const cards = [...this.pinned];
+    if (sel && !this.isPinned(sel.kind, sel.id)) cards.push(sel);
+    const old = new Map([...this.detail.children].map((el) => [el.dataset.card, el]));
+    const els = [];
+    for (const c of this.dynamic ? cards : []) {
+      const item = this.findItem(c);
+      if (!item) continue;
+      const key = `${c.kind}:${c.id}`;
+      let el = old.get(key);
+      old.delete(key);
+      if (!el) {
+        el = document.createElement("article");
+        el.dataset.card = key;
+      }
+      this.fillCard(el, c, item);
+      els.push(el);
     }
-    const list = { town: d.towns, industry: d.industries, station: d.stations, line: d.lines }[sel.kind] ?? [];
-    const item = sel.kind === "owner" ? this.owners.get(sel.id) : list.find((x) => x.id === sel.id);
-    if (!item) {
-      this.detail.hidden = true;
-      return;
-    }
-    this.detail.hidden = false;
-    const close = `<button type="button" class="detail-close" data-close title="${esc(t("detail.close"))}" aria-label="${esc(t("detail.close"))}">×</button>`;
-    this.detail.innerHTML = close + (sel.kind === "owner" ? ownerDetail(item, this.stationIndustry)
-      : sel.kind === "town" ? townDetail(item, this.earnings.towns.get(item.id))
-      : sel.kind === "line" ? lineDetail(item, this.focusedStop, d)
-      : sel.kind === "station" ? stationDetail(item, this.stationLines.get(item.id) ?? [])
-      : industryDetail(item, this.industryLines.get(item.id) ?? []));
+    for (const el of old.values()) el.remove();
+    // kolejność ma znaczenie tylko na telefonie (okienka jedno pod drugim); przenosimy tylko te nie na miejscu
+    // (przeniesiony element gubi przewinięcie)
+    els.forEach((el, i) => {
+      if (this.detail.children[i] !== el) this.detail.insertBefore(el, this.detail.children[i] ?? null);
+    });
+    this.detail.hidden = !els.length;
+    this.windows?.layout();
+  }
+
+  // Jedno okienko: przyciski (zwiń - tylko przypięte, przypnij, zamknij) i szczegóły obiektu.
+  fillCard(el, c, item) {
+    const key = `${c.kind}:${c.id}`;
+    const pinned = this.isPinned(c.kind, c.id);
+    const active = this.selected?.kind === c.kind && this.selected?.id === c.id;
+    const collapsed = pinned && this.collapsed.has(key);
+    const btn = (attr, cls, label, text) =>
+      `<button type="button" class="detail-tool ${cls}" ${attr} title="${esc(label)}" aria-label="${esc(label)}">${text}</button>`;
+    const tools = `<div class="detail-tools">`
+      + (pinned ? btn("data-collapse", "", t(collapsed ? "detail.expand" : "detail.collapse"), collapsed ? "▸" : "▾") : "")
+      + btn(`data-pin aria-pressed="${pinned}"`, "detail-pin", t(pinned ? "detail.unpin" : "detail.pin"), "📌")
+      + btn("data-close", "detail-close", t(active ? "detail.close" : "detail.unpin"), "×")
+      + `</div>`;
+    const stop = c.kind === "line" && this.focusedStop?.line === c.id ? this.focusedStop.index : null;
+    const body = c.kind === "owner" ? ownerDetail(item, this.stationIndustry)
+      : c.kind === "town" ? townDetail(item, this.earnings.towns.get(item.id))
+      : c.kind === "line" ? lineDetail(item, stop, this.dynamic)
+      : c.kind === "station" ? stationDetail(item, this.stationLines.get(item.id) ?? [])
+      : industryDetail(item, this.industryLines.get(item.id) ?? []);
+    el.className = `detail-card${collapsed ? " collapsed" : ""}${el.classList.contains("dragging") ? " dragging" : ""}`;
+    el.dataset.pinned = String(pinned);
+    el.setAttribute("aria-current", String(active));
+    const html = tools + body;
+    if (this.cardHtml.get(el) === html) return;
+    const scroll = el.scrollTop;
+    el.innerHTML = html;
+    this.cardHtml.set(el, html);
+    el.scrollTop = scroll;
   }
 }
 
@@ -471,8 +567,9 @@ function scrollTabIntoView(btn) {
 const selId = (kind, id) => (kind === "owner" ? id : Number(id));
 
 // data-pick="rodzaj:id" (klucz właściciela może zawierać ":") -> [rodzaj, id] albo [].
-function splitPick(el) {
-  const v = el?.dataset.pick ?? "";
+// attr: inny atrybut w tym formacie (data-card okienka szczegółów).
+function splitPick(el, attr = "pick") {
+  const v = el?.dataset[attr] ?? "";
   const i = v.indexOf(":");
   return i > 0 ? [v.slice(0, i), v.slice(i + 1)] : [];
 }

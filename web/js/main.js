@@ -12,7 +12,8 @@ import { LANGS, applyStatic, lang, locale, onLangChange, setLang, t } from "./i1
 import { MapView } from "./map.js";
 import { PinController, readPinHash } from "./pin.js";
 import { BuildController } from "./build.js";
-import { initFloatingPanel } from "./float.js";
+import { FloatingWindows } from "./float.js";
+import { StreamPlayer } from "./stream.js";
 import { initSidebarResize } from "./resize.js";
 import { Sidebar, townSupply } from "./sidebar.js";
 
@@ -68,7 +69,10 @@ const map = new MapView($("#map"), {
 const pins = new PinController(map, { form: $("#pin-form"), button: $("#pin"), wrap: $(".map-wrap") });
 const build = new BuildController(map, { form: $("#build-form"), button: $("#build"), getDynamic: () => lastDynamic });
 
+const stream = new StreamPlayer({ button: $("#stream-btn"), layer: $("#stream"), wrap: $(".map-wrap") });
+
 const sidebar = new Sidebar($("#sidebar"), $("#detail"), {
+  windows: new FloatingWindows($("#detail"), $(".map-wrap")),
   onPick(kind, id) {
     setSheet(false); // telefon: wybór z listy pokazuje obiekt na mapie
     // Właściciel (majątek widza) nie jest jednym obiektem mapy - mapa tylko gubi poprzednie zaznaczenie.
@@ -83,6 +87,9 @@ const sidebar = new Sidebar($("#sidebar"), $("#detail"), {
   onClose() {
     clearSelection();
   },
+  onPins(pinned) {
+    map.setPinned(pinned);
+  },
   onLinesView(view) {
     map.setLinesView(view);
   },
@@ -92,7 +99,6 @@ const sidebar = new Sidebar($("#sidebar"), $("#detail"), {
 });
 
 initSidebarResize($(".layout"), $(".sidebar-resize"));
-initFloatingPanel($("#detail"), $(".map-wrap"));
 
 // Telefon: przycisk na dole ekranu wysuwa panel z listami na mapę i chowa go z powrotem.
 const sheetToggle = $("#sheet-toggle");
@@ -248,6 +254,7 @@ function renderHeader(dynamic) {
 }
 
 function renderStatus() {
+  stream.setLive(false);
   if (lastMeta && pollError) {
     status.dataset.state = "error";
     status.textContent = t("status.partial");
@@ -263,6 +270,7 @@ function renderStatus() {
   const age = Date.now() - Date.parse(lastMeta.updatedAtUtc);
   const live = age < config.staleAfterMs;
   status.dataset.state = live ? "live" : "stale";
+  stream.setLive(live);
   status.textContent = t(live ? "status.live" : "status.stale");
   status.title = t("status.updated", { time: new Date(lastMeta.updatedAtUtc).toLocaleTimeString(locale()) });
 }
@@ -281,6 +289,7 @@ langSwitch.addEventListener("click", (e) => {
 onLangChange(() => {
   renderLangSwitch();
   renderStatus();
+  stream.refresh();
   setSheet(sheetToggle.getAttribute("aria-expanded") === "true");
   if (lastDynamic) renderHeader(lastDynamic);
   sidebar.render();
