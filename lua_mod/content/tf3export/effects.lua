@@ -1,5 +1,6 @@
--- Efekty czasowe z nagród za punkty kanału: boost miasta, produktywność zakładów (boost, strajk,
--- nalot skarbówki), prędkość pojazdów linii (paliwo premium / chrzczone), zatrzymanie linii.
+-- Efekty czasowe z nagród za punkty kanału: boost miasta, produktywność zakładu (boost), blokada
+-- wywozu z zakładów (strajk, nalot skarbówki), prędkość pojazdów linii (paliwo premium / chrzczone),
+-- zatrzymanie linii.
 -- Każdy efekt trwa X miesięcy gry i sam się cofa (czas gry stoi na pauzie, więc efekt też).
 -- Miesiące, nie dni: dzień gry trwa tylko 2-3 s, więc efekt na kilka dni mijał, zanim było go widać.
 --
@@ -13,7 +14,8 @@
 -- z obecnym, tylko czeka i zaczyna działać, gdy obecne się skończy (queue niżej).
 --
 -- Produktywność zakładu i prędkość pojazdu ustawia jeden sterownik na obiekt (Controller niżej):
--- różne efekty na tym samym zakładzie (boost ×2 i strajk ×0,01) mnożą się, zamiast walczyć o wartość.
+-- różne efekty na tym samym obiekcie mnożą się, zamiast walczyć o wartość. Strajk i nalot na tym samym
+-- zakładzie też się mnożą (część nowej produkcji, która zostaje; freezeSync niżej).
 
 local util = ug_require "util.lua"
 local ct = util.ct
@@ -201,10 +203,104 @@ end
 local industries = Controller("productivity", productivity, setProductivity)
 local vehicles = Controller("speed", speedScale, setSpeedScale)
 
+---------------------------------------------------------------- blokada wywozu (strajk, nalot)
+-- Strajk nie rusza produktywności: gra liczy długość cyklu reguły raz, przy jego starcie
+-- (ruleDatas[i].applyHistory[].interval), więc cykl zaczęty przy ×0,01 trwał lata po końcu efektu.
+-- Zakład produkuje więc normalnie, a nowe sztuki zdejmujemy z magazynów wyjściowych (komenda
+-- debugowa ustawiająca stan magazynu; działa poza trybem debug). Pojazdy mogą zabrać to, co leżało.
+-- Nowe sztuki poznajemy po czasie przybycia (getStockEntities: {czas, encja}), więc odbiór
+-- i produkcja w tej samej sekundzie się nie mylą. factor = jaka część nowych sztuk zostaje.
+local freezes = {} -- zakład -> { sl = encja stockList, stocks = { [stockId] = { newest, target, carry } } }
+local freezeFailed = false
+
+local function stockListOf(industry)
+	local ind = util.comp(industry, ct.INDUSTRY)
+	return (ind and ind.stockList) or industry
+end
+
+local function outputStockIds(sl)
+	local out = {}
+	local list = util.comp(sl, ct.STOCK_LIST)
+	local enums = api.type and api.type["enum"]
+	local outType = enums and util.field(util.field(enums, "StockListType"), "OutputStock")
+	if not list or outType == nil then return out end
+	for i, s in ipairs(util.list(list.stocks)) do
+		if s.type == outType then out[#out + 1] = i - 1 end
+	end
+	return out
+end
+
+-- Czasy przybycia sztuk w magazynie; nil przy błędzie.
+local function arrivals(sl, stockId)
+	local ok, list = pcall(api.engine.system.simEntityAtStockSystem.getStockEntities, sl, stockId)
+	if not ok then return nil end
+	local out = {}
+	for i, x in ipairs(util.list(list)) do out[i] = tonumber(util.field(x, 1)) or 0 end
+	return out
+end
+
+local function newFreeze(industry)
+	local sl = stockListOf(industry)
+	local st = { sl = sl, stocks = {} }
+	for _, id in ipairs(outputStockIds(sl)) do
+		local newest = 0
+		for _, t in ipairs(arrivals(sl, id) or {}) do newest = math.max(newest, t) end
+		st.stocks[id] = { newest = newest, carry = 0 }
+	end
+	return st
+end
+
+local function freezeStep(st, keep)
+	for id, s in pairs(st.stocks) do
+		local times = arrivals(st.sl, id)
+		if times then
+			local count, fresh, newest = #times, 0, s.newest
+			for _, t in ipairs(times) do
+				if t > s.newest then fresh = fresh + 1 end
+				newest = math.max(newest, t)
+			end
+			s.newest = newest
+			local base = count - fresh
+			-- poprzednia komenda jeszcze nie weszła: nie wolno jej nadpisać wyższą wartością
+			if s.target and base > s.target then base = s.target end
+			local kept = fresh * keep + s.carry
+			local whole = math.floor(kept)
+			s.carry = kept - whole
+			local target = base + whole
+			if target < count then
+				local ok, err = pcall(function() send(api.cmd.debug.makeStockSetCargoAmountCmd(st.sl, id, target)) end)
+				if not ok and not freezeFailed then
+					freezeFailed = true
+					util.log("effects: setting stock amount failed: " .. tostring(err))
+				end
+			end
+			s.target = target
+		end
+	end
+end
+
+-- wanted: zakład -> część nowych sztuk, która zostaje (iloczyn factorów efektów).
+local function freezeSync(wanted)
+	for id, keep in pairs(wanted) do
+		if util.comp(id, ct.INDUSTRY) then
+			local st = freezes[id]
+			if st == nil then
+				freezes[id] = newFreeze(id)
+			else
+				freezeStep(st, keep)
+			end
+		end
+	end
+	for id in pairs(freezes) do
+		if wanted[id] == nil then freezes[id] = nil end -- nic do cofania: produkcja szła normalnie
+	end
+end
+
 ---------------------------------------------------------------- rodzaje efektów
 -- Dwa style:
 --  * group = "industry" | "speed": efekt tylko podaje mnożnik (range = dozwolony zakres), resztę robi
---    sterownik; multi = efekt na wielu zakładach naraz (e.entities), klucz po c.target;
+--    sterownik; group = "freeze": blokada wywozu (freezeSync), factor = część nowej produkcji, która
+--    zostaje; multi = efekt na wielu zakładach naraz (e.entities), klucz po c.target;
 --  * apply(e) -> verify albo nil, błąd; revert(e) cofa (lineStop, lineHold, townBoost).
 -- queue = nazwa kolejki: efekty z tą samą kolejką na tym samym celu działają po kolei, nie naraz.
 local TYPES = {}
@@ -240,10 +336,11 @@ TYPES.townBoost = {
 	end,
 }
 
--- Zakład (na stronie: „Produktywność”): boost, strajk, nalot skarbówki (wszystkie zakłady jednego widza).
+-- Zakład: boost (produktywność, na stronie „Produktywność”); strajk i nalot skarbówki (wszystkie
+-- zakłady jednego widza) to blokada wywozu: factor = jaka część nowej produkcji trafia do magazynu.
 TYPES.industryBoost = { group = "industry", range = { 1.0, 5.0 } }
-TYPES.industryStrike = { group = "industry", range = { 0.01, 1.0 } }
-TYPES.industryTaxRaid = { group = "industry", range = { 0.01, 1.0 }, multi = true }
+TYPES.industryStrike = { group = "freeze", range = { 0.0, 1.0 } }
+TYPES.industryTaxRaid = { group = "freeze", range = { 0.0, 1.0 }, multi = true }
 
 -- Linia: prędkość maksymalna wszystkich jej pojazdów (także dokupionych w trakcie efektu).
 TYPES.lineFuelPremium = { group = "speed", range = { 1.0, 3.0 }, queue = "fuel" }
@@ -337,13 +434,15 @@ end
 ---------------------------------------------------------------- sterowniki
 -- Mnożniki ze wszystkich aktywnych efektów -> sterowniki. True = zmiana do zapisania w stanie.
 local function syncControllers()
-	local prod, lineSpeed, speed = {}, {}, {}
+	local prod, freeze, lineSpeed, speed = {}, {}, {}, {}
 	for _, e in pairs(active) do
 		local t = TYPES[e.type]
 		if waiting(e, lastNow) then
 			-- jeszcze w kolejce: bez wpływu na grę
 		elseif t.group == "industry" then
 			for _, id in ipairs(targets(e)) do prod[id] = (prod[id] or 1.0) * e.factor end
+		elseif t.group == "freeze" then
+			for _, id in ipairs(targets(e)) do freeze[id] = (freeze[id] or 1.0) * e.factor end
 		elseif t.group == "speed" then
 			lineSpeed[e.entity] = (lineSpeed[e.entity] or 1.0) * e.factor
 		end
@@ -351,6 +450,7 @@ local function syncControllers()
 	for line, f in pairs(lineSpeed) do
 		for _, v in ipairs(util.lineVehicles(line)) do speed[v] = f end
 	end
+	freezeSync(freeze) -- bez stanu w save'ie: po wczytaniu blokada startuje od obecnego stanu magazynów
 	local a = industries.sync(prod)
 	local b = vehicles.sync(speed)
 	return a or b
@@ -456,11 +556,19 @@ end
 
 -- Grupa (zakłady / prędkość): sprawdzenie celu i verify po ustawieniu przez sterownik.
 local function startGroup(t, e)
-	if t.group == "industry" then
+	if t.group == "industry" or t.group == "freeze" then
 		for _, id in ipairs(targets(e)) do
 			if not util.comp(id, ct.INDUSTRY) then return nil, "not an industry" end
 		end
 		if #targets(e) == 0 then return nil, "no industries" end
+		if t.group == "freeze" then
+			return function()
+				for _, id in ipairs(targets(e)) do
+					if freezes[id] == nil then return false end
+				end
+				return true
+			end
+		end
 		return function()
 			for _, id in ipairs(targets(e)) do
 				if not industries.reached(id) then return false end
@@ -479,6 +587,12 @@ local function startGroup(t, e)
 end
 
 local function describeGroup(t, e)
+	if t.group == "freeze" then
+		local st, n = freezes[targets(e)[1]], 0
+		for _ in pairs(st and st.stocks or {}) do n = n + 1 end
+		return string.format("keeps x%s of new output on %d industr(y/ies), %d output stock(s) on the first",
+			fmt(e.factor), #targets(e), n)
+	end
 	local ids = t.group == "industry" and targets(e) or util.lineVehicles(e.entity)
 	local ctl = t.group == "industry" and industries or vehicles
 	return string.format("x%s on %d object(s), e.g. %s", fmt(e.factor), #ids, ids[1] and ctl.describe(ids[1]) or "-")

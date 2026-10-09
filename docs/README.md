@@ -10,6 +10,7 @@
 | [architecture.md](architecture.md) | Architektura całości: mod → middle app → Azure → strona, plus koszty i opcje rozszerzenia Twitcha. |
 | [api-ideas.md](api-ideas.md) | Przegląd API gry pod kątem nowych nagród i danych: zdarzenia gry (fajerwerki, marketing), haki symulacji (ceny biletów), kamera, dźwięk, statystyki. Nic nie przetestowane. |
 | [owners-tab.md](owners-tab.md) | Zakładka „Właściciele”: cały majątek widza (miasta, zakłady, stacje, linie) w jednym miejscu, główne miasto, link `#owner=`; dalej mapa i komenda `!majatek`. |
+| [industry-api-dump.md](industry-api-dump.md) | Zrzut API przemysłu (komponenty, odczyt, komendy) i jak gra liczy cykl produkcji; czemu strajk przeciąga się po końcu efektu; snippet do konsoli. |
 | [twitch-channel-points.md](twitch-channel-points.md) | Analiza integracji punktów kanału Twitcha: API (Helix, EventSub), przepływ Tf3Bridge → mod, pomysły na nagrody i komendy gry, ryzyka. |
 | [own-points-economy.md](own-points-economy.md) | Pomysł na później: własna waluta zamiast punktów kanału, pula na miesiąc gry dzielona według majątku widzów, sabotaże i sojusze, ryzyka. |
 
