@@ -563,21 +563,24 @@ export class MapView {
     ctx.arc(x, hy, 3.5, 0, Math.PI * 2);
     ctx.fill();
 
-    const note = truncate((this.pin.note ?? "").replace(/\s+/g, " ").trim(), 48); // pełny opis w tooltipie
+    const note = (this.pin.note ?? "").replace(/\s+/g, " ").trim();
     if (!note) return;
     ctx.font = `600 12px ${css("--font")}`;
     ctx.textBaseline = "middle";
-    const w = ctx.measureText(note).width + 14;
+    const lines = wrapText(ctx, note, 220);
+    const lh = 16;
+    const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 14;
+    const h = lines.length * lh + 6;
     const bx = x + 14, by = hy - 11;
     ctx.fillStyle = css("--panel");
     ctx.strokeStyle = css("--pin");
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.roundRect(bx, by, w, 22, 6);
+    ctx.roundRect(bx, by, w, h, 6);
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = css("--town-label");
-    ctx.fillText(note, bx + 7, hy);
+    lines.forEach((l, i) => ctx.fillText(l, bx + 7, by + 3 + lh / 2 + i * lh));
   }
 
   // Trasa linii liczona leniwie i trzymana do zmiany przystanków / sieci.
@@ -1201,5 +1204,23 @@ function loopDelta(d, L) {
 }
 
 const truncate = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+
+/** Tekst połamany na linie o szerokości do `maxW` px (za długie słowo łamane po znakach). */
+function wrapText(ctx, text, maxW) {
+  const lines = [];
+  let line = "";
+  for (const word of text.split(" ")) {
+    const next = line ? `${line} ${word}` : word;
+    if (ctx.measureText(next).width <= maxW) { line = next; continue; }
+    if (line) lines.push(line);
+    line = "";
+    for (const ch of word) {
+      if (line && ctx.measureText(line + ch).width > maxW) { lines.push(line); line = ""; }
+      line += ch;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
 
 const overlaps = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;

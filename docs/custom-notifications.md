@@ -160,7 +160,7 @@ a bez niego kliknięcie w powiadomienie nic nie robi. Wynik komendy ma teraz `en
 - `create.lua`: `verify` po znalezieniu encji zapisuje ją w `info.entity`
   (tak jak efekty oddają `until`); `commands.lua: finish` przepisuje `info.entity` do wyniku.
 - C#: `ModCommandResult.Entity` (`long?`). Link w odpowiedzi na czacie dla `CreateTown` /
-  `CreateIndustry` to już `#town=<id>` / `#industry=<id>`; pinezka `#pin=x,y&note=...` zostaje
+  `CreateIndustry` to już `#town=<id>` / `#industry=<id>`; pinezka `#pin=x_y&note=...` zostaje
   tylko jako zapas, gdy mod nie poda id (starsza wersja moda w grze).
 - Strona (`web/js/main.js`): link do obiektu, którego nie ma jeszcze w eksporcie, czeka do
   6 kolejnych porcji danych, zanim zostanie porzucony (świeżo zbudowane miasto trafia do

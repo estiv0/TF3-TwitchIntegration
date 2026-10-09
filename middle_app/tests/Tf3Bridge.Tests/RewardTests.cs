@@ -230,7 +230,7 @@ public sealed class RewardTests : IDisposable
 
         ModReports("ok"); // starsza wersja moda: bez entity
 
-        Assert.EndsWith("https://gin.estfosoft.com/#pin=3000,-2000&note=Nowa%20Wie%C5%9B", Assert.Single(_outcomes).ChatText);
+        Assert.EndsWith("https://gin.estfosoft.com/#pin=3000_-2000&note=Nowa%20Wie%C5%9B", Assert.Single(_outcomes).ChatText);
     }
 
     [Fact]

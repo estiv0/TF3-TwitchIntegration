@@ -155,6 +155,8 @@ button { font: inherit; color: inherit; }
   box-shadow: 0 12px 32px rgba(0, 0, 0, .45);
 }
 .pin-form label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.pin-note-head { display: flex; justify-content: space-between; align-items: baseline; }
+.pin-count { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .pin-form textarea, .pin-form input {
   width: 100%; padding: 7px 9px; border-radius: 8px; resize: vertical;
   background: var(--panel-2); border: 1px solid var(--border); color: var(--text); font: inherit; font-size: 13px;

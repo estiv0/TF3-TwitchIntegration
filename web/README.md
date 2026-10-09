@@ -36,7 +36,7 @@ web/
   js/map.js         MapView: canvas, sieć jako krzywe Béziera (z tangensów TF), pan/zoom/hover/wybór
   js/sidebar.js     listy miast, przemysłu, stacji, linii i właścicieli, szczegóły zaznaczenia
   js/owners.js      majątek widzów: obiekty z "Nazwa | Widz" pogrupowane po widzu, główne miasto = największe
-  js/pin.js         pinezka z linkiem (#pin=x,y,skala&note=opis)
+  js/pin.js         pinezka z linkiem (#pin=x_y_skala&note=opis)
   js/build.js       budowa za punkty kanału: kod do nagrody na Twitchu
   js/ground.js      teren pod budowę: woda i zbocza dla miast, regiony (góry, nizina...) dla zakładów
   js/company.js     zakładka Firma (finanse wg lat, wykresy historii) i sparkline salda w górnym pasku

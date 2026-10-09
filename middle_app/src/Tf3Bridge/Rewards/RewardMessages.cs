@@ -107,14 +107,14 @@ public static class RewardMessages
         string.IsNullOrWhiteSpace(siteUrl) ? null : $"{siteUrl.Trim().TrimEnd('/')}/#owner={Uri.EscapeDataString(ownerKey)}";
 
     /// <summary>
-    /// "https://site/#pin=x,y&amp;note=Name": a pin where something new is being built. Fallback for the chat answer
+    /// "https://site/#pin=x_y&amp;note=Name": a pin where something new is being built. Fallback for the chat answer
     /// when the mod did not report the id of the new object (older mod); otherwise <see cref="Link"/>.
     /// </summary>
     public static string? PlaceLink(string siteUrl, double x, double y, string name)
     {
         if (string.IsNullOrWhiteSpace(siteUrl)) return null;
         return string.Create(CultureInfo.InvariantCulture,
-            $"{siteUrl.Trim().TrimEnd('/')}/#pin={Math.Round(x)},{Math.Round(y)}&note={Uri.EscapeDataString(name)}");
+            $"{siteUrl.Trim().TrimEnd('/')}/#pin={Math.Round(x)}_{Math.Round(y)}&note={Uri.EscapeDataString(name)}");
     }
 
     /// <summary>"gin.estfosoft.com" from "https://gin.estfosoft.com/" (for {site} in reward prompts).</summary>

@@ -96,8 +96,11 @@
         </div>
       </form>
       <form id="pin-form" class="pin-form" hidden>
-        <label for="pin-note" data-i18n="pin.note">Opis pinezki</label>
-        <textarea id="pin-note" maxlength="200" rows="3" placeholder="np. Tu powstanie nowy port" data-i18n-placeholder="pin.placeholder"></textarea>
+        <div class="pin-note-head">
+          <label for="pin-note" data-i18n="pin.note">Opis pinezki</label>
+          <span class="pin-count" data-pin-count></span>
+        </div>
+        <textarea id="pin-note" maxlength="120" rows="3" placeholder="np. Tu powstanie nowy port" data-i18n-placeholder="pin.placeholder"></textarea>
         <div class="pin-actions">
           <button type="submit" class="primary" data-i18n="pin.create">Utwórz link</button>
           <button type="button" data-pin-cancel data-i18n="pin.cancel">Anuluj</button>

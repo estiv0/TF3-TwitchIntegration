@@ -1,17 +1,19 @@
 // Pinezki z linkiem: miejsce na mapie + opis zapisane w adresie strony, bez serwera.
-// Format: #pin=<x>,<y>,<skala>&note=<opis> - x, y we współrzędnych gry (m, y na północ),
-// skala = przybliżenie widoku w chwili tworzenia linku.
+// Format: #pin=<x>_<y>_<skala>&note=<opis> - x, y we współrzędnych gry (m, y na północ),
+// skala = przybliżenie widoku w chwili tworzenia linku. Podkreślniki zamiast przecinków, bo czat
+// Twitcha ucina link na przecinku; stare linki z przecinkami nadal działają.
 
 import { hashWith } from "./hash.js";
 import { t } from "./i18n.js";
 
-const NOTE_MAX = 200;
+// Krótko, bo link z polskimi znakami (%C5%9B...) szybko rośnie, a wiadomość na czacie ma limit.
+export const NOTE_MAX = 120;
 
 /** Pinezka z hasha adresu albo null. */
 export function readPinHash(hash = location.hash) {
   const params = new URLSearchParams(hash.replace(/^#/, ""));
   if (!params.has("pin")) return null;
-  const [x, y, scale] = params.get("pin").split(",").map(Number);
+  const [x, y, scale] = params.get("pin").split(/[_,]/).map(Number);
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
   return {
     x, y,
@@ -22,8 +24,8 @@ export function readPinHash(hash = location.hash) {
 
 /** Części hasha pinezki ("pin=...", "note=..."). */
 function pinParts({ x, y, note }, scale) {
-  // Ręcznie zamiast URLSearchParams.toString(), żeby link był czytelny (przecinki, %20 zamiast "+").
-  const pin = [`pin=${Math.round(x)},${Math.round(y)},${Number(scale.toPrecision(3))}`];
+  // Ręcznie zamiast URLSearchParams.toString(), żeby link był czytelny (%20 zamiast "+").
+  const pin = [`pin=${Math.round(x)}_${Math.round(y)}_${Number(scale.toPrecision(3))}`];
   if (note) pin.push(`note=${encodeURIComponent(note.slice(0, NOTE_MAX))}`);
   return pin;
 }
@@ -46,6 +48,8 @@ export class PinController {
     this.button = button;
     this.wrap = wrap;
     this.note = form.querySelector("textarea");
+    this.note.maxLength = NOTE_MAX;
+    this.count = form.querySelector("[data-pin-count]");
     this.linkRow = form.querySelector("[data-pin-link]");
     this.urlInput = form.querySelector("#pin-url");
     this.copyBtn = form.querySelector("[data-pin-copy]");
@@ -58,6 +62,7 @@ export class PinController {
     this.note.addEventListener("input", () => {
       if (!this.draft) return;
       this.draft.note = this.note.value;
+      this.showCount();
       this.showLink(false); // opis się zmienił - stary link już nie pasuje
       map.setPin(this.draft);
     });
@@ -91,6 +96,7 @@ export class PinController {
     this.draft = { x, y, note: "" };
     this.map.setPin(this.draft);
     this.note.value = "";
+    this.showCount();
     this.showLink(false);
     this.form.hidden = false;
     this.position(sx, sy);
@@ -115,6 +121,10 @@ export class PinController {
     this.showLink(true);
     this.position(...this.formAnchor());
     this.copyAndClose();
+  }
+
+  showCount() {
+    this.count.textContent = `${this.note.value.length}/${NOTE_MAX}`;
   }
 
   // Link gotowy: pole z linkiem i "Zamknij" zamiast "Anuluj" (pinezka jest już zapisana w linku).
