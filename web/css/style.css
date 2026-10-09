@@ -87,6 +87,17 @@ button { font: inherit; color: inherit; }
 .status[data-state="stale"]::before { background: var(--stale); }
 .status[data-state="error"]::before { background: var(--error); }
 
+/* Link do łańcuchów produkcji: pigułka jak status, ikona w kolorze akcentu. */
+.chains-btn {
+  display: inline-flex; align-items: center; gap: 7px; flex: none;
+  padding: 6px 12px; border-radius: 999px;
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+  font-size: 12px; font-weight: 600; white-space: nowrap; text-decoration: none;
+  transition: border-color .15s, color .15s;
+}
+.chains-btn:hover { border-color: var(--accent); color: var(--accent); }
+.chains-ico { width: 14px; height: 14px; flex: none; fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+
 /* Przycisk streamu (js/stream.js): kolor Twitcha; czerwona pulsująca kropka, gdy gra wysyła świeże dane. */
 .stream-btn {
   display: inline-flex; align-items: center; gap: 8px; flex: none;
@@ -456,6 +467,8 @@ button { font: inherit; color: inherit; }
   .lang-switch button { padding: 3px 8px; font-size: 11px; }
   /* telefon: przycisk streamu to sam link do Twitcha (bez playera), kompaktowy */
   .stream-btn { padding: 5px 10px; font-size: 11px; gap: 6px; }
+  /* sama ikona; opis w podpowiedzi (title) */
+  .chains-btn { font-size: 0; gap: 0; padding: 6px; }
   .stream-layer { display: none !important; }
   .kpis {
     order: 3; width: 100%; margin: 0; gap: 14px;
