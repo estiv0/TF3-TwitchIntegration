@@ -37,6 +37,7 @@ const map = new MapView($("#map"), {
   onLayers() {
     $("#stations").setAttribute("aria-pressed", String(map.showStations));
     $("#industries").setAttribute("aria-pressed", String(map.showIndustries));
+    $("#warehouses").setAttribute("aria-pressed", String(map.showWarehouses));
   },
   onHover(item, x, y) {
     if (!item) {
@@ -127,6 +128,9 @@ $("#stations").addEventListener("click", (e) => {
 $("#industries").addEventListener("click", (e) => {
   e.currentTarget.setAttribute("aria-pressed", String(map.toggleIndustries()));
 });
+$("#warehouses").addEventListener("click", (e) => {
+  e.currentTarget.setAttribute("aria-pressed", String(map.toggleWarehouses()));
+});
 $("#vehicles").addEventListener("click", (e) => {
   e.currentTarget.setAttribute("aria-pressed", String(map.toggleVehicles()));
 });
@@ -153,7 +157,7 @@ function applyPendingSelection() {
   const sel = pendingSelection;
   if (!sel || !lastDynamic) return;
   const d = lastDynamic;
-  const list = { town: d.towns, industry: d.industries, station: d.stations, line: d.lines }[sel.kind];
+  const list = { town: d.towns, industry: d.industries, warehouse: d.warehouses, station: d.stations, line: d.lines }[sel.kind];
   const exists = sel.kind === "owner" ? sidebar.owners.has(sel.id) : list?.some((x) => x.id === sel.id);
   if (!exists && sel.kind !== "owner" && ++pendingMisses < PENDING_SELECTION_TRIES) return; // może jeszcze dojść
   pendingSelection = null;
@@ -207,6 +211,16 @@ function tooltipHtml(item) {
       + (coverage != null ? `<span>${esc(t("town.supply"))}: ${esc(fmtPercent(coverage))}</span>` : "")
       + (profit != null ? `<span>${esc(t("town.profitTip", { v: fmtMoney(Math.round(profit)) }))}</span>` : "")
       + (needs.length ? `<span class="tip-cargo">${esc(t("needs", { list: "" }))}${needs.map(cargoLabel).join(" ")}</span>` : "");
+  }
+  if (item.kind === "warehouse") {
+    const cargo = Object.entries(d.cargo ?? {}).sort((a, b) => b[1] - a[1]);
+    const n = sidebar.warehouseLines.get(d.id)?.length ?? 0;
+    return `<strong>📦 ${esc(d.name ?? t("warehouse"))}</strong>`
+      + (d.owner ? `<span>${esc(t("owner"))}: ${esc(d.owner)}</span>` : "")
+      + `<span>${esc(t("warehouse.stored", { n: fmtInt(d.amount ?? 0), cap: fmtInt(d.capacity) }))}`
+      + `${d.capacity ? ` (${esc(fmtPercent((d.amount ?? 0) / d.capacity))})` : ""}</span>`
+      + (cargo.length ? `<span class="tip-cargo">${cargo.map(([c, v]) => `<span title="${esc(cargoName(c))}">${cargoIcon(c)}${fmtInt(v)}</span>`).join(" ")}</span>` : "")
+      + (n ? lines(n) : "");
   }
   if (item.kind === "station") {
     const use = stationUse(d);

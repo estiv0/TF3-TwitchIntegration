@@ -135,6 +135,12 @@ export function industryOfStation(dynamic) {
   return out;
 }
 
+/** id stacji -> id magazynu (dynamic.warehouses), do którego stacja należy (stations[].warehouse z moda). */
+export function warehouseOfStation(dynamic) {
+  const ids = new Set((dynamic.warehouses ?? []).map((w) => w.id));
+  return new Map((dynamic.stations ?? []).filter((s) => ids.has(s.warehouse)).map((s) => [s.id, s.warehouse]));
+}
+
 const placeKey = (file, pos) =>
   pos ? `${String(file ?? "").replace(/^::\//, "")}@${Math.round(pos[0])},${Math.round(pos[1])}` : "";
 
@@ -168,7 +174,7 @@ function splitOwners(items) {
 }
 
 /**
- * Miasta, zakłady, stacje i linie (z przystankami) z dynamic.json.
+ * Miasta, zakłady, magazyny, stacje i linie (z przystankami) z dynamic.json.
  * Gra nazywa stacje od miasta, także kupionego: "Dworzec Szczecin | estiv0 Zachód" to nie stacja widza
  * "estiv0 Zachód", tylko "Dworzec Szczecin Zachód". Dlatego w nazwach stacji i przystanków pełne nazwy
  * miast i zakładów z właścicielem zamieniamy najpierw na same nazwy.
@@ -189,9 +195,10 @@ export function splitAllOwners(dynamic) {
     }
   };
   unOwn(dynamic.stations);
+  unOwn(dynamic.warehouses);
   for (const l of dynamic.lines ?? []) unOwn(l.stops);
 
-  for (const key of ["towns", "industries", "stations", "lines"]) splitOwners(dynamic[key]);
+  for (const key of ["towns", "industries", "warehouses", "stations", "lines"]) splitOwners(dynamic[key]);
   for (const l of dynamic.lines ?? []) splitOwners(l.stops);
 }
 

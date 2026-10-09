@@ -1,7 +1,7 @@
-// Mapa: sieć (Path2D w układzie świata), miasta i zakłady (w układzie ekranu), pan/zoom, hover, wybór.
+// Mapa: sieć (Path2D w układzie świata), miasta, zakłady i magazyny (w układzie ekranu), pan/zoom, hover, wybór.
 // Układ "ścieżki" = (x, -y) ze świata gry, bo w grze oś y rośnie na północ, a na ekranie w dół.
 
-import { cargoImg, industryOfStation, rgb, stationImg, townSize } from "./format.js";
+import { cargoImg, fmtInt, industryOfStation, rgb, stationImg, townSize, warehouseOfStation } from "./format.js";
 import { RouteGraph, pointAtDistance, projectOnLeg, routeInRect } from "./route.js";
 
 const RAW_INDUSTRIES = new Set([
@@ -26,7 +26,7 @@ export function industryOutputs(ind) {
 }
 
 const COLOR_VARS = ["--map-bg", "--map-street", "--map-street-tunnel", "--map-track", "--map-track-tunnel",
-  "--industry-raw", "--industry-processing", "--town", "--town-label", "--accent", "--font", "--panel",
+  "--industry-raw", "--industry-processing", "--warehouse", "--town", "--town-label", "--accent", "--font", "--panel",
   "--station-rail", "--station-road", "--station-tram", "--station-water", "--station-air", "--pin"];
 
 // Ikony stacji: od tej skali kółko z ikoną, poniżej sama kropka w kolorze rodzaju.
@@ -71,6 +71,8 @@ export class MapView {
     this.towns = [];
     this.industries = [];
     this.showIndustries = true;
+    this.warehouses = [];       // magazyny gracza (dynamic.warehouses)
+    this.showWarehouses = true;
     this.stations = [];         // dworce, porty, lotniska (bez przystanków)
     this.showStations = true;
     this.vehicleData = [];      // dynamic.vehicles
@@ -158,9 +160,14 @@ export class MapView {
       outputs: [...industryOutputs(i).keys()].map(cargoImg).filter(Boolean),
     }));
 
-    // Stacja wbudowana w zakład: na mapie jest już ikonka zakładu, więc stacji nie rysujemy.
+    this.warehouses = (dynamic.warehouses ?? []).filter((w) => w.pos).map((w) => ({
+      kind: "warehouse", id: w.id, data: w, px: w.pos[0], py: -w.pos[1],
+    }));
+
+    // Stacja wbudowana w zakład albo magazyn: na mapie jest już jego ikonka, więc stacji nie rysujemy.
     const stationIndustry = industryOfStation(dynamic);
-    this.stations = (dynamic.stations ?? []).filter((s) => s.pos && !stationIndustry.has(s.id)).map((s) => ({
+    const stationWarehouse = warehouseOfStation(dynamic);
+    this.stations = (dynamic.stations ?? []).filter((s) => s.pos && !stationIndustry.has(s.id) && !stationWarehouse.has(s.id)).map((s) => ({
       kind: "station", id: s.id, data: s, px: s.pos[0], py: -s.pos[1], type: s.kind,
     }));
 
@@ -204,6 +211,12 @@ export class MapView {
     this.showIndustries = !this.showIndustries;
     this.requestDraw();
     return this.showIndustries;
+  }
+
+  toggleWarehouses() {
+    this.showWarehouses = !this.showWarehouses;
+    this.requestDraw();
+    return this.showWarehouses;
   }
 
   toggleVehicles() {
@@ -269,7 +282,7 @@ export class MapView {
       this.requestDraw();
       return;
     }
-    const items = { town: this.towns, industry: this.industries, station: this.stations }[kind] ?? [];
+    const items = { town: this.towns, industry: this.industries, warehouse: this.warehouses, station: this.stations }[kind] ?? [];
     const item = items.find((x) => x.id === id);
     if (!item) return;
     if (kind === "station" && !this.showStations) {
@@ -278,6 +291,10 @@ export class MapView {
     }
     if (kind === "industry" && !this.showIndustries) {
       this.showIndustries = true;
+      this.onLayers?.();
+    }
+    if (kind === "warehouse" && !this.showWarehouses) {
+      this.showWarehouses = true;
       this.onLayers?.();
     }
     this.selected = { kind, id };
@@ -389,6 +406,7 @@ export class MapView {
     if (this.linesView) this.drawVisibleLines(hotLine, selLines);
     else for (const id of selLines) this.drawLine(id);
     if (this.showIndustries) this.drawIndustries(spot);
+    if (this.showWarehouses) this.drawWarehouses(spot);
     if (this.showStations) this.drawStations(spot);
     // pojazdy innych linii przygaszone raz (gdy reszta mapy już jest przygaszona - bez dodatkowego DIM)
     if (this.showVehicles) this.drawVehicles((v) => !focusLines.has(v.line), !focusLines.size || ctx.globalAlpha < 1 ? 1 : DIM);
@@ -397,6 +415,7 @@ export class MapView {
     if (spotLine !== null) this.drawLine(spotLine);
     if (this.showVehicles && focusLines.size) this.drawVehicles((v) => focusLines.has(v.line));
     if (spot?.kind === "industry") this.drawIndustry(spot);
+    else if (spot?.kind === "warehouse") this.drawWarehouse(spot);
     else if (spot?.kind === "station") this.drawStation(spot);
     else if (spot?.kind === "town") this.drawTown(spot, null);
     this.drawMarker();
@@ -425,7 +444,7 @@ export class MapView {
 
   // Miasto / zakład / stacja ({ kind, id }), o ile jest na ekranie; inaczej null.
   spotItem(h) {
-    const items = { town: this.towns, industry: this.industries, station: this.stations }[h?.kind];
+    const items = { town: this.towns, industry: this.industries, warehouse: this.warehouses, station: this.stations }[h?.kind];
     const item = items?.find((x) => x.id === h.id);
     if (!item) return null;
     const [x, y] = this.toScreen(item.px, item.py);
@@ -665,6 +684,60 @@ export class MapView {
     if (this.isMarked(ind)) this.ring(x, y, size);
     // jak ikony stacji: tylko po przybliżeniu
     if (this.view.scale >= STATION_ICON_SCALE) this.drawOutputs(ind.outputs, x, y - size / 2 - 3);
+  }
+
+  drawWarehouses(skip) {
+    for (const w of this.warehouses) if (w !== skip) this.drawWarehouse(w);
+  }
+
+  // Magazyn: domek (kwadrat z dachem) w kolorze magazynu, pod nim pasek zapełnienia; po przybliżeniu
+  // ikonki składowanych ładunków nad nim i stan "ilość / pojemność" pod paskiem.
+  drawWarehouse(wh) {
+    const css = (name) => this.theme[name];
+    const { ctx } = this;
+    const big = this.view.scale > 0.08;
+    const size = big ? 18 : 10;
+    const [x, y] = this.toScreen(wh.px, wh.py);
+    if (x < -40 || y < -40 || x > this.w + 40 || y > this.h + 40) return;
+    const half = size / 2, roof = size * 0.45;
+    ctx.fillStyle = css("--warehouse");
+    ctx.strokeStyle = css("--map-bg");
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x - half, y + half);
+    ctx.lineTo(x - half, y - half + roof * 0.5);
+    ctx.lineTo(x, y - half - roof * 0.5);
+    ctx.lineTo(x + half, y - half + roof * 0.5);
+    ctx.lineTo(x + half, y + half);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    if (this.isMarked(wh)) this.ring(x, y, size);
+
+    const d = wh.data;
+    const fill = d.capacity > 0 ? Math.min(1, (d.amount ?? 0) / d.capacity) : 0;
+    const bw = big ? 28 : 14, bh = big ? 4 : 3, by = y + half + 3;
+    ctx.fillStyle = css("--map-bg");
+    ctx.fillRect(x - bw / 2 - 1, by - 1, bw + 2, bh + 2);
+    ctx.fillStyle = css("--map-street");
+    ctx.fillRect(x - bw / 2, by, bw, bh);
+    ctx.fillStyle = css("--warehouse");
+    ctx.fillRect(x - bw / 2, by, bw * fill, bh);
+
+    if (this.view.scale < STATION_ICON_SCALE) return;
+    const cargos = Object.entries(d.cargo ?? {}).sort((a, b) => b[1] - a[1]).map(([c]) => cargoImg(c)).filter(Boolean);
+    this.drawOutputs(cargos.slice(0, 4), x, y - half - roof * 0.5 - 3);
+    if (!big || !d.capacity) return;
+    const label = `${fmtInt(d.amount ?? 0)} / ${fmtInt(d.capacity)}`;
+    ctx.font = `600 11px ${css("--font")}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = css("--map-bg");
+    ctx.strokeText(label, x, by + bh + 3);
+    ctx.fillStyle = css("--town-label");
+    ctx.fillText(label, x, by + bh + 3);
+    ctx.textAlign = "start";
   }
 
   // Ikonki produkowanych ładunków w rzędzie, wyśrodkowane nad kwadratem zakładu (bottomY = dół rzędu).
@@ -990,6 +1063,7 @@ export class MapView {
     };
     for (const t of this.towns) consider(t, this.townRadius(t) + 4);
     if (this.showIndustries) for (const i of this.industries) consider(i, 8);
+    if (this.showWarehouses) for (const w of this.warehouses) consider(w, 9);
     if (this.showStations) {
       const r = this.view.scale >= STATION_ICON_SCALE ? 11 : 6;
       for (const s of this.stations) consider(s, r);

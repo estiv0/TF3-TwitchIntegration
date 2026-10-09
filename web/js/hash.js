@@ -3,7 +3,7 @@
 // żeby nie przekodować opisu pinezki.
 
 // owner = majątek widza, id to klucz tekstowy (owners.js), zakodowany: #owner=kinek
-const SEL_KINDS = ["town", "industry", "station", "line", "owner"];
+const SEL_KINDS = ["town", "industry", "warehouse", "station", "line", "owner"];
 
 const parts = () => location.hash.replace(/^#/, "").split("&").filter(Boolean);
 

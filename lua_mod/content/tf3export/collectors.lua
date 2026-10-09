@@ -300,6 +300,85 @@ function C.industries()
 	return out
 end
 
+---------------------------------------------------------------- magazyny
+-- Magazyny gracza (komponent WAREHOUSE: stockList + construction), jak okno magazynu w grze
+-- (gui/main/cargo_util.tl, forEachCargoInStock): magazyn ma kilka składów (stocks), skład ma
+-- pojemność i jeden albo kilka dozwolonych ładunków (getStockCargoTypes); stan liczymy per ładunek.
+
+-- Konstrukcja -> encja magazynu (do rozpoznania stacji magazynu w C.stations).
+function C.warehouseConstructions()
+	local out = {}
+	for _, id in ipairs(util.entities(ct.WAREHOUSE)) do
+		local w = util.comp(id, ct.WAREHOUSE)
+		if w and w.construction then out[w.construction] = id end
+	end
+	return out
+end
+
+local function warehouseStocks(sl)
+	local out, cargo, capacity, amount = {}, {}, 0, 0
+	local stockList = util.comp(sl, ct.STOCK_LIST)
+	for i, s in ipairs(util.list(stockList and stockList.stocks)) do
+		local stockId = i - 1
+		local okT, types = pcall(function() return api.engine.util.stock.getStockCargoTypes(sl, stockId) end)
+		local byCargo, sum = {}, 0
+		for _, c in ipairs(okT and util.list(types) or {}) do
+			local ok, n = pcall(function()
+				return api.engine.system.simEntityAtStockSystem.getStockCountForCargoType(sl, stockId, c)
+			end)
+			if ok and type(n) == "number" and n > 0 then
+				local name = C.cargoName(c)
+				byCargo[name] = n
+				cargo[name] = (cargo[name] or 0) + n
+				sum = sum + n
+			end
+		end
+		if sum == 0 then -- bez listy ładunków (albo API zawiodło): przynajmniej łączny stan składu
+			local ok, n = pcall(function() return api.engine.system.simEntityAtStockSystem.getStockCount(sl, stockId) end)
+			if ok and type(n) == "number" then sum = n end
+		end
+		local cap = type(s.capacity) == "number" and s.capacity or 0
+		capacity, amount = capacity + cap, amount + sum
+		local cargos = {}
+		for _, c in ipairs(okT and util.list(types) or {}) do cargos[#cargos + 1] = C.cargoName(c) end
+		out[#out + 1] = {
+			cargos = cargos, -- dozwolone ładunki (puste = skład jeszcze bez ustawionego ładunku)
+			capacity = cap,
+			amount = sum,
+			cargo = next(byCargo) and byCargo or json.EMPTY_OBJECT,
+		}
+	end
+	return out, (next(cargo) and cargo or json.EMPTY_OBJECT), capacity, amount
+end
+
+function C.warehouses()
+	local out = {}
+	for _, id in ipairs(util.entities(ct.WAREHOUSE)) do
+		local w = util.comp(id, ct.WAREHOUSE)
+		if w then
+			local stocks, cargo, capacity, amount = warehouseStocks(w.stockList)
+			local function perYear(name)
+				local ok, v = pcall(function() return api.engine.util.logbook.getLogValuePerYear(id, name) end)
+				return ok and type(v) == "number" and v or nil
+			end
+			local constr = util.comp(w.construction, ct.CONSTRUCTION)
+			out[#out + 1] = {
+				id = id,
+				construction = w.construction,
+				name = util.name(id) or util.name(w.construction),
+				file = constr and util.scalar(constr.fileName),
+				pos = util.center(w.construction) or util.center(id),
+				capacity = capacity,
+				amount = amount,
+				cargo = cargo, -- ładunek -> ilość teraz (wszystkie składy razem)
+				stocks = stocks,
+				year = { unloaded = perYear("itemsUnloaded"), loaded = perYear("itemsLoaded") }, -- przywiezione / wywiezione
+			}
+		end
+	end
+	return out
+end
+
 ---------------------------------------------------------------- stacje
 -- Stacje z własną konstrukcją: dworce kolejowe, dworce autobusowe/ciężarówkowe, porty,
 -- lotniska. Przystanki przy ulicy nie mają konstrukcji albo są na liście STOP_PATHS - pomijamy je.
@@ -324,17 +403,29 @@ end
 
 -- Zakład, do którego należy konstrukcja stacji (stacja wbudowana w przemysł) albo nil.
 -- Stacja może być podkonstrukcją, więc sprawdzamy też konstrukcję nadrzędną.
-local function stationIndustry(constrId, constr)
-	local first = constr and util.list(util.field(constr, "industries"))[1]
-	if first then return first end
+local function parentConstruction(constrId)
 	local ok, parent = pcall(function()
 		return api.engine.system.streetConnectorSystem.getConstructionEntityForSubconstruction(constrId)
 	end)
-	if ok and parent and parent > 0 and parent ~= constrId then
+	return ok and parent and parent > 0 and parent ~= constrId and parent or nil
+end
+
+local function stationIndustry(constrId, constr)
+	local first = constr and util.list(util.field(constr, "industries"))[1]
+	if first then return first end
+	local parent = parentConstruction(constrId)
+	if parent then
 		local pc = util.comp(parent, ct.CONSTRUCTION)
 		return pc and util.list(util.field(pc, "industries"))[1] or nil
 	end
 	return nil
+end
+
+-- Magazyn, do którego należy konstrukcja stacji (sama albo nadrzędna) albo nil.
+local function stationWarehouse(constrId, warehouses)
+	if warehouses[constrId] then return warehouses[constrId] end
+	local parent = parentConstruction(constrId)
+	return parent and warehouses[parent] or nil
 end
 
 local function stationKind(carriers, file)
@@ -365,6 +456,9 @@ function C.stations()
 		end
 	end
 	table.sort(order)
+
+	local okW, warehouses = pcall(C.warehouseConstructions)
+	if not okW then warehouses = {} end
 
 	local out, kindOf = {}, {}
 	for _, constrId in ipairs(order) do
@@ -399,12 +493,14 @@ function C.stations()
 
 			local kind = stationKind(carriers, file)
 			local industry = stationIndustry(constrId, constr)
-			if kind or industry then -- stacja przemysłu zostaje, nawet bez rozpoznanego rodzaju
+			local warehouse = stationWarehouse(constrId, warehouses)
+			if kind or industry or warehouse then -- stacja przemysłu / magazynu zostaje, nawet bez rozpoznanego rodzaju
 				for _, st in ipairs(stations) do kindOf[st] = kind end
 				out[#out + 1] = {
 					id = constrId,
 					kind = kind or "OTHER",
 					industry = industry, -- id zakładu (industries[].id), gdy stacja do niego należy
+					warehouse = warehouse, -- id magazynu (warehouses[].id), gdy stacja do niego należy
 					carriers = carriers, -- nośniki całej grupy stacji
 					name = (groups[1] and util.name(groups[1])) or util.name(constrId),
 					file = file,

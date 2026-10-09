@@ -23,7 +23,7 @@ lua_mod/                              → w grze: staging_area/estiv0_tf3export 
   content/tf3export/
     tf3export.gs.lua      deskryptor game scriptu (update / handleEvent / guiUpdate)
     tf3export.script.lua  główny skrypt: harmonogram, sesja, eksport (globalne data())
-    collectors.lua        kolektory: player, towns, industries, stations, lines, vehicles, edges
+    collectors.lua        kolektory: player, towns, industries, warehouses, stations, lines, vehicles, edges
     json.lua              enkoder JSON (escapowanie, table.concat, null dla NaN)
     util.lua              bezpieczny dostęp do API, enumy -> nazwy, czas gry, log
     writer.lua            zapis: app.saveUserdata albo log gry (zapas)
@@ -74,14 +74,15 @@ end
 Middle app wyciąga `json = "..."`, odwraca escapowanie Lua (`\"`, `\\`, `\n`, `\r`, `\t`, `\ddd`), wysyła dane i usuwa plik. Nie wiadomo, czy zapis jest atomowy, więc gdy plik jest niekompletny (brak końcowego `end`), middle app ponawia odczyt.
 
 - **`session`**: losowe ID wątku GUI. Nowe powstaje przy starcie gry i przy cofnięciu czasu gry, czyli po wczytaniu starszego save'a. `seq` liczy się od 1 w każdej sesji, osobno dla `dynamic` i `network`.
-- **`dynamic`**: `{ v, kind, session, seq, gameTime, date{year,month,day}, player{id,name,balance}, company, models, towns[], industries[], stations[], lines[], vehicles[] }`
+- **`dynamic`**: `{ v, kind, session, seq, gameTime, date{year,month,day}, player{id,name,balance}, company, models, towns[], industries[], warehouses[], stations[], lines[], vehicles[] }`
   - `company` (liczone raz na miesiąc gry): `finance` = tabela z okna Finanse (`computeFinanceTable`, `cfg.financeYears` lat): `{ header[], rows[{ carrier, type, maintenance, construction, values[] }], total[], balance[], interest[], loan[] }`, gdzie `type` itd. to nazwy enumów `JournalEntry` (`INCOME`, `MAINTENANCE`/`VEHICLE`…), a `values[i]` to kwota w roku `header[i]`; `history` = serie z logbooka świata `companyBalance`, `companyTotalValue`, `townResidentialCount`, `townCommercialCount`, `townIndustrialCount` (pojemność dzielnic wszystkich miast) jako `[[rok z ułamkiem, wartość], …]`, najwyżej `cfg.historyMaxPoints` punktów;
   - `towns[].supply`: zaspokojenie potrzeb `[{ cargo, supply, demand }]` z `townBuildingSystem.getCargoSupplyAndLimit` (`demand` -1 = bez limitu);
   - `industries[]`: `stocks[]` mają `amount` (stan magazynu), `input` i `consumedYear` (zużycie na rok); `producedYear` = ładunek -> produkcja na rok; `year` = `{ produced, consumed, destroyed }` z logbooka zakładu za ostatni rok;
+  - `warehouses[]`: magazyny gracza (komponent `WAREHOUSE`) `{ id, construction, name, file, pos, capacity, amount, cargo{ładunek: ilość}, stocks[], year{unloaded, loaded} }`; `capacity` i `amount` to sumy wszystkich składów, `stocks[]` = `{ cargos[] (dozwolone ładunki), capacity, amount, cargo{ładunek: ilość} }`, `year` = przywiezione / wywiezione za ostatni rok (logbook `itemsUnloaded` / `itemsLoaded`). Nazwa może mieć właściciela („Nazwa | Widz”), jak miasta i zakłady;
   - ładunki są podawane jako nazwy zasobów, np. `"::/cargos/logs/logs.cargo"`;
   - `carrier` i `state` pojazdów to nazwy enumów (`RAIL`, `EN_ROUTE`…);
   - szczegóły pojazdu (`collectors.vehicleDetails`, wyłącznik „Szczegóły pojazdów” w ustawieniach moda): `model` = id modelu czoła składu (w `models`: `{ "id": { name, icon } }`; `name` z `api.res.modelRep` albo nazwa zespołu trakcyjnego z `muFileNames`, `icon` = nazwa pliku `.mdl` bez rozszerzenia, obrazek strony `web/img/vehicles/<icon>.png` z `tools/extract_vehicle_icons.py`), `parts` = liczba części składu (tylko gdy > 1), `age` = wiek najstarszej części w latach kalendarza gry, `wear` = wiek / żywotność tej części (≥ 1 = po żywotności, jak procent w oknie linii), `maint` = średni stan techniczny części 0..1 (jak `vehicle_util.getAvgMaintenanceState`), `cap` = pojemność `{ [ładunek] = liczba }` z `config.capacities` (indeks - 1 = CargoTypeId, jak `gui/main/cargo_util.tl`), `load` = ile pojazd teraz wiezie, te same klucze (`simEntityAtVehicleSystem.getVehicleSimEntitiesCountForCargoType`, jedno wywołanie na ładunek z pojemnością). Bez szczegółów nie ma klucza `models` ani tych pól. **Jeszcze niesprawdzone w grze** (zwłaszcza nazwy modeli);
-  - `stations[]`: jeden wiersz na konstrukcję stacji `{ id, kind, industry, carriers[], name, file, pos, owner, passengers, cargo, groups[], stations[] }`, gdzie `kind` to `RAIL`, `ROAD`, `WATER`, `AIR` (rzadko `TRAM`, `OTHER` = nierozpoznana stacja przemysłu), a `industry` to id zakładu, gdy stacja jest jego częścią, wyznaczany ze ścieżki konstrukcji, a dla stacji z modów z `carriers` (nośniki całej grupy stacji). Przystanki (bez konstrukcji, `small_stops`, `underground_station`) są pomijane;
+  - `stations[]`: jeden wiersz na konstrukcję stacji `{ id, kind, industry, warehouse, carriers[], name, file, pos, owner, passengers, cargo, groups[], stations[] }`, gdzie `kind` to `RAIL`, `ROAD`, `WATER`, `AIR` (rzadko `TRAM`, `OTHER` = nierozpoznana stacja przemysłu), a `industry` / `warehouse` to id zakładu / magazynu, gdy stacja jest jego częścią, wyznaczany ze ścieżki konstrukcji, a dla stacji z modów z `carriers` (nośniki całej grupy stacji). Przystanki (bez konstrukcji, `small_stops`, `underground_station`) są pomijane;
   - przystanek linii (`lines[].stops[]`) ma `entity` = encja stacji, którą można dopasować do `stations[].stations`;
   - `carrier` linii bierze się z jej pojazdów, a gdy linia nie ma pojazdów, z rodzaju jej stacji.
 - **`network`**: `{ v, kind, session, seq, gameTime, fields[], edges[][] }`. Każda krawędź to tablica wartości w kolejności z `fields`:
@@ -182,7 +183,7 @@ Gra nie ma wypadków (brak komendy, stanu ani zdarzenia kolizji), więc „wypad
 
 W logu gry (`crash_dump\stdout.txt`) szukaj linii `[tf3export]`:
 - `new session … (writer mode 'userdata'|'log')`: początek sesji;
-- `dynamic #N: work … ms in … frames (max … ms/frame), … s wall; vehicles …, positions …, details … (… vehicles), stations …, lines …, line stats … (… lines), towns …, industries …, player …, encode …, write … ms; … B`: czas pracy łącznie i w najgorszej klatce oraz czasy kroków. Krok, który sam przekracza budżet (np. `towns`), to kandydat do podziału na porcje;
+- `dynamic #N: work … ms in … frames (max … ms/frame), … s wall; vehicles …, positions …, details … (… vehicles), stations …, lines …, line stats … (… lines), towns …, industries …, warehouses …, player …, encode …, write … ms; … B`: czas pracy łącznie i w najgorszej klatce oraz czasy kroków. Krok, który sam przekracza budżet (np. `towns`), to kandydat do podziału na porcje;
 - `vehicle positions: … ms for … vehicles (max … ms) - disabled for this session`: pozycje pojazdów wyłączone automatycznie, bo łącznie trwały za długo;
 - `network #N (full): … edges (initial, …)` oraz `networkDelta #N: … changed, … removed (build event, …)`;
 - `network: no change (periodic|build event, …)`: przebudowa nie znalazła zmian;

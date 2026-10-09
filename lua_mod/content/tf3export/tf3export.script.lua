@@ -223,7 +223,7 @@ end
 -- Snapshot powstaje przez kilka-kilkanaście klatek (ułamek sekundy czasu gry) - dla strony bez znaczenia.
 -- Krok: function(job, deadline) -> true, gdy skończony; job.i to licznik pętli kroku (od 1 w każdym kroku).
 
-local DYN_ARRAYS = { "towns", "industries", "stations", "lines", "vehicles" }
+local DYN_ARRAYS = { "towns", "industries", "warehouses", "stations", "lines", "vehicles" }
 local CHECK_EVERY = 20 -- co tyle elementów pętli sprawdzamy zegar
 
 -- Następny element pętli; true = koniec budżetu na tę klatkę.
@@ -302,6 +302,16 @@ local DYN_STEPS = {
 		job.snap.industries = collectors.industries()
 		return true
 	end },
+	{ "warehouses", function(job)
+		-- nowe API: błąd nie blokuje reszty eksportu
+		local ok, list = pcall(collectors.warehouses)
+		if not ok then
+			util.log("warehouses failed: " .. tostring(list))
+			list = {}
+		end
+		job.snap.warehouses = list
+		return true
+	end },
 	{ "player", function(job)
 		job.snap.player = collectors.player()
 		return true
@@ -375,10 +385,10 @@ local function finishDynamic(job)
 	if S.vehiclePos and job.snap.vehicles then trackVehiclePositions(nVehicles, ms("positions")) end
 	util.log(string.format("dynamic #%d: work %.0f ms in %d frames (max %.0f ms/frame), %.2f s wall; "
 		.. "vehicles %.0f, positions %.0f, details %.0f (%d vehicles), stations %.0f, lines %.0f, line stats %.0f (%d lines), "
-		.. "towns %.0f, industries %.0f, player %.0f, company %.0f%s, encode %.0f, write %.0f ms; %d B",
+		.. "towns %.0f, industries %.0f, warehouses %.0f, player %.0f, company %.0f%s, encode %.0f, write %.0f ms; %d B",
 		job.seq, job.work * 1000, job.frames, job.maxFrame * 1000, util.clock() - job.t0,
 		ms("vehicles"), ms("positions"), ms("details"), nVehicles, ms("stations"), ms("lines"), ms("lineStats"), job.statsCount,
-		ms("towns"), ms("industries"), ms("player"), ms("company"), job.companyFresh and " (refreshed)" or "",
+		ms("towns"), ms("industries"), ms("warehouses"), ms("player"), ms("company"), job.companyFresh and " (refreshed)" or "",
 		ms("encode"), ms("write"), #(job.content or "")))
 end
 

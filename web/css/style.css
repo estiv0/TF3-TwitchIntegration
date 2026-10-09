@@ -22,6 +22,7 @@
   --town-label: #c9d3e0;
   --industry-raw: #4fb3ff;
   --industry-processing: #c77dff;
+  --warehouse: #ff9f6b;
   --station-rail: #ff8a3d;
   --station-road: #3fd68f;
   --station-tram: #f06fb0;
@@ -193,6 +194,7 @@ button { font: inherit; color: inherit; }
 .dot-town { border-radius: 50%; background: var(--town); }
 .dot-raw { background: var(--industry-raw); }
 .dot-processing { background: var(--industry-processing); }
+.dot-warehouse { background: var(--warehouse); }
 .dot-vehicle { border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 1.5px var(--map-bg); }
 .swatch { width: 10px; height: 10px; flex: none; border-radius: 3px; }
 
@@ -554,6 +556,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 .stock span { font-variant-numeric: tabular-nums; }
 .stock-bar { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
 .stock-bar b { display: block; height: 100%; background: var(--accent); }
+.detail-card > .stock-bar { display: block; margin: 2px 0 10px; }
 .chips li .cargo-ico { margin-right: 0; }
 /* obrazek modelu pojazdu z boku (@2x, wymiary różne: 68-3032 x 80-256 px), w ramce z zachowaniem proporcji */
 .tooltip .tip-veh { display: block; width: auto; height: auto; max-width: 220px; max-height: 48px; margin: 4px 0 2px; }

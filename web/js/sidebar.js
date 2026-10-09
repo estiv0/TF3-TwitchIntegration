@@ -3,7 +3,7 @@
 
 import {
   STATION_ORDER, carrierIcon, carrierName, cargoImg, cargoLabel, cargoName, escapeHtml as esc, iconHtml, landUseName, stationName,
-  fmtAge, fmtDate, vehicleImgHtml, fmtDec, fmtInt, fmtMoney, fmtMoneyShort, fmtPercent, fmtSignedPercent, industryOfStation, linesByIndustry, linesByStation, rgb, stationImg,
+  fmtAge, fmtDate, vehicleImgHtml, fmtDec, fmtInt, fmtMoney, fmtMoneyShort, fmtPercent, fmtSignedPercent, industryOfStation, linesByIndustry, linesByStation, rgb, stationImg, warehouseOfStation,
   stationUse, townGrowth, townSize,
 } from "./format.js";
 import { companyHtml } from "./company.js";
@@ -45,6 +45,7 @@ export class Sidebar {
     this.earnings = { towns: new Map(), outside: null }; // townEarnings()
     this.stationLines = new Map();                 // id stacji -> linie
     this.industryLines = new Map();                // id zakładu -> linie jego stacji
+    this.warehouseLines = new Map();               // id magazynu -> linie jego stacji
     this.stationIndustry = new Map();              // id stacji -> id zakładu (stacje przemysłu)
     this.owners = new Map();                       // klucz widza -> majątek (ownersIndex)
     this.ownerSort = { key: "assets", desc: true }; // tabelka właścicieli: kolumna "name", "assets", "profit", "total"
@@ -197,6 +198,7 @@ export class Sidebar {
     this.stationLines = linesByStation(dynamic);
     this.stationIndustry = industryOfStation(dynamic);
     this.industryLines = linesByIndustry(dynamic, this.stationLines, this.stationIndustry);
+    this.warehouseLines = linesByIndustry(dynamic, this.stationLines, warehouseOfStation(dynamic));
     this.earnings = townEarnings(dynamic);
     this.owners = ownersIndex(dynamic, this.stationIndustry);
     // przypięte obiekty, których już nie ma (usunięta linia, zburzony zakład), znikają
@@ -270,7 +272,7 @@ export class Sidebar {
   findItem(sel) {
     const d = this.dynamic;
     if (sel.kind === "owner") return this.owners.get(sel.id);
-    const list = { town: d?.towns, industry: d?.industries, station: d?.stations, line: d?.lines }[sel.kind] ?? [];
+    const list = { town: d?.towns, industry: d?.industries, warehouse: d?.warehouses, station: d?.stations, line: d?.lines }[sel.kind] ?? [];
     return list.find((x) => x.id === sel.id);
   }
 
@@ -509,6 +511,7 @@ export class Sidebar {
       : c.kind === "town" ? townDetail(item, this.earnings.towns.get(item.id))
       : c.kind === "line" ? lineDetail(item, stop, this.dynamic)
       : c.kind === "station" ? stationDetail(item, this.stationLines.get(item.id) ?? [])
+      : c.kind === "warehouse" ? warehouseDetail(item, this.warehouseLines.get(item.id) ?? [])
       : industryDetail(item, this.industryLines.get(item.id) ?? []);
     el.className = `detail-card${collapsed ? " collapsed" : ""}${el.classList.contains("dragging") ? " dragging" : ""}`;
     el.dataset.pinned = String(pinned);
@@ -873,6 +876,36 @@ function industryDetail(i, lines) {
       `<li>${cargoLabel(c)}${hasYear ? perYear(yearOut[c] ?? 0) : `<span>${fmtInt(a)}</span>`}</li>`).join("")}</ul>` : ""}
     ${storage}
     ${year}
+    ${lineLinks(lines)}`;
+}
+
+// Magazyn: zapełnienie, ładunki teraz, składy (dozwolone ładunki, stan / pojemność) i ruch z ostatniego roku.
+function warehouseDetail(w, lines) {
+  const fillBar = (amount, capacity) => {
+    const fill = capacity ? Math.min(1, (amount ?? 0) / capacity) : 0;
+    return `<i class="stock-bar"><b style="width:${(fill * 100).toFixed(0)}%"></b></i>`;
+  };
+  const cargo = Object.entries(w.cargo ?? {}).sort((a, b) => b[1] - a[1]);
+  const stocks = (w.stocks ?? []).map((s) => {
+    const name = s.cargos?.length ? s.cargos.map(cargoLabel).join(", ") : esc(t("warehouse.anyCargo"));
+    return `<li><span class="stock-name">${name}</span><em></em>`
+      + `<span>${fmtInt(s.amount)} / ${fmtInt(s.capacity)}</span>${fillBar(s.amount, s.capacity)}</li>`;
+  }).join("");
+  const y = w.year ?? {};
+  return `
+    <h2>📦 ${esc(w.name ?? t("warehouse"))}${copyBtn(w.name)}</h2>
+    <p class="detail-sub">${esc(t("warehouse"))}</p>
+    ${ownerHtml(w)}
+    <dl class="stats">
+      ${stat(t("industry.stock"), `${fmtInt(w.amount ?? 0)} / ${fmtInt(w.capacity)}`)}
+      ${stat(t("warehouse.fill"), w.capacity ? fmtPercent((w.amount ?? 0) / w.capacity) : "–")}
+      ${y.unloaded != null ? stat(t("warehouse.unloaded"), esc(t("industry.perYear", { n: fmtInt(y.unloaded) }))) : ""}
+      ${y.loaded != null ? stat(t("warehouse.loaded"), esc(t("industry.perYear", { n: fmtInt(y.loaded) }))) : ""}
+    </dl>
+    ${fillBar(w.amount, w.capacity)}
+    ${cargo.length ? `<ul class="chips">${cargo.map(([c, n]) => `<li>${cargoLabel(c)}<span>${fmtInt(n)}</span></li>`).join("")}</ul>`
+      : `<p class="detail-sub">${esc(t("warehouse.empty"))}</p>`}
+    ${stocks ? `<h3>${esc(t("warehouse.stocks"))}</h3><ul class="stock">${stocks}</ul>` : ""}
     ${lineLinks(lines)}`;
 }
 
