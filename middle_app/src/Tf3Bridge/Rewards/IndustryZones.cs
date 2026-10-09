@@ -10,19 +10,19 @@ namespace Tf3Bridge.Rewards;
 /// </summary>
 public static class IndustryZones
 {
-    /// <summary>Base game industries (base/content/industries) with Polish names, in dialog order.</summary>
+    /// <summary>Base game industries (base/content/industries) with their in-game Polish names (base/strings/pl), in dialog order.</summary>
     public static IReadOnlyList<(string Type, string Name)> Known { get; } =
     [
         ("coal_mine", "Kopalnia węgla"), ("iron_ore_mine", "Kopalnia rudy żelaza"), ("quarry", "Kamieniołom"),
-        ("sand_excavator", "Koparka piasku"), ("sand_pit", "Piaskownia"), ("clay_pit", "Glinianka"),
-        ("farm", "Gospodarstwo rolne"), ("livestock_farm", "Hodowla zwierząt"), ("cotton_farm", "Plantacja bawełny"),
-        ("rubber_farm", "Plantacja kauczuku"), ("forest", "Las"), ("oil_well", "Szyb naftowy"),
-        ("brewery", "Browar"), ("bricks_works", "Cegielnia"), ("cement_plant", "Cementownia"), ("chemical_plant", "Zakłady chemiczne"),
-        ("food_factory", "Fabryka żywności"), ("furniture_factory", "Fabryka mebli"), ("glass_works", "Huta szkła"),
+        ("sand_excavator", "Pogłębiarka"), ("sand_pit", "Piaskarnia"), ("clay_pit", "Glinianka"),
+        ("farm", "Gospodarstwo rolne"), ("livestock_farm", "Hodowla bydła"), ("cotton_farm", "Plantacja bawełny"),
+        ("rubber_farm", "Plantacja kauczuku"), ("forest", "Poręba"), ("oil_well", "Kiwon"),
+        ("brewery", "Browar"), ("bricks_works", "Cegielnia"), ("cement_plant", "Cementownia"), ("chemical_plant", "Fabryka chemiczna"),
+        ("food_factory", "Fabryka konserw"), ("furniture_factory", "Fabryka mebli"), ("glass_works", "Huta szkła"),
         ("machine_factory", "Fabryka maszyn"), ("oil_refinery", "Rafineria"), ("paper_mill", "Papiernia"),
-        ("printing_press", "Drukarnia"), ("saw_mill", "Tartak"), ("steel_mill", "Huta stali"),
-        ("textile_factory", "Fabryka tekstyliów"), ("tire_factory", "Fabryka opon"), ("tool_factory", "Fabryka narzędzi"),
-        ("vehicle_factory", "Fabryka pojazdów"), ("weaving_mill", "Tkalnia"),
+        ("printing_press", "Drukarnia"), ("saw_mill", "Tartak"), ("steel_mill", "Stalownia"),
+        ("textile_factory", "Fabryka tkanin"), ("tire_factory", "Fabryka opon"), ("tool_factory", "Fabryka narzędzi"),
+        ("vehicle_factory", "Fabryka samochodów"), ("weaving_mill", "Tkalnia"),
     ];
 
     public static IReadOnlyDictionary<string, IndustryZone> Defaults { get; } = new Dictionary<string, IndustryZone>
