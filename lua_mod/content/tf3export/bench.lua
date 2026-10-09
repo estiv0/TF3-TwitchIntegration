@@ -2,7 +2,7 @@
 -- Porównuje na tych samych danych sieci:
 --   A) json.encode w Lua + app.saveUserdata({ json = <string> })   (obecny format)
 --   B) app.saveUserdata({ fields, edges = <tabele Lua> })           (serializacja w C++ gry)
--- Wynik: linie "[tf3export] bench ..." w logu oraz pliki bench_A/bench_B w local\tf3export\
+-- Wynik: linie "[tf3export] bench ..." w logu oraz pliki tf3export_bench_A/_B w local\towns_industries\
 -- (middle app ma je ignorować; do usunięcia ręcznie po pomiarze).
 -- Uruchamia się raz na sesję w wątku GUI; jedna klatka będzie długa (~kilkaset ms).
 
@@ -22,7 +22,7 @@ function B.run(ids)
 		return
 	end
 
-	local dir = "tf3export"
+	local dir = util.USERDATA_DIR
 
 	-- zbieranie surowych wierszy (wspólny koszt obu wariantów)
 	local t0 = util.clock()
@@ -38,12 +38,12 @@ function B.run(ids)
 	for i, row in ipairs(rows) do parts[i] = json.encode(row) end
 	local content = '{"fields":' .. json.encode(collectors.EDGE_FIELDS) .. ',"edges":[' .. table.concat(parts, ",") .. "]}"
 	local t2 = util.clock()
-	local okA, errA = pcall(function() app.saveUserdata(dir, "bench_A", { json = content }) end)
+	local okA, errA = pcall(function() app.saveUserdata(dir, util.FILE_PREFIX .. "bench_A", { json = content }) end)
 	local t3 = util.clock()
 
 	-- B: tabela Lua, serializacja po stronie gry
 	local okB, errB = pcall(function()
-		app.saveUserdata(dir, "bench_B", { fields = collectors.EDGE_FIELDS, edges = rows })
+		app.saveUserdata(dir, util.FILE_PREFIX .. "bench_B", { fields = collectors.EDGE_FIELDS, edges = rows })
 	end)
 	local t4 = util.clock()
 
@@ -62,7 +62,7 @@ function B.run(ids)
 	end
 	local t5 = util.clock()
 	local okB2, errB2 = pcall(function()
-		app.saveUserdata(dir, "bench_B2", { fields = collectors.EDGE_FIELDS, edges = rounded })
+		app.saveUserdata(dir, util.FILE_PREFIX .. "bench_B2", { fields = collectors.EDGE_FIELDS, edges = rounded })
 	end)
 	local t6 = util.clock()
 

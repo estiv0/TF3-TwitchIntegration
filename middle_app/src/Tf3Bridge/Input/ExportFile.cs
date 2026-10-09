@@ -11,12 +11,13 @@ public enum ExportKind
 }
 
 /// <summary>
-/// A file written by the mod: <c>&lt;kind&gt;_&lt;session&gt;_&lt;seq&gt;.lua</c>,
-/// e.g. <c>networkDelta_6abfd5c4d091_000004.lua</c>.
+/// A file written by the mod: <c>tf3export_&lt;kind&gt;_&lt;session&gt;_&lt;seq&gt;.lua</c>,
+/// e.g. <c>tf3export_networkDelta_6abfd5c4d091_000004.lua</c>. Anything else in the folder
+/// (the map editor's town/industry exports, the command queue, settings) is ignored.
 /// </summary>
 public sealed partial record ExportFile(string Path, ExportKind Kind, string Session, long Seq, DateTime LastWriteUtc)
 {
-    [GeneratedRegex(@"^(dynamic|network|networkDelta|terrain)_([0-9a-f]+)_(\d+)\.lua$")]
+    [GeneratedRegex(@"^tf3export_(dynamic|network|networkDelta|terrain)_([0-9a-f]+)_(\d+)\.lua$")]
     private static partial Regex NamePattern();
 
     public static ExportFile? TryParse(string path, DateTime lastWriteUtc)

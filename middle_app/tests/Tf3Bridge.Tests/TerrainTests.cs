@@ -91,7 +91,7 @@ public sealed class TerrainTests : IDisposable
         var processor = new ExportProcessor(options, new LocalFolderPublisher(options), NullLogger<ExportProcessor>.Instance);
 
         var json = TerrainJson(3, 2, [1, 2, 3, 4, 5, 6], waterLevel: null);
-        File.WriteAllText(Path.Combine(input, "terrain_aa_000001.lua"),
+        File.WriteAllText(Path.Combine(input, "tf3export_terrain_aa_000001.lua"),
             $"function data()\r\nreturn {{ \r\n\t\tjson = \"{json.Replace("\"", "\\\"")}\",\r\n\t}}\r\nend\r\n");
 
         await processor.ProcessOnceAsync(CancellationToken.None);
@@ -257,13 +257,13 @@ public sealed class TerrainTests : IDisposable
         var options = Options.Create(new BridgeOptions { InputDir = input, OutputDir = output, TerrainCacheFile = Path.Combine(_root, "cache", "terrain.json") });
         string Lua(string json) => $"function data()\r\nreturn {{ \r\n\t\tjson = \"{json.Replace("\"", "\\\"")}\",\r\n\t}}\r\nend\r\n";
 
-        File.WriteAllText(Path.Combine(input, "terrain_aa_000001.lua"), Lua(TerrainJson(3, 2, [1, 2, 3, 4, 5, 6])));
+        File.WriteAllText(Path.Combine(input, "tf3export_terrain_aa_000001.lua"), Lua(TerrainJson(3, 2, [1, 2, 3, 4, 5, 6])));
         await new ExportProcessor(options, new LocalFolderPublisher(options), NullLogger<ExportProcessor>.Instance).ProcessOnceAsync(CancellationToken.None);
         Assert.True(File.Exists(options.Value.TerrainCacheFile));
 
         // Restart: the mod sends only dynamic snapshots, no terrain.
         Directory.Delete(output, recursive: true);
-        File.WriteAllText(Path.Combine(input, "dynamic_aa_000002.lua"), Lua("""{"towns":[]}"""));
+        File.WriteAllText(Path.Combine(input, "tf3export_dynamic_aa_000002.lua"), Lua("""{"towns":[]}"""));
         var restarted = new ExportProcessor(options, new LocalFolderPublisher(options), NullLogger<ExportProcessor>.Instance);
         await restarted.ProcessOnceAsync(CancellationToken.None);
 
@@ -273,7 +273,7 @@ public sealed class TerrainTests : IDisposable
         Assert.Equal(1, meta["terrainSeq"]!.GetValue<long>());
 
         // Another session (a different save) must not get the old terrain.
-        File.WriteAllText(Path.Combine(input, "dynamic_bb_000001.lua"), Lua("""{"towns":[]}"""));
+        File.WriteAllText(Path.Combine(input, "tf3export_dynamic_bb_000001.lua"), Lua("""{"towns":[]}"""));
         var other = new ExportProcessor(options, new LocalFolderPublisher(options), NullLogger<ExportProcessor>.Instance);
         await other.ProcessOnceAsync(CancellationToken.None);
         Assert.Null(other.BuildTerrain);

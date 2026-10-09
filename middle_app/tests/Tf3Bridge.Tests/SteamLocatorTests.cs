@@ -14,7 +14,7 @@ public sealed class SteamLocatorTests : IDisposable
     private string MakeLocal(string account, bool withExport = false, DateTime? touched = null)
     {
         var local = Local(account);
-        var dir = withExport ? Path.Combine(local, "tf3export") : local;
+        var dir = withExport ? Path.Combine(local, SteamLocator.UserdataDir) : local;
         Directory.CreateDirectory(dir);
         if (touched is { } t) Directory.SetLastWriteTimeUtc(dir, t);
         return local;
@@ -34,7 +34,7 @@ public sealed class SteamLocatorTests : IDisposable
         MakeLocal("111", withExport: true);
         var active = MakeLocal("222");
 
-        Assert.Equal(Path.Combine(active, "tf3export"), SteamLocator.FindInputDir([_steam], 222));
+        Assert.Equal(Path.Combine(active, SteamLocator.UserdataDir), SteamLocator.FindInputDir([_steam], 222));
     }
 
     [Fact]
@@ -44,7 +44,7 @@ public sealed class SteamLocatorTests : IDisposable
         var withExport = MakeLocal("222", withExport: true, touched: new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
         Directory.CreateDirectory(Path.Combine(_steam, "userdata", "333"));
 
-        Assert.Equal(Path.Combine(withExport, "tf3export"), SteamLocator.FindInputDir([_steam], 333));
+        Assert.Equal(Path.Combine(withExport, SteamLocator.UserdataDir), SteamLocator.FindInputDir([_steam], 333));
     }
 
     [Fact]
@@ -53,7 +53,7 @@ public sealed class SteamLocatorTests : IDisposable
         MakeLocal("111", withExport: true, touched: new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
         var recent = MakeLocal("222", withExport: true, touched: new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc));
 
-        Assert.Equal(Path.Combine(recent, "tf3export"), SteamLocator.FindInputDir([_steam], null));
+        Assert.Equal(Path.Combine(recent, SteamLocator.UserdataDir), SteamLocator.FindInputDir([_steam], null));
     }
 
     [Fact]

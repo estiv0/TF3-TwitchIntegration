@@ -4,7 +4,7 @@ Mod do Transport Fever 3, który eksportuje dane gry jako JSON:
 - **dane dynamiczne** (miasta, przemysł, linie, pojazdy z pozycjami, gracz, data): co 2 dni gry, ale najwyżej raz na 10 s czasu rzeczywistego. Zbieranie i kodowanie są rozłożone na klatki, najwyżej `cfg.dynamicBudgetMs` (3 ms) pracy na klatkę;
 - **sieć dróg i torów**: pełny zrzut raz na sesję, a potem tylko **różnice** (`networkDelta`) po każdej budowie lub wyburzeniu, zarówno gracza, jak i miasta. Mod nasłuchuje zdarzeń `onPreBuildProposal`/`onPostBuildProposal`, ale reaguje tylko na te, które dotykają dróg, torów albo stacji z krawędziami. Czeka 2 s na koniec serii klików i przebudowuje sieć porcjami po 2 ms na klatkę. Dodatkowo co 5 min robi pełne porównanie na wypadek zmian bez zdarzenia.
 
-Częstotliwość eksportu, pojazdy i teren ustawia się w oknie Tf3Bridge (**Ustawienia moda…**). Bridge zapisuje `local\tf3export_settings\settings.lua`, a mod czyta go przez `app.loadUserdata` co 5 s, bez restartu gry (klucze i zakresy: `SETTINGS` w `tf3export.script.lua`). Bez Bridge obowiązują domyślne wartości z `cfg`.
+Częstotliwość eksportu, pojazdy i teren ustawia się w oknie Tf3Bridge (**Ustawienia moda…**). Bridge zapisuje `local\towns_industries\tf3export_settings.lua`, a mod czyta go przez `app.loadUserdata` co 5 s, bez restartu gry (klucze i zakresy: `SETTINGS` w `tf3export.script.lua`). Bez Bridge obowiązują domyślne wartości z `cfg`.
 
 Na pauzie mod nic nie eksportuje. Szczegóły API i ustalenia z gry opisuje [../docs/tf3-api-findings.md](../docs/tf3-api-findings.md).
 
@@ -28,7 +28,7 @@ lua_mod/                              → w grze: staging_area/estiv0_tf3export 
     util.lua              bezpieczny dostęp do API, enumy -> nazwy, czas gry, log
     writer.lua            zapis: app.saveUserdata albo log gry (zapas)
     terrain.lua           heightmapa (getBaseHeightAt porcjami) + jednorazowy benchmark metod odczytu terenu
-    commands.lua          komendy od Tf3Bridge (akcje widzów): local\tf3export_cmd\queue.lua -> api.cmd -> results.lua
+    commands.lua          komendy od Tf3Bridge (akcje widzów): local\towns_industries\tf3export_queue.lua -> api.cmd -> tf3export_results.lua
     effects.lua           efekty czasowe z nagród (boost miasta/przemysłu, zatrzymanie linii), cofane po X miesiącach gry
     twitch_notification.res.lua / .script.lua   typ powiadomienia w grze „Twitch” (komenda notify)
     icons/twitch*.tga     ikona powiadomienia (maska; generuje infra/make_icon.ps1 z infra/twitch_logo.png)
@@ -116,7 +116,7 @@ Gdy `app.saveUserdata` jest niedostępne, `writer.lua` pisze do `...\3493540\loc
 
 ## Komendy od Tf3Bridge (akcje widzów)
 
-`commands.lua` co sekundę (`commandsEveryWallSec`) czyta w wątku GUI `local\tf3export_cmd\queue.lua`, który pisze Tf3Bridge:
+`commands.lua` co sekundę (`commandsEveryWallSec`) czyta w wątku GUI `local\towns_industries\tf3export_queue.lua`, który pisze Tf3Bridge:
 
 ```lua
 function data()
@@ -134,7 +134,7 @@ end
   - `effect { effect, entity, months, factor }`: efekt czasowy z `effects.lua`, opis niżej;
   - `createTown { x, y, name, owner }` i `createIndustry { x, y, file, name, owner }`: nowe miasto albo zakład „name | owner” (`create.lua`, opis niżej); w wyniku `entity` = id nowego obiektu;
   - `notify { title, text, entity?, dismissMs? }`: powiadomienie w grze z ikoną Twitcha (zdarzenie `Notifications` → `add`, typ `twitch_notification`); kliknięcie przenosi kamerę do `entity` ([../docs/custom-notifications.md](../docs/custom-notifications.md)).
-- Wynik trafia do `local\tf3export_cmd\results.lua` (`app.saveUserdata`): `json` z listą `{ id, status, error }` (status `ok`, `failed`, `invalid`, `expired`) i `done` z identyfikatorami, z których mod po restarcie gry odtwarza, co już wykonał.
+- Wynik trafia do `local\towns_industries\tf3export_results.lua` (`app.saveUserdata`): `json` z listą `{ id, status, error }` (status `ok`, `failed`, `invalid`, `expired`) i `done` z identyfikatorami, z których mod po restarcie gry odtwarza, co już wykonał.
 - Komendy starsze niż 300 s są pomijane (`expired`).
 - Gra wysyła komendy ze swoich skryptów w wątkach symulacji; z wątku GUI to **jeszcze niesprawdzone**. Dlatego mod nie ufa tylko callbackowi `sendCommand`: po wysłaniu przez 15 s sprawdza, czy efekt jest widoczny (dla `setName`: czy encja ma nową nazwę). Log: `command <id>: sent setName`, potem `ok` albo `failed (...)`.
 

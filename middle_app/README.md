@@ -69,7 +69,7 @@ Przycisk **Ustawienia moda…** w oknie zmienia działanie moda w grze bez edycj
 | Eksport terenu | tak | `terrain` |
 | Dokładność terenu | 20 m (5–100) | `terrainStepM` |
 
-Mod nie ma dostępu do plików poza `app.loadUserdata`, więc Bridge zapisuje ustawienia jako plik userdata obok folderu eksportu: `local\tf3export_settings\settings.lua` (`ModSettingsStore`, zapis przez plik tymczasowy). Mod czyta go co 5 s, więc zmiany działają bez restartu gry; w logu gry pojawia się `[tf3export] settings: …`. Usunięcie pliku przywraca wartości domyślne.
+Mod nie ma dostępu do plików poza `app.loadUserdata`, więc Bridge zapisuje ustawienia jako plik userdata w folderze eksportu: `local\towns_industries\tf3export_settings.lua` (`ModSettingsStore`, zapis przez plik tymczasowy). Mod czyta go co 5 s, więc zmiany działają bez restartu gry; w logu gry pojawia się `[tf3export] settings: …`. Usunięcie pliku przywraca wartości domyślne.
 
 ## Wysyłka do Azure
 
@@ -198,7 +198,7 @@ Jedyna droga zmian w grze od widzów (`RewardService`). Trzynaście nagród, ka�
 
 Droga zmian w grze od widzów. Źródła (`CommandSource`): punkty kanału i ręczny test w oknie. Czat celowo nie może tu nic wysłać: komendy z czatu są tylko informacyjne, bo streamer nie ma nad nimi kontroli i mogłyby popsuć balans.
 
-- `ModCommandQueue` pisze kolejkę do `local\tf3export_cmd\queue.lua` (format `app.saveUserdata`, zapis przez plik tymczasowy). Mod czyta ją co sekundę i zapisuje wyniki do `results.lua` obok. Szczegóły formatu: [../lua_mod/README.md](../lua_mod/README.md#komendy-od-tf3bridge-akcje-widzów).
+- `ModCommandQueue` pisze kolejkę do `local\towns_industries\tf3export_queue.lua` (format `app.saveUserdata`, zapis przez plik tymczasowy). Mod czyta ją co sekundę i zapisuje wyniki do `tf3export_results.lua` obok. Szczegóły formatu: [../lua_mod/README.md](../lua_mod/README.md#komendy-od-tf3bridge-akcje-widzów).
 - Komenda zostaje w kolejce, dopóki mod nie zgłosi wyniku. Mod pomija identyfikatory, które już obsłużył, więc przepisywanie kolejki niczego nie wykona dwa razy. Po 320 s bez odpowiedzi (gra wyłączona albo bez moda) komenda jest oznaczana jako `expired`.
 - Tekst od widzów trafia do pliku Lua tylko jako escapowany literał (`ModCommandLua.Str`), a nazwy argumentów muszą być identyfikatorami.
 - Nazwy obiektów mają postać `Nazwa | Właściciel`, tak samo jak na stronie (`OwnerName`).

@@ -6,15 +6,14 @@ using Tf3Bridge.Input;
 namespace Tf3Bridge.Commands;
 
 /// <summary>
-/// Commands for the mod: local\tf3export_cmd\queue.lua (written here) and results.lua (written by
+/// Commands for the mod: local\towns_industries\tf3export_queue.lua (written here) and tf3export_results.lua (written by
 /// the mod through app.saveUserdata). A command stays in the queue until the mod reports its
 /// result; the mod skips ids it has already handled, so rewriting the queue never runs one twice.
 /// </summary>
 public sealed class ModCommandQueue
 {
-    public const string DirName = "tf3export_cmd";
-    public const string QueueName = "queue";
-    public const string ResultsName = "results";
+    public const string QueueName = SteamLocator.FilePrefix + "queue";
+    public const string ResultsName = SteamLocator.FilePrefix + "results";
 
     /// <summary>The mod drops commands older than 300 s; give it a moment more before giving up here.</summary>
     internal static readonly TimeSpan GiveUpAfter = TimeSpan.FromSeconds(320);
@@ -42,13 +41,9 @@ public sealed class ModCommandQueue
         _time = time;
     }
 
-    /// <summary>Next to the export folder (like the mod settings); null when that folder is unknown.</summary>
-    public static string? DirFor(string inputDir)
-    {
-        if (string.IsNullOrWhiteSpace(inputDir)) return null;
-        var local = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(Path.GetFullPath(inputDir)));
-        return local is null ? null : Path.Combine(local, DirName);
-    }
+    /// <summary>The export folder itself (the game allows no folder of our own); null when it is unknown.</summary>
+    public static string? DirFor(string inputDir) =>
+        string.IsNullOrWhiteSpace(inputDir) ? null : Path.TrimEndingDirectorySeparator(Path.GetFullPath(inputDir));
 
     public bool IsAvailable => _dir is not null;
 

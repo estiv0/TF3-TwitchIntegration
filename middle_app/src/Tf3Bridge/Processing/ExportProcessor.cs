@@ -350,7 +350,9 @@ public sealed class ExportProcessor(IOptions<BridgeOptions> options, IPublisher 
     {
         try
         {
-            var dir = Path.Combine(_options.InputDir, subfolder);
+            // obok, nie w towns_industries: tam gra (edytor map) listuje wszystko jako swoje eksporty
+            var local = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(_options.InputDir)) ?? _options.InputDir;
+            var dir = Path.Combine(local, "tf3export", subfolder);
             Directory.CreateDirectory(dir);
             File.Move(file.Path, Path.Combine(dir, Path.GetFileName(file.Path)), overwrite: true);
         }

@@ -1,6 +1,6 @@
 -- Komendy od Tf3Bridge (akcje widzów z Twitcha: czat, punkty kanału, przycisk testowy).
 --
---   Tf3Bridge -> local\tf3export_cmd\queue.lua    (format app.saveUserdata, pisany przez Tf3Bridge)
+--   Tf3Bridge -> local\towns_industries\tf3export_queue.lua    (format app.saveUserdata, pisany przez Tf3Bridge)
 --     { commands = { { id = "...", kind = "setName", created = <unix s>, entity = 123, name = "..." }, ... } }
 --     rodzaje: setName { entity, name }, adopt { entity, owner },
 --              effect { effect = townBoost|industryBoost|industryStrike|industryTaxRaid|lineFuelPremium|lineFuelBad
@@ -11,7 +11,7 @@
 --   wynik efektu ma też until = { year, month, day } (koniec w kalendarzu gry, do wiadomości na czacie),
 --   a wynik createTown / createIndustry: entity = id nowej encji (link na czacie);
 --   wynik wreck: count = zniszczone pojazdy, total = pojazdy linii przed sabotażem
---   mod      -> local\tf3export_cmd\results.lua  (app.saveUserdata)
+--   mod      -> local\towns_industries\tf3export_results.lua  (app.saveUserdata)
 --     { json = '{"results":[{"id":"...","status":"ok|failed|invalid|expired","error":"..."}]}',
 --       done = "id1\nid2\n..." }
 --
@@ -29,7 +29,7 @@ local create = ug_require "create.lua"
 
 local M = {}
 
-local DIR, QUEUE, RESULTS = "tf3export_cmd", "queue", "results"
+local DIR, QUEUE, RESULTS = util.USERDATA_DIR, util.FILE_PREFIX .. "queue", util.FILE_PREFIX .. "results"
 local MAX_RESULTS = 100   -- tyle ostatnich wyników trzymamy w results.lua
 local MAX_AGE_SEC = 300   -- starszych komend nie wykonujemy (np. kolejka sprzed restartu gry)
 local VERIFY_SEC = 15     -- tyle czekamy, aż efekt komendy będzie widoczny

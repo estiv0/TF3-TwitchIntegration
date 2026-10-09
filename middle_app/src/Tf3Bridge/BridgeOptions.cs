@@ -6,7 +6,7 @@ public sealed class BridgeOptions
     public const string Section = "Bridge";
 
     /// <summary>
-    /// Folder the mod writes to (app.saveUserdata "tf3export").
+    /// Folder the mod writes to (app.saveUserdata "towns_industries", files tf3export_*).
     /// Empty = detected from Steam (see <see cref="ResolveInputDir"/>).
     /// </summary>
     public string InputDir { get; set; } = "";
@@ -21,11 +21,11 @@ public sealed class BridgeOptions
 
     /// <summary>
     /// A file that still cannot be parsed after this long is treated as broken
-    /// and moved to InputDir/failed (otherwise it is assumed to be mid-write).
+    /// and moved to \local\tf3export\failed next to InputDir (otherwise it is assumed to be mid-write).
     /// </summary>
     public int IncompleteFileTimeoutSec { get; set; } = 30;
 
-    /// <summary>Move processed input files to InputDir/processed instead of deleting them (debugging).</summary>
+    /// <summary>Move processed input files to \local\tf3export\processed instead of deleting them (debugging).</summary>
     public bool KeepProcessedFiles { get; set; }
 
     /// <summary>

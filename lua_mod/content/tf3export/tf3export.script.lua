@@ -51,11 +51,11 @@ local cfg = {
 	commandsEveryWallSec = 1,      -- jak często czytać kolejkę komend z Tf3Bridge (commands.lua)
 }
 
--- Ustawienia z okna "Ustawienia moda" w Tf3Bridge: local\tf3export_settings\settings.lua
+-- Ustawienia z okna "Ustawienia moda" w Tf3Bridge: local\towns_industries\tf3export_settings.lua
 -- (format jak z app.saveUserdata). Czytane przez app.loadUserdata co settingsEveryWallSec, więc
 -- zmiany działają bez restartu gry. Klucz -> { typ, min, max }; zakresy jak w ModSettings.cs.
 -- Brak pliku albo złej wartości = domyślna z cfg powyżej.
-local SETTINGS_DIR, SETTINGS_FILE = "tf3export_settings", "settings"
+local SETTINGS_DIR, SETTINGS_FILE = util.USERDATA_DIR, util.FILE_PREFIX .. "settings"
 local SETTINGS = {
 	dynamicEveryDays = { "number", 1, 30 },
 	minDynamicWallSec = { "number", 2, 300 },

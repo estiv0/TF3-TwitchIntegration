@@ -48,12 +48,12 @@ public sealed class ModSettingsTests : IDisposable
     }
 
     [Fact]
-    public void Settings_file_sits_next_to_the_export_folder()
+    public void Settings_file_sits_in_the_export_folder()
     {
-        var local = Path.Combine(_dir, "local");
+        var input = Path.Combine(_dir, "local", "towns_industries");
 
-        Assert.Equal(Path.Combine(local, "tf3export_settings", "settings.lua"),
-            ModSettingsStore.PathFor(Path.Combine(local, "tf3export") + Path.DirectorySeparatorChar));
+        Assert.Equal(Path.Combine(input, "tf3export_settings.lua"),
+            ModSettingsStore.PathFor(input + Path.DirectorySeparatorChar));
         Assert.Null(ModSettingsStore.PathFor(""));
     }
 }

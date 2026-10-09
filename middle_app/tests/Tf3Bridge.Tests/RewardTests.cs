@@ -46,7 +46,7 @@ public sealed class RewardTests : IDisposable
         return service;
     }
 
-    private string QueueText => File.ReadAllText(Path.Combine(_dir, "cmd", "queue.lua"));
+    private string QueueText => File.ReadAllText(Path.Combine(_dir, "cmd", "tf3export_queue.lua"));
 
     private void ModReports(string status, string? error = null, string? until = null, long? entity = null, int? count = null, int? total = null)
     {
@@ -55,7 +55,7 @@ public sealed class RewardTests : IDisposable
             + (entity is null ? "" : $",\"entity\":{entity}") + (count is null ? "" : $",\"count\":{count}")
             + (total is null ? "" : $",\"total\":{total}");
         var json = $$"""{"results":[{"id":"{{id}}","status":"{{status}}"{{extra}}}]}""";
-        var path = Path.Combine(_dir, "cmd", "results.lua");
+        var path = Path.Combine(_dir, "cmd", "tf3export_results.lua");
         File.WriteAllText(path, $"function data()\r\nreturn {{\r\n\t\tjson = \"{json.Replace("\"", "\\\"")}\",\r\n\t}}\r\nend");
         File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddSeconds(Random.Shared.Next(1, 1000)));
         _queue.Poll();
@@ -550,7 +550,7 @@ public sealed class RewardTests : IDisposable
 
         var close = await _helix.WaitFor(r => r.Url.Contains("redemptions") && r.Method == "PATCH");
         Assert.Contains("CANCELED", close.Body);
-        Assert.False(File.Exists(Path.Combine(_dir, "cmd", "queue.lua")) && QueueText.Contains("townBoost"));
+        Assert.False(File.Exists(Path.Combine(_dir, "cmd", "tf3export_queue.lua")) && QueueText.Contains("townBoost"));
         Assert.Contains("gra nie działa", Assert.Single(_outcomes).Message);
     }
 

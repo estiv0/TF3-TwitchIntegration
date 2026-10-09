@@ -30,7 +30,7 @@ public sealed class ExportProcessorTests : IDisposable
     private void WriteGameFile(string name, string json, DateTime? lastWriteUtc = null)
     {
         var literal = json.Replace("\\", "\\\\").Replace("\"", "\\\"");
-        var path = Path.Combine(_input, name + ".lua");
+        var path = Path.Combine(_input, "tf3export_" + name + ".lua");
         File.WriteAllText(path, $"function data()\r\nreturn {{ \r\n\t\tjson = \"{literal}\",\r\n\t}}\r\nend\r\n", new UTF8Encoding(false));
         if (lastWriteUtc is not null) File.SetLastWriteTimeUtc(path, lastWriteUtc.Value);
     }
@@ -83,7 +83,7 @@ public sealed class ExportProcessorTests : IDisposable
     [Fact]
     public async Task LeavesIncompleteFileForNextPass()
     {
-        File.WriteAllText(Path.Combine(_input, "dynamic_aa_000001.lua"), "function data()\r\nreturn { \r\n\t\tjson = \"{\\\"kin");
+        File.WriteAllText(Path.Combine(_input, "tf3export_dynamic_aa_000001.lua"), "function data()\r\nreturn { \r\n\t\tjson = \"{\\\"kin");
 
         await _processor.ProcessOnceAsync(CancellationToken.None);
 
@@ -95,9 +95,13 @@ public sealed class ExportProcessorTests : IDisposable
     public async Task IgnoresUnrelatedFiles()
     {
         WriteGameFile("bench_A", """{"x":1}""");
+        WriteGameFile("queue", """{"x":1}""");
+        // eksport miast i przemysłu z edytora map leży w tym samym folderze (towns_industries)
+        File.WriteAllText(Path.Combine(_input, "dynamic_aa_000001.lua"), "function data() return {} end");
 
         await _processor.ProcessOnceAsync(CancellationToken.None);
 
-        Assert.Single(Directory.GetFiles(_input, "*.lua"));
+        Assert.Equal(3, Directory.GetFiles(_input, "*.lua").Length);
+        Assert.False(File.Exists(Path.Combine(_output, ExportProcessor.DynamicPath)));
     }
 }

@@ -46,7 +46,7 @@ public sealed class BridgeRunner(ExportProcessor processor, AzureMirror mirror, 
         logger.LogInformation("Watching {Input}, publishing to {Output}", o.InputDir, o.OutputDir);
         if (o.InputDir.Length == 0)
             logger.LogWarning("Transport Fever 3 data folder not found in Steam - run the game once with the mod, "
-                + "or set it with --Bridge:InputDir=<Steam>\\userdata\\<id>\\3493540\\local\\tf3export");
+                + "or set it with --Bridge:InputDir=<Steam>\\userdata\\<id>\\3493540\\local\\towns_industries");
         else if (!Directory.Exists(o.InputDir))
             logger.LogWarning("Input folder does not exist yet (it appears after the mod writes its first file)");
 

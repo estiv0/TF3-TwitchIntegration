@@ -17,14 +17,14 @@ public sealed class ModCommandTests : IDisposable
 
     private ModCommandQueue Queue() => new(_dir, NullLogger.Instance, _time);
 
-    private string QueueText => File.ReadAllText(Path.Combine(_dir, "queue.lua"));
+    private string QueueText => File.ReadAllText(Path.Combine(_dir, "tf3export_queue.lua"));
 
     // Tak jak zapisuje app.saveUserdata: JSON jako escapowany literał Lua.
     private void WriteResults(string json)
     {
         Directory.CreateDirectory(_dir);
         var escaped = json.Replace("\\", "\\\\").Replace("\"", "\\\"");
-        var path = Path.Combine(_dir, "results.lua");
+        var path = Path.Combine(_dir, "tf3export_results.lua");
         File.WriteAllText(path, $"function data()\r\nreturn {{ \r\n\t\tdone = \"x\",\r\n\t\tjson = \"{escaped}\",\r\n\t}}\r\nend");
         File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddSeconds(Random.Shared.Next(1, 1000))); // nowy znacznik czasu
     }
@@ -149,7 +149,7 @@ public sealed class ModCommandTests : IDisposable
     {
         var queue = Queue();
         var a = queue.Enqueue(ModCommand.SetName(1, "A", CommandSource.Test, "x"));
-        File.WriteAllText(Path.Combine(_dir, "results.lua"), "function data()\r\nreturn {\r\n\t\tjson = \"{\\\"res");
+        File.WriteAllText(Path.Combine(_dir, "tf3export_results.lua"), "function data()\r\nreturn {\r\n\t\tjson = \"{\\\"res");
 
         queue.Poll();
 

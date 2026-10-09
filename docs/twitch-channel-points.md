@@ -50,7 +50,7 @@ Wymagania i ograniczenia:
 
 ## 2. Co mamy po naszej stronie
 
-- **Kanał Tf3Bridge → mod już działa.** Ustawienia moda są zapisywane do `local\tf3export_settings\settings.lua`, a mod czyta je przez `app.loadUserdata` co `settingsEveryWallSec` (5 s). Zobacz `lua_mod/content/tf3export/tf3export.script.lua` i `middle_app/src/Tf3Bridge/ModSettings.cs`. Kolejkę komend można zrobić tak samo, np. jako `local\tf3export_cmd\queue.lua`. Uwaga: `loadUserdata` na brakującym pliku pokazuje okno błędu gry, więc najpierw trzeba sprawdzić `app.getAllUserdata` (jak w `settingsFileExists`).
+- **Kanał Tf3Bridge → mod już działa.** Ustawienia moda są zapisywane do `local\towns_industries\tf3export_settings.lua`, a mod czyta je przez `app.loadUserdata` co `settingsEveryWallSec` (5 s). Zobacz `lua_mod/content/tf3export/tf3export.script.lua` i `middle_app/src/Tf3Bridge/ModSettings.cs`. Kolejkę komend można zrobić tak samo, np. jako `local\towns_industries\tf3export_queue.lua`. Uwaga: `loadUserdata` na brakującym pliku pokazuje okno błędu gry, więc najpierw trzeba sprawdzić `app.getAllUserdata` (jak w `settingsFileExists`).
 - **Kanał mod → Tf3Bridge też działa** przez `app.saveUserdata`. Mod może w ten sam sposób odsyłać wynik komendy („ok” albo „błąd”).
 - **Gra ma bogate API komend:** `api/tealdef/api/cmd.d.tl` w instalacji gry, wysyłane przez `api.cmd.sendCommand`.
 - **Strona już rozumie konwencję `Nazwa | Właściciel`** dla miast, przemysłu, stacji i linii (`splitOwners` w `web/js/format.js`). To naturalna podstawa pod „adopcję” obiektów przez widzów.

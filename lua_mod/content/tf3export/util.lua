@@ -93,6 +93,13 @@ function util.vec3(v)
 	return { util.round(x), util.round(y), util.round(z) }
 end
 
+-- Folder userdata dla wszystkich plików moda. Od builda 40420 gra pozwala app.*Userdata tylko na
+-- towns_industries, heightmaps i mod_presets ("The directory you trying to access is not available
+-- or invalid"), więc piszemy do towns_industries (widać go tylko w imporcie edytora map),
+-- a nasze pliki odróżnia prefiks nazwy. Tf3Bridge: SteamLocator.UserdataDir / FilePrefix.
+util.USERDATA_DIR = "towns_industries"
+util.FILE_PREFIX = "tf3export_"
+
 -- Czy plik userdata istnieje? app.loadUserdata na brakującym pliku zgłasza błąd gry
 -- ("Failed to load userdata", z oknem błędu) mimo pcall, więc najpierw sprawdzamy listę plików.
 -- getAllUserdata zwraca nazwy; na wszelki wypadek akceptujemy też wariant z ".lua". Tylko wątek GUI.

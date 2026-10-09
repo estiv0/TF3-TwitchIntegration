@@ -6,8 +6,8 @@ namespace Tf3Bridge;
 
 /// <summary>
 /// Mod settings edited in the bridge window. The mod can only read files through
-/// app.loadUserdata, so they are written as a userdata file next to the export folder
-/// (local\tf3export_settings\settings.lua); the mod re-reads it every few seconds, so changes
+/// app.loadUserdata, so they are written as a userdata file in the export folder
+/// (local\towns_industries\tf3export_settings.lua); the mod re-reads it every few seconds, so changes
 /// apply without restarting the game. Keys match <c>cfg</c> in tf3export.script.lua, which
 /// also clamps every value to the ranges below.
 /// </summary>
@@ -30,16 +30,11 @@ public sealed record ModSettings(
 
 public static partial class ModSettingsStore
 {
-    public const string DirName = "tf3export_settings";
-    public const string FileName = "settings";
+    public const string FileName = SteamLocator.FilePrefix + "settings";
 
-    /// <summary>The settings file sits next to the export folder; null when that folder is unknown.</summary>
-    public static string? PathFor(string inputDir)
-    {
-        if (string.IsNullOrWhiteSpace(inputDir)) return null;
-        var local = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(Path.GetFullPath(inputDir)));
-        return local is null ? null : Path.Combine(local, DirName, FileName + ".lua");
-    }
+    /// <summary>The settings file sits in the export folder; null when that folder is unknown.</summary>
+    public static string? PathFor(string inputDir) =>
+        string.IsNullOrWhiteSpace(inputDir) ? null : Path.Combine(Path.GetFullPath(inputDir), FileName + ".lua");
 
     /// <summary>Missing file or keys fall back to the defaults (the mod does the same).</summary>
     public static ModSettings Load(string path)

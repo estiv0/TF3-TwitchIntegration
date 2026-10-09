@@ -192,3 +192,13 @@ print(api.engine.getRevision(e))                                                
 ```
 
 Pozostaje też sprawdzić, czy `#lista` i indeksowanie od 1 działają na wynikach (pkt 4 starej listy). Dokumentacja typuje je jako zwykłe tablice `{Entity}` i osobne `*_native: Vector<...>`, więc **prawdopodobnie** dostajemy zwykłe tabele Lua.
+
+## Build 40420 (2026-10-08): app.*Userdata tylko w wybranych folderach
+
+- `app.saveUserdata` / `loadUserdata` / `getAllUserdata` przyjmują już tylko katalogi `towns_industries`, `heightmaps`, `mod_presets`;
+  inne kończą się błędem „The directory you trying to access is not available or invalid” (tekst z `TransportFever3.exe`, `app_script_util.cpp`).
+- Nazwy plików gra też sprawdza („Forbidden file name … another valid version could be …”); zastrzeżone są wzorce zapisów gry
+  (`autosave_…`, `crash_…`, `exitsave_…`).
+- Mod i Tf3Bridge piszą więc wszystko do `local\towns_industries\` z prefiksem `tf3export_`
+  (`util.USERDATA_DIR` / `util.FILE_PREFIX`, `SteamLocator.UserdataDir` / `FilePrefix`). `mod_presets` odpada,
+  bo jego zawartość widać jako presety modów w menu; `towns_industries` widać tylko w imporcie edytora map.

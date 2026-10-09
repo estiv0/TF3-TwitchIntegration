@@ -3,8 +3,8 @@
 --   wątek GUI (guiUpdate):     app.saveUserdata działa
 --
 -- Tryb "userdata" (wątek GUI):
---   app.saveUserdata("tf3export", "<kind>_<session>_<seq>", { json = "<JSON>" })
---   -> ...\3493540\local\tf3export\<kind>_<session>_<seq>.lua o treści:
+--   app.saveUserdata("towns_industries", "tf3export_<kind>_<session>_<seq>", { json = "<JSON>" })
+--   -> ...\3493540\local\towns_industries\tf3export_<kind>_<session>_<seq>.lua o treści:
 --        function data()
 --        return {
 --            json = "<JSON jako literał stringa Lua>",
@@ -20,7 +20,7 @@ local util = ug_require "util.lua"
 
 local W = {}
 
-W.userdataDir = "tf3export"
+W.userdataDir = util.USERDATA_DIR
 W.chunkSize = 8000
 
 function W.mode()
@@ -59,7 +59,7 @@ local function writeLog(kind, session, seq, content)
 end
 
 local function writeUserdata(kind, session, seq, content)
-	local name = string.format("%s_%s_%06d", kind, session, seq)
+	local name = string.format("%s%s_%s_%06d", util.FILE_PREFIX, kind, session, seq)
 	local ok, err = pcall(function()
 		app.saveUserdata(W.userdataDir, name, { json = content })
 	end)
