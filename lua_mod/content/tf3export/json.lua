@@ -74,8 +74,12 @@ encodeValue = function(v, buf, depth)
 	elseif t == "number" then
 		if v ~= v or v == math.huge or v == -math.huge then
 			buf[#buf + 1] = "null"
-		elseif v == math.floor(v) and math.abs(v) < 2^53 then
+		elseif v == math.floor(v) and math.abs(v) < 2^31 then
 			buf[#buf + 1] = string.format("%d", v)
+		elseif v == math.floor(v) and math.abs(v) < 2^53 then
+			-- %d w Lua 5.2 na Windows bierze tylko 32-bitowy long ("not a number in proper range"),
+			-- a %.0f wypisuje liczby całkowite do 2^53 dokładnie
+			buf[#buf + 1] = string.format("%.0f", v)
 		else
 			-- %.14g zachowuje precyzję i daje poprawny JSON także dla 1.5e-05
 			buf[#buf + 1] = string.format("%.14g", v)
