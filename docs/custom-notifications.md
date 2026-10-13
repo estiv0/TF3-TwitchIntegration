@@ -186,6 +186,8 @@ Tytuł: `Twitch: <widz>`. Opis według rodzaju nagrody:
 | TaxRaid | `<widz> nasłał(a) skarbówkę na zakłady widza <ofiara> (N): produkcja -X% do <data>.` |
 | PremiumFuel | `<widz> zatankował(a) paliwo premium na linii <cel>: +X% prędkości do <data>.` |
 | BadFuel | `<widz> ochrzcił(a) paliwo na linii <cel>: -X% prędkości do <data>.` |
+| Subsidy | `<widz> przekazał(a) firmie dotację <kwota>.` |
+| Loan | `<widz> udzielił(a) firmie kredytu <kwota> na X% na N mies. (raty w zakładce Kredyty).` |
 | BrakeSabotage | `Problemy techniczne na linii <cel>: zniszczone pojazdy: N z M (sabotaż: <widz>).` (kliknięcie pokazuje linię) |
 
 Formy „kupił(a)”, bo płci nie zgadujemy po nicku. `<data>` z `ModCommandResult.Until`

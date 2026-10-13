@@ -6,6 +6,7 @@
 --              effect { effect = townBoost|industryBoost|industryStrike|industryTaxRaid|lineFuelPremium|lineFuelBad
 --                       |lineStop|lineHold, entity, months, factor, user, entities?, target? } (effects.lua)
 --              wreck { entity = linia, share } (sabotaż hamulców: część pojazdów linii znika)
+--              subsidy { amount, user } (dotacja), loan { amount, months, percent, user } (kredyt w systemie kredytów gry)
 --              createTown { x, y, name, owner }, createIndustry { x, y, file, name, owner } (create.lua)
 --              notify { title, text, entity?, dismissMs? } (powiadomienie w grze, twitch_notification.script.lua)
 --   wynik efektu ma też until = { year, month, day } (koniec w kalendarzu gry, do wiadomości na czacie),
@@ -175,6 +176,74 @@ function KINDS.wreck(c)
 	end, nil, { count = count, total = #vs,
 		diag = function() return string.format("%d of %d sold vehicles still on the line", remaining(), count) end,
 		holdOnPause = true }
+end
+
+-- Pieniądze dla firmy od widza: dotacja (wpis SUBSIDY w księgach) albo kredyt w systemie kredytów gry.
+-- Przy nieograniczonych pieniądzach (getPlayersBalance == nil) oba nie mają sensu, a gra zamraża wtedy kredyty.
+local function limitedMoney()
+	return api.engine.util.finance.getPlayersBalance(api.engine.util.getPlayer()) ~= nil
+end
+
+local function moneyArg(c)
+	local amount = tonumber(c.amount)
+	if not amount or amount < 1 or amount > 1e12 then return nil end
+	return math.floor(amount)
+end
+
+function KINDS.subsidy(c)
+	local amount = moneyArg(c)
+	if not amount then return nil, "bad arguments" end
+	if not limitedMoney() then return nil, "unlimited money" end
+	local entry = api.type.JournalEntry.new()
+	entry.amount = amount
+	entry.time = -1
+	entry.category.type = api.type.JournalEntry.Type.SUBSIDY
+	api.cmd.sendCommand(api.cmd.makeJournalBookAssetCmd(api.engine.util.getPlayer(), entry, api.type.Vec3f.new(0, 0, 0)),
+		function(_, success)
+			local p = pending[c.id]
+			if p then p.callback = success end
+		end)
+	-- stan konta zmienia się cały czas, więc o wyniku decyduje callback gry
+	return function()
+		local p = pending[c.id]
+		return p ~= nil and p.callback == true
+	end
+end
+
+-- Kredyt: to samo zdarzenie, które wysyła okno Finanse → Kredyty dla własnego kredytu ({ nil, loan }); game script gry
+-- (game_mechanics/finance/loan.script.tl) wypłaca kwotę, dopisuje kredyt do obtainedLoans i co miesiąc pobiera
+-- ratę: kwota / miesiące + odsetki (kwota × % / miesiące). Kredyt widać i można spłacić w oknie Finanse.
+local LOAN_SCRIPT = "::/game_mechanics/finance/loan.gs"
+local MAX_LOANS = 4 -- loan_util.maximalObtainableLoans
+
+local function loanTable()
+	local entity = api.engine.system.gameScriptSystem.getEntityForGameScript(LOAN_SCRIPT)
+	local gs = entity and api.engine.getComponent(entity, api.type.ComponentType.GAME_SCRIPT)
+	return gs and gs.state or nil
+end
+
+function KINDS.loan(c)
+	local amount, months, percent = moneyArg(c), math.floor(tonumber(c.months) or 0), tonumber(c.percent)
+	if not amount or months < 1 or months > 360 or not percent or percent < 0 or percent > 100 then return nil, "bad arguments" end
+	if not limitedMoney() then return nil, "unlimited money" end
+	local t = loanTable()
+	if type(t) ~= "table" then return nil, "loan script not found" end
+	local count = #util.list(t.obtainedLoans)
+	if count >= MAX_LOANS then return nil, "loan limit " .. count end
+	local freeId = tonumber(t.freeId) or 0
+	local loan = {
+		type = "Custom",
+		amount = amount,
+		duration = months * api.util.getDefaultMonthDuration(),
+		percentage = percent / 100,
+	}
+	api.cmd.sendCommand(api.cmd.makeScriptingSendEventCmd("", "Loan", "Obtain", { nil, loan }))
+	util.log(string.format("loan: %d for %d months at %s%% (%d of %d loans)", amount, months, tostring(percent), count, MAX_LOANS))
+	-- skrypt gry dopisuje kredyt dopiero po udanej wypłacie (freeId rośnie o 1)
+	return function()
+		local now = loanTable()
+		return type(now) == "table" and (tonumber(now.freeId) or 0) > freeId
+	end, nil, { holdOnPause = true }
 end
 
 -- Powiadomienie w grze (po rozliczonej nagrodzie za punkty kanału). Teksty są gotowe z Tf3Bridge.

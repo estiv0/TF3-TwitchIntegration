@@ -13,15 +13,17 @@ namespace Tf3Bridge.Rewards;
 public enum RewardKind
 {
     AdoptTown, BuyIndustry, BoostTown, BoostIndustry, StopLine, HoldLine, CreateTown, CreateIndustry,
-    StrikeIndustry, TaxRaid, PremiumFuel, BadFuel, BrakeSabotage,
+    StrikeIndustry, TaxRaid, PremiumFuel, BadFuel, BrakeSabotage, Subsidy, Loan,
     Bomb, Line, Nature, RoadVehicle, SpecialVehicle,
 }
 
 /// <summary>
 /// One reward as the streamer configured it. <see cref="Months"/> (game months) and <see cref="Factor"/>
 /// only matter for timed effects (see <see cref="RewardKinds"/>); for the brake sabotage <see cref="Factor"/> is the
-/// largest share of the line's vehicles that may be wrecked. Prompts may use {months}, {percent} (the change in %,
-/// without sign; the share for the brake sabotage) and {site} (the map site, filled in when the reward is sent to Twitch).
+/// largest share of the line's vehicles that may be wrecked; for the loan <see cref="Months"/> is how long it is repaid and
+/// <see cref="Factor"/> its interest in % (2 = 2%). Prompts may use {months}, {percent} (the change in %, without sign;
+/// the share for the brake sabotage, the interest for the loan), {amount} (<see cref="Amount"/>) and {site}
+/// (the map site, filled in when the reward is sent to Twitch).
 /// Months, not days: a game day lasts only 2-3 s, so effects of a few days were over before anyone saw them.
 /// </summary>
 public sealed record RewardConfig(
@@ -36,14 +38,20 @@ public sealed record RewardConfig(
     /// </summary>
     public bool UserInput { get; init; } = true;
 
-    public bool RequiresInput => UserInput || !RewardKinds.Manual(Kind);
+    public bool RequiresInput => RewardKinds.Manual(Kind) ? UserInput : RewardKinds.HasTarget(Kind);
     public const int MaxPrompt = 200;
     public static readonly (int Min, int Max) MonthsRange = (1, 60);
+
+    /// <summary>Money the dotacja / kredyt gives the streamer's company (<see cref="RewardKinds.HasAmount"/>).</summary>
+    public long Amount { get; init; }
+
+    public static readonly (long Min, long Max) AmountRange = (1_000, 100_000_000_000);
 
     /// <summary>Prompt shown on Twitch with the placeholders filled in.</summary>
     public string TwitchPrompt => Prompt
         .Replace("{months}", Months.ToString(CultureInfo.InvariantCulture))
-        .Replace("{percent}", RewardKinds.Percent(Kind, Factor));
+        .Replace("{percent}", RewardKinds.Percent(Kind, Factor))
+        .Replace("{amount}", RewardMessages.Money(Amount));
 
     /// <summary>Values clamped to what Twitch and the mod accept.</summary>
     public RewardConfig Normalized() => this with
@@ -54,8 +62,9 @@ public sealed record RewardConfig(
         CooldownSec = Math.Clamp(CooldownSec, 0, 7 * 24 * 3600),
         MaxPerStream = Math.Max(0, MaxPerStream),
         MaxPerUserPerStream = Math.Max(0, MaxPerUserPerStream),
-        Months = Math.Clamp(Months, MonthsRange.Min, MonthsRange.Max),
+        Months = Math.Clamp(Months, RewardKinds.MonthsRange(Kind).Min, RewardKinds.MonthsRange(Kind).Max),
         Factor = Math.Round(Math.Clamp(Factor, RewardKinds.FactorRange(Kind).Min, RewardKinds.FactorRange(Kind).Max), 2),
+        Amount = RewardKinds.HasAmount(Kind) ? Math.Clamp(Amount, AmountRange.Min, AmountRange.Max) : 0,
     };
 
     private static string Cut(string s, int max) => s.Length <= max ? s : s[..max];
@@ -81,9 +90,26 @@ public static class RewardKinds
     public static bool Sabotage(RewardKind kind) =>
         kind is RewardKind.StrikeIndustry or RewardKind.TaxRaid or RewardKind.BadFuel or RewardKind.BrakeSabotage;
 
-    /// <summary>Allowed <see cref="RewardConfig.Factor"/>: boosts above 1, sabotage below 1, brake sabotage a share 0..1.</summary>
+    /// <summary>
+    /// Money for the streamer's company, no target: dotacja (booked as a subsidy) and kredyt (a loan in the game's own
+    /// loan system, repaid by the game every month with interest).
+    /// </summary>
+    public static bool HasAmount(RewardKind kind) => kind is RewardKind.Subsidy or RewardKind.Loan;
+
+    /// <summary>The viewer names a target (object, nick or map code); rewards for the company itself need no text.</summary>
+    public static bool HasTarget(RewardKind kind) => !Manual(kind) && !HasAmount(kind);
+
+    /// <summary>Allowed <see cref="RewardConfig.Months"/>: effects up to 5 years, loans up to 30 (the game's own up to 24).</summary>
+    public static (int Min, int Max) MonthsRange(RewardKind kind) =>
+        kind == RewardKind.Loan ? (1, 360) : RewardConfig.MonthsRange;
+
+    /// <summary>
+    /// Allowed <see cref="RewardConfig.Factor"/>: boosts above 1, sabotage below 1, brake sabotage a share 0..1,
+    /// loan interest in % (the game's own loans: 3-12%).
+    /// </summary>
     public static (double Min, double Max) FactorRange(RewardKind kind) => kind switch
     {
+        RewardKind.Loan => (0, 50),
         RewardKind.StrikeIndustry or RewardKind.TaxRaid => (0.01, 0.95),
         RewardKind.BadFuel => (0.1, 0.95),
         RewardKind.PremiumFuel => (1.05, 3.0),
@@ -91,9 +117,13 @@ public static class RewardKinds
         _ => (1.05, 5.0),
     };
 
-    /// <summary>"50" for ×1.5 and for ×0.5 (the text says whether it is more or less); the share in % for the brake sabotage.</summary>
-    public static string Percent(RewardKind kind, double factor) =>
-        Math.Round(Math.Abs(kind == RewardKind.BrakeSabotage ? factor : factor - 1) * 100).ToString(CultureInfo.InvariantCulture);
+    /// <summary>
+    /// "50" for ×1.5 and for ×0.5 (the text says whether it is more or less); the share in % for the brake sabotage;
+    /// the interest as set for the loan ("2", "1,5").
+    /// </summary>
+    public static string Percent(RewardKind kind, double factor) => kind == RewardKind.Loan
+        ? Math.Round(factor, 2).ToString("0.##", RewardMessages.Polish)
+        : Math.Round(Math.Abs(kind == RewardKind.BrakeSabotage ? factor : factor - 1) * 100).ToString(CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Builds something new where the viewer pointed on the site map: the input is a code from the site
@@ -119,9 +149,9 @@ public static class RewardKinds
     };
 
     public static bool HasFactor(RewardKind kind) => kind is RewardKind.BoostTown or RewardKind.BoostIndustry or RewardKind.StrikeIndustry
-        or RewardKind.TaxRaid or RewardKind.PremiumFuel or RewardKind.BadFuel or RewardKind.BrakeSabotage;
+        or RewardKind.TaxRaid or RewardKind.PremiumFuel or RewardKind.BadFuel or RewardKind.BrakeSabotage or RewardKind.Loan;
 
-    public static bool HasMonths(RewardKind kind) => Effect(kind) is not null;
+    public static bool HasMonths(RewardKind kind) => Effect(kind) is not null || kind == RewardKind.Loan;
 
     /// <summary>
     /// No action in the game: Tf3Bridge only creates the reward and switches it with the game (off when the mod does not run);
@@ -171,6 +201,12 @@ public static class RewardKinds
         new(RewardKind.BrakeSabotage, true, "TF3: sabotaż hamulców",
             "Wpisz nazwę linii innego widza. Od 1 do {percent}% jej pojazdów rozbije się i zniknie (nie do cofnięcia).",
             25000, 1800, 0, 1, 0, 0.5),
+        new(RewardKind.Subsidy, true, "TF3: dotacja",
+            "Przekazujesz firmie streamera dotację {amount} (bez zwrotu).",
+            30000, 1800, 0, 1, 0, 1) { Amount = 10_000_000 },
+        new(RewardKind.Loan, true, "TF3: kredyt",
+            "Udzielasz firmie streamera kredytu {amount} na {percent}% na {months} mies. gry. Gra sama pobiera raty co miesiąc (zakładka Kredyty).",
+            5000, 900, 0, 1, 60, 2) { Amount = 10_000_000 },
         // Wykonuje streamer: opis i limity ustawia sam w oknie nagród.
         new(RewardKind.Bomb, true, "TF3: bomba", "", 5000, 0, 0, 0, 0, 1) { UserInput = false },
         new(RewardKind.Line, true, "TF3: linia", "", 5000, 0, 0, 0, 0, 1) { UserInput = false },
@@ -241,6 +277,7 @@ public sealed record RewardSettings(IReadOnlyList<RewardConfig> Rewards, string 
 
     private static RewardConfig Migrate(RewardConfig r, RewardConfig d) => r with
     {
+        Amount = r.Amount > 0 ? r.Amount : d.Amount,
         Title = r.Title == OldAdoptTitle ? d.Title : r.Title,
         Prompt = r.Prompt == OldAdoptPrompt ? d.Prompt : r.Prompt,
     };

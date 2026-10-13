@@ -95,6 +95,8 @@ public sealed class RewardsDialog : Form
                  + "gdy jej nie ma, cel jest niejednoznaczny, miejsce się nie nadaje albo gra nie wykona akcji, punkty wracają. W opisie można użyć {months}, {percent} i {site} (adres mapy). "
                  + "Sabotaże (strajk, skarbówka, chrzczone paliwo, hamulce) działają tylko na obiekty innych widzów; przy skarbówce widz wpisuje nick ofiary. "
                  + "Mnożnik poniżej 1 to spadek (0,5 = -50%), a przy sabotażu hamulców to największa część pojazdów linii, która zniknie (0,5 = do 50%, zawsze co najmniej 1). "
+                 + "Dotacja i kredyt dają firmie „Kwotę” bez wpisywania tekstu ({amount} w opisie). Kredyt trafia do zakładki Kredyty w grze: gra spłaca go co miesiąc przez podane miesiące gry, "
+                 + "a w kolumnie mnożnika jest jego oprocentowanie w % (2 = 2%; odsetki w TF3 to kwota × %, rozłożone na raty). Gra pozwala mieć najwyżej 4 kredyty naraz (razem z Twoimi). "
                  + "Bomba, linia, natura i pojazdy nie robią nic w grze: Tf3Bridge tylko je tworzy i włącza razem z grą, a wykupienia zostają w kolejce Twitcha, "
                  + "gdzie sam je wykonujesz i akceptujesz albo zwracasz (przy nich wybierasz też, czy widz wpisuje tekst). "
                  + "Limit 0 = bez limitu. Czas efektów jest w miesiącach gry (miesiąc to ok. 1–1,5 min przy prędkości 1×; na pauzie efekt stoi).\n\nStan: " + status,
@@ -109,7 +111,8 @@ public sealed class RewardsDialog : Form
         AddText("perStream", "Limit / stream", 80);
         AddText("perUser", "Limit / widz", 75);
         AddText("months", "Miesiące gry", 75);
-        AddText("factor", "Mnożnik", 65);
+        AddText("factor", "Mnożnik / %", 65);
+        AddText("amount", "Kwota ($)", 95);
         _grid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "input", HeaderText = "Widz wpisuje tekst", Width = 70 });
         _grid.Columns.Insert(1, new DataGridViewTextBoxColumn { Name = "kind", HeaderText = "Akcja", Width = 140, ReadOnly = true });
 
@@ -117,12 +120,13 @@ public sealed class RewardsDialog : Form
         {
             var i = _grid.Rows.Add(r.Enabled, KindLabel(r.Kind), r.Title, r.Prompt, r.Cost, r.CooldownSec, r.MaxPerStream,
                 r.MaxPerUserPerStream, RewardKinds.HasMonths(r.Kind) ? r.Months : "", RewardKinds.HasFactor(r.Kind) ? r.Factor.ToString("0.##", CultureInfo.CurrentCulture) : "",
-                r.RequiresInput);
+                RewardKinds.HasAmount(r.Kind) ? r.Amount.ToString("N0", CultureInfo.CurrentCulture) : "", r.RequiresInput);
             var row = _grid.Rows[i];
             row.Tag = r.Kind;
             if (!RewardKinds.HasMonths(r.Kind)) Lock(row.Cells["months"]);
             if (!RewardKinds.HasFactor(r.Kind)) Lock(row.Cells["factor"]);
-            if (!RewardKinds.Manual(r.Kind)) Lock(row.Cells["input"]); // gra potrzebuje nazwy celu
+            if (!RewardKinds.HasAmount(r.Kind)) Lock(row.Cells["amount"]);
+            if (!RewardKinds.Manual(r.Kind)) Lock(row.Cells["input"]); // gra potrzebuje nazwy celu (dotacja i kredyt: żadnego)
         }
 
         _zonesGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "industry", HeaderText = "Zakład", Width = 170, ReadOnly = true });
@@ -245,9 +249,10 @@ public sealed class RewardsDialog : Form
                 return false;
             }
             var months = old.Months;
-            if (RewardKinds.HasMonths(kind) && (!int.TryParse(Text("months"), out months) || months < RewardConfig.MonthsRange.Min || months > RewardConfig.MonthsRange.Max))
+            var monthsRange = RewardKinds.MonthsRange(kind);
+            if (RewardKinds.HasMonths(kind) && (!int.TryParse(Text("months"), out months) || months < monthsRange.Min || months > monthsRange.Max))
             {
-                error = $"{KindLabel(kind)}: miesiące gry od {RewardConfig.MonthsRange.Min} do {RewardConfig.MonthsRange.Max}.";
+                error = $"{KindLabel(kind)}: miesiące gry od {monthsRange.Min} do {monthsRange.Max}.";
                 return false;
             }
             var factor = old.Factor;
@@ -255,16 +260,36 @@ public sealed class RewardsDialog : Form
             if (RewardKinds.HasFactor(kind) && (!double.TryParse(Text("factor").Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out factor)
                 || factor < range.Min || factor > range.Max))
             {
-                var example = kind == RewardKind.BrakeSabotage ? "0,5 = do 50% pojazdów" : range.Max <= 1 ? "0,5 = -50%" : "1,5 = +50%";
-                error = string.Create(CultureInfo.CurrentCulture, $"{KindLabel(kind)}: mnożnik od {range.Min} do {range.Max} (np. {example}).");
+                error = kind == RewardKind.Loan
+                    ? string.Create(CultureInfo.CurrentCulture, $"{KindLabel(kind)}: oprocentowanie od {range.Min} do {range.Max}% (np. 2 = 2%).")
+                    : string.Create(CultureInfo.CurrentCulture, $"{KindLabel(kind)}: mnożnik od {range.Min} do {range.Max} (np. {FactorExample(kind, range)}).");
+                return false;
+            }
+            var amount = old.Amount;
+            if (RewardKinds.HasAmount(kind) && (!TryParseAmount(Text("amount"), out amount)
+                || amount < RewardConfig.AmountRange.Min || amount > RewardConfig.AmountRange.Max))
+            {
+                error = string.Create(CultureInfo.CurrentCulture,
+                    $"{KindLabel(kind)}: kwota od {RewardConfig.AmountRange.Min:N0} do {RewardConfig.AmountRange.Max:N0} $ (liczba całkowita, np. 10 000 000).");
                 return false;
             }
             list.Add(new RewardConfig(kind, row.Cells["enabled"].Value is true, title, prompt, cost, cooldown, perStream, perUser, months, factor)
             {
                 UserInput = row.Cells["input"].Value is true,
+                Amount = amount,
             });
         }
         return true;
+    }
+
+    private static string FactorExample(RewardKind kind, (double Min, double Max) range) =>
+        kind == RewardKind.BrakeSabotage ? "0,5 = do 50% pojazdów" : range.Max <= 1 ? "0,5 = -50%" : "1,5 = +50%";
+
+    /// <summary>"10 000 000", "10.000.000" or "10000000": separators of thousands do not matter.</summary>
+    internal static bool TryParseAmount(string text, out long amount)
+    {
+        var digits = new string([.. text.Where(c => !char.IsWhiteSpace(c) && c is not ('.' or ',' or '\''))]); // IsWhiteSpace łapie też twarde spacje
+        return long.TryParse(digits, NumberStyles.None, CultureInfo.InvariantCulture, out amount);
     }
 
     private List<ExtraReward> ReadExtras()
@@ -310,6 +335,8 @@ public sealed class RewardsDialog : Form
         RewardKind.PremiumFuel => "Paliwo premium",
         RewardKind.BadFuel => "Chrzczone paliwo",
         RewardKind.BrakeSabotage => "Sabotaż hamulców",
+        RewardKind.Subsidy => "Dotacja dla firmy",
+        RewardKind.Loan => "Kredyt dla firmy",
         RewardKind.Bomb => "Bomba (streamer)",
         RewardKind.Line => "Linia (streamer)",
         RewardKind.Nature => "Natura (streamer)",

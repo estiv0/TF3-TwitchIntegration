@@ -6,6 +6,22 @@ namespace Tf3Bridge.Rewards;
 /// <summary>Chat answers to viewers after a redemption (Polish, like the rewards).</summary>
 public static class RewardMessages
 {
+    /// <summary>Decimal comma for amounts and interest ("2,5 mln", "1,5%").</summary>
+    public static readonly CultureInfo Polish = CultureInfo.GetCultureInfo("pl-PL");
+
+    /// <summary>"10 mln $", "2,5 mld $", "500 tys. $" (game money, for dotacja / kredyt).</summary>
+    public static string Money(long amount)
+    {
+        var (value, unit) = Math.Abs(amount) switch
+        {
+            >= 1_000_000_000 => (amount / 1e9, " mld"),
+            >= 1_000_000 => (amount / 1e6, " mln"),
+            >= 1_000 => (amount / 1e3, " tys."),
+            _ => (amount, ""),
+        };
+        return Math.Round(value, 2).ToString("0.##", Polish) + unit + " $";
+    }
+
     private static readonly string[] MonthsGenitive =
         ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca", "sierpnia", "września", "października", "listopada", "grudnia"];
 
@@ -42,6 +58,8 @@ public static class RewardMessages
             RewardKind.PremiumFuel => $"{who} paliwo premium na linii {target} (+{percent}% prędkości) działa {when}.",
             RewardKind.BadFuel => $"{who} chrzczone paliwo na linii {target} (-{percent}% prędkości) działa {when}.",
             RewardKind.BrakeSabotage => $"{who} sabotaż hamulców na linii {target}: {Wrecked(count, total)}.",
+            RewardKind.Subsidy => $"{who} dotacja {target} trafiła na konto firmy. Dzięki!",
+            RewardKind.Loan => $"{who} kredyt {target} na {percent}% przyznany: gra spłaca go w ratach przez {config.Months} mies. gry.",
             _ => throw new ArgumentOutOfRangeException(nameof(config)),
         };
         return string.IsNullOrEmpty(link) ? text : $"{text} {link}";
@@ -73,6 +91,8 @@ public static class RewardMessages
             RewardKind.PremiumFuel => $"{user} zatankował(a) paliwo premium na linii {target}: +{percent}% prędkości {when}.",
             RewardKind.BadFuel => $"{user} ochrzcił(a) paliwo na linii {target}: -{percent}% prędkości {when}.",
             RewardKind.BrakeSabotage => $"Problemy techniczne na linii {target}: {Wrecked(count, total)} (sabotaż: {user}).",
+            RewardKind.Subsidy => $"{user} przekazał(a) firmie dotację {target}.",
+            RewardKind.Loan => $"{user} udzielił(a) firmie kredytu {target} na {percent}% na {config.Months} mies. (raty w zakładce Kredyty).",
             _ => throw new ArgumentOutOfRangeException(nameof(config)),
         };
     }
@@ -135,6 +155,8 @@ public static class RewardMessages
         RewardKind.TaxRaid => "nalot skarbówki",
         RewardKind.PremiumFuel => "paliwo premium",
         RewardKind.BadFuel => "chrzczone paliwo",
-        _ => "sabotaż hamulców",
+        RewardKind.BrakeSabotage => "sabotaż hamulców",
+        RewardKind.Subsidy => "dotacja",
+        _ => "kredyt",
     };
 }

@@ -111,7 +111,8 @@ Rzeczy poza samymi nagrodami:
 7. ✅ Efekty na stronie (znaczki na liście, szczegóły z datą końca i kupującym) i odpowiedź dla widza na czacie po każdym wykupieniu (efekt z datą końca w grze i linkiem do obiektu na gin.estfosoft.com albo powód zwrotu punktów).
 8. Sabotaże i paliwo (2026-10-05): strajk w zakładzie, nalot skarbówki (wszystkie zakłady widza po nicku), paliwo premium, chrzczone paliwo, sabotaż hamulców (pojazdy znikają, kwota ze sprzedaży zabrana w księgach). Sabotować można tylko obiekty innych widzów. Produktywność i prędkość pilnuje wspólny sterownik, więc efekty na jednym zakładzie się mnożą; paliwo premium i chrzczone na jednej linii działa po kolei (drugie czeka na koniec pierwszego). Jeszcze niesprawdzone w grze ([opis](../lua_mod/README.md#efekty-czasowe-effectslua)).
 9. Nagrody wykonywane przez streamera (2026-10-05): bomba, linia, natura, pojazd drogowy, pojazd specjalny. Bez efektu w modzie; Tf3Bridge je tworzy i włącza/wyłącza z grą, wykupienia zostają w kolejce Twitcha dla streamera ([opis](../middle_app/README.md#nagrody-za-punkty-kanału)).
-10. Kolejne akcje, feed i ranking na stronie.
+10. Dotacja i kredyt dla firmy (2026-10-13): konfigurowalna kwota (domyślnie 10 mln $); kredyt w systemie kredytów gry (2%, 60 mies. gry, raty pobiera gra). Jeszcze niesprawdzone w grze ([opis](../lua_mod/README.md#dotacja-i-kredyt-subsidy-loan-w-commandslua)).
+11. Kolejne akcje, feed i ranking na stronie.
 
 ## Źródła
 

@@ -294,9 +294,16 @@ public sealed class RewardService
         var created = redeemedAt > DateTimeOffset.UtcNow ? DateTimeOffset.UtcNow : redeemedAt;
         ModCommand command;
         string targetName;
-        string? link;
+        string? link = null;
         long? entity = null;
-        if (RewardKinds.Creates(kind))
+        if (RewardKinds.HasAmount(kind))
+        {
+            command = kind == RewardKind.Loan
+                ? ModCommand.Loan(config.Amount, config.Months, config.Factor, CommandSource.ChannelPoints, owner, created)
+                : ModCommand.Subsidy(config.Amount, CommandSource.ChannelPoints, owner, created);
+            targetName = RewardMessages.Money(config.Amount);
+        }
+        else if (RewardKinds.Creates(kind))
         {
             if (objects.Count == 0) return Reject("brak danych z gry (czy TF3 działa?)");
             var parsed = BuildCode.Parse(input, kind == RewardKind.CreateIndustry, objects, MapBounds.Load(_terrainPath), _terrain(), Settings.Zones);
@@ -435,6 +442,8 @@ public sealed class RewardService
         _ when r.Error?.StartsWith("already adopted by ", StringComparison.Ordinal) == true => "ma już właściciela (" + r.Error["already adopted by ".Length..] + ")",
         "invalid" when r.Error == "line has no vehicles" => "linia nie ma pojazdów",
         "invalid" when r.Error == "no industries" => "nie ma już tych zakładów",
+        "invalid" when r.Error == "unlimited money" => "gra ma nieograniczone pieniądze",
+        "invalid" when r.Error?.StartsWith("loan limit", StringComparison.Ordinal) == true => "firma ma już największą liczbę kredytów w grze (4)",
         // create.lua
         "invalid" when r.Error == "on water" => "to miejsce jest na wodzie",
         "invalid" when r.Error == "needs water" => "ten zakład stawia się tylko na wodzie",

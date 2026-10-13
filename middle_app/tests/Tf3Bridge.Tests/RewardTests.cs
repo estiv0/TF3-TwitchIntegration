@@ -406,6 +406,105 @@ public sealed class RewardTests : IDisposable
         Assert.Contains("do 50%", RewardKinds.Defaults.Single(d => d.Kind == RewardKind.BrakeSabotage).TwitchPrompt);
     }
 
+    // ------------------------------------------------------------------ dotacja i kredyt
+
+    [Fact]
+    public async Task Subsidy_sends_the_amount_without_viewer_text()
+    {
+        var service = Service();
+
+        Assert.Null(service.Simulate(RewardKind.Subsidy, "", "widz", false, out _));
+        Assert.Contains("kind = \"subsidy\"", QueueText);
+        Assert.Contains("amount = 10000000, user = \"widz\"", QueueText);
+        ModReports("ok");
+
+        var o = Assert.Single(_outcomes);
+        Assert.Equal("@widz dotacja 10 mln $ trafiła na konto firmy. Dzięki!", o.ChatText);
+        var queue = await WaitForNotify();
+        Assert.Contains("text = \"widz przekazał(a) firmie dotację 10 mln $.\"", queue);
+    }
+
+    [Fact]
+    public async Task Loan_sends_amount_months_and_interest_from_settings()
+    {
+        var service = Service();
+        service.UpdateSettings(service.Settings with
+        {
+            Rewards = [.. service.Settings.Rewards.Select(r => r.Kind == RewardKind.Loan ? r with { Amount = 2_500_000, Months = 36, Factor = 1.5 } : r)],
+        });
+
+        Assert.Null(service.Simulate(RewardKind.Loan, "", "widz", false, out _));
+        Assert.Contains("kind = \"loan\"", QueueText);
+        Assert.Contains("amount = 2500000, months = 36, percent = 1.5, user = \"widz\"", QueueText);
+        ModReports("ok");
+
+        Assert.Equal("@widz kredyt 2,5 mln $ na 1,5% przyznany: gra spłaca go w ratach przez 36 mies. gry.", Assert.Single(_outcomes).ChatText);
+        var queue = await WaitForNotify();
+        Assert.Contains("text = \"widz udzielił(a) firmie kredytu 2,5 mln $ na 1,5% na 36 mies. (raty w zakładce Kredyty).\"", queue);
+    }
+
+    [Fact]
+    public void Loan_over_the_game_limit_is_refunded()
+    {
+        var service = Service();
+        service.Simulate(RewardKind.Loan, "", "widz", false, out _);
+
+        ModReports("invalid", error: "loan limit 4");
+
+        var o = Assert.Single(_outcomes);
+        Assert.True(o.Refunded);
+        Assert.Equal("@widz kredyt: 10 mln $: firma ma już największą liczbę kredytów w grze (4). Punkty wróciły do Ciebie.", o.ChatText);
+    }
+
+    [Fact]
+    public void Money_rewards_have_defaults_need_no_text_and_keep_ranges()
+    {
+        var loan = RewardKinds.Defaults.Single(d => d.Kind == RewardKind.Loan);
+        var subsidy = RewardKinds.Defaults.Single(d => d.Kind == RewardKind.Subsidy);
+
+        Assert.Equal((10_000_000L, 60, 2.0), (loan.Amount, loan.Months, loan.Factor));
+        Assert.Equal(10_000_000L, subsidy.Amount);
+        Assert.False(loan.RequiresInput);
+        Assert.False(subsidy.RequiresInput);
+        Assert.False((bool)RewardService.Body(loan, true)["is_user_input_required"]!);
+        Assert.Contains("kredytu 10 mln $ na 2% na 60 mies.", loan.TwitchPrompt);
+        Assert.Contains("dotację 10 mln $", subsidy.TwitchPrompt);
+        Assert.Equal((360, 50.0), ((loan with { Months = 999, Factor = 99 }).Normalized().Months, (loan with { Factor = 99 }).Normalized().Factor));
+        Assert.Equal(RewardConfig.AmountRange.Min, (subsidy with { Amount = 5 }).Normalized().Amount);
+        Assert.Equal(0, RewardKinds.Defaults.Single(d => d.Kind == RewardKind.BoostTown).Normalized().Amount);
+    }
+
+    [Fact]
+    public void Old_settings_without_amount_get_the_default()
+    {
+        var path = Path.Combine(_dir, "rewards-money.json");
+        File.WriteAllText(path, """
+            {"Rewards":[{"Kind":"Subsidy","Enabled":true,"Title":"Kasa","Prompt":"p","Cost":1,"CooldownSec":0,"MaxPerStream":0,"MaxPerUserPerStream":0,"Months":1,"Factor":1}],
+             "ChannelUserId":"","TwitchIds":{}}
+            """);
+
+        Assert.Equal(10_000_000L, RewardSettingsStore.Load(path).Get(RewardKind.Subsidy).Amount);
+    }
+
+    [Theory]
+    [InlineData(10_000_000L, "10 mln $")]
+    [InlineData(2_500_000L, "2,5 mln $")]
+    [InlineData(750_000L, "750 tys. $")]
+    [InlineData(1_250_000_000L, "1,25 mld $")]
+    [InlineData(999L, "999 $")]
+    public void Money_is_short_and_polish(long amount, string text) => Assert.Equal(text, RewardMessages.Money(amount));
+
+    [Theory]
+    [InlineData("10 000 000", 10_000_000L)]
+    [InlineData("10.000.000", 10_000_000L)]
+    [InlineData("10 000 000", 10_000_000L)]
+    [InlineData("5000000", 5_000_000L)]
+    public void Amount_field_ignores_thousands_separators(string text, long amount)
+    {
+        Assert.True(Tf3Bridge.Ui.RewardsDialog.TryParseAmount(text, out var parsed));
+        Assert.Equal(amount, parsed);
+    }
+
     [Fact]
     public void Disabled_reward_is_refunded()
     {

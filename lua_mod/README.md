@@ -179,6 +179,10 @@ Gra nie ma wypadków (brak komendy, stanu ani zdarzenia kolizji), więc „wypad
 - **Kto i do kiedy:** komenda `effect` niesie `user` (widz z Twitcha). Wynik komendy w `results.lua` ma `until = { year, month, day }`, czyli koniec efektu w kalendarzu gry; Tf3Bridge podaje tę datę widzowi na czacie. Aktywne efekty trafiają do każdego eksportu dynamicznego jako `effects` (`effects.list()`), a strona pokazuje je przy obiektach.
 - **Zapis w save'ie:** wątek GUI nie może pisać stanu game scriptu. Lista efektów idzie więc zdarzeniem `tf3x_effects` (`makeScriptingSendEventCmd`) do `handleEvent` w wątku symulacji, który zapisuje ją w `state.effects`. Po wczytaniu gry mod odtwarza efekty z tego stanu (log: `effects: N active effect(s) restored from the save`).
 
+### Dotacja i kredyt (`subsidy`, `loan` w `commands.lua`)
+
+Dotacja to wpis w księgach (`makeJournalBookAssetCmd`, kategoria `SUBSIDY`, kwota dodatnia); stan konta zmienia się cały czas, więc o wyniku decyduje callback komendy. Kredyt korzysta z systemu kredytów gry (`game_mechanics/finance/loan.script.tl`): mod wysyła to samo zdarzenie co okno Finanse dla własnego kredytu, `makeScriptingSendEventCmd("", "Loan", "Obtain", { nil, loan })` z `loan = { type = "Custom", amount, duration = months × getDefaultMonthDuration(), percentage = percent / 100 }`. Skrypt gry wypłaca kwotę (wpis `LOAN`), dopisuje kredyt do `obtainedLoans` i co miesiąc pobiera ratę z odsetkami (`LOAN` + `INTEREST`), także po zapisie i wczytaniu gry. Mod potwierdza sukces po wzroście `freeId` w stanie tego skryptu (czekanie nie liczy się na pauzie). Odmowa: `loan limit N` (gra pozwala na 4 kredyty, `loan_util.maximalObtainableLoans`), `unlimited money` (`getPlayersBalance` = nil; gra zamraża wtedy kredyty), dla obu nagród. **Jeszcze niesprawdzone w grze.**
+
 ## Diagnostyka
 
 W logu gry (`crash_dump\stdout.txt`) szukaj linii `[tf3export]`:

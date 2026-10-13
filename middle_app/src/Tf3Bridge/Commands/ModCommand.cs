@@ -52,6 +52,22 @@ public sealed record ModCommand(
         new(NewId(), "wreck", created ?? DateTimeOffset.UtcNow,
             new Dictionary<string, object> { ["entity"] = line, ["share"] = share }, source, user);
 
+    /// <summary>Dotacja (commands.lua: subsidy): <paramref name="amount"/> booked for the company as a subsidy.</summary>
+    public static ModCommand Subsidy(long amount, CommandSource source, string user, DateTimeOffset? created = null) =>
+        new(NewId(), "subsidy", created ?? DateTimeOffset.UtcNow,
+            new Dictionary<string, object> { ["amount"] = amount, ["user"] = user }, source, user);
+
+    /// <summary>
+    /// Kredyt (commands.lua: loan): a loan in the game's own loan system (Finanse → Kredyty), repaid by the game every
+    /// month for <paramref name="months"/> game months with <paramref name="percent"/>% interest (simple: amount × %).
+    /// The mod refuses when the company has the game's limit of loans or plays with unlimited money.
+    /// </summary>
+    public static ModCommand Loan(long amount, int months, double percent, CommandSource source, string user, DateTimeOffset? created = null) =>
+        new(NewId(), "loan", created ?? DateTimeOffset.UtcNow, new Dictionary<string, object>
+        {
+            ["amount"] = amount, ["months"] = (long)months, ["percent"] = percent, ["user"] = user,
+        }, source, user);
+
     /// <summary>New town "name | owner" at (x, y), game metres (create.lua).</summary>
     public static ModCommand CreateTown(double x, double y, string name, string owner, CommandSource source, DateTimeOffset? created = null) =>
         new(NewId(), "createTown", created ?? DateTimeOffset.UtcNow, new Dictionary<string, object>
