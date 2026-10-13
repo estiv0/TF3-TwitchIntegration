@@ -4,7 +4,7 @@ import { config } from "../config.js";
 import { DataFeed } from "./api.js";
 import {
   carrierIcon, carrierName, cargoIcon, cargoLabel, cargoName, escapeHtml as esc, fmtAge, fmtDate, fmtSpeed, vehicleImgHtml, fmtInt, fmtMoney, fmtPercent,
-  fmtSignedPercent, iconHtml, linesByIndustry, linesByStation, rgb, stationImg, stationName, splitAllOwners, attachEffects, stationUse, townGrowth, townSize,
+  fmtSignedPercent, iconHtml, lineWaitingAt, linesByIndustry, linesByStation, rgb, stationImg, stationName, splitAllOwners, attachEffects, stationUse, townGrowth, townSize,
 } from "./format.js";
 import { balanceSparkline } from "./company.js";
 import { readSelection, writeSelection } from "./hash.js";
@@ -190,6 +190,14 @@ function tooltipHtml(item) {
     return `<strong>📍 ${esc(t("pin.title"))}</strong>${d.note ? `<span class="tip-note">${esc(d.note)}</span>` : ""}`;
   }
   const lines = (n) => `<span>${esc(t("lines.n", { n: fmtInt(n) }))}</span>`;
+  if (item.kind === "stop") {
+    return `<strong>${carrierIcon(item.type, item.type)} ${esc(item.name ?? t("stop"))}</strong>`
+      + (item.waiting != null ? `<span>${esc(t("station.waitingTip", { n: fmtInt(item.waiting) }))}</span>` : "")
+      + item.lines.map((l) => {
+        const n = lineWaitingAt(l, (s) => s.group === item.id);
+        return `<span>${esc(l.name)}${n != null ? ` · ${cargoIcon("passengers")}${fmtInt(n)}` : ""}</span>`;
+      }).join("");
+  }
   if (item.kind === "vehicle") {
     const line = linesById.get(d.line);
     const stop = line?.stops?.[d.stop];
@@ -226,6 +234,7 @@ function tooltipHtml(item) {
     const use = stationUse(d);
     return `<strong>${iconHtml(stationImg(d), d.kind)} ${esc(d.name ?? stationName(d.kind))}</strong>`
       + `<span>${esc(stationName(d.kind) ?? t("station"))}${use ? ` · ${esc(use)}` : ""}</span>`
+      + (d.waiting != null ? `<span>${esc(t("station.waitingTip", { n: fmtInt(d.waiting) }))}</span>` : "")
       + lines(stationLines.get(d.id)?.length ?? 0);
   }
   const n = industryLines.get(d.id)?.length ?? 0;

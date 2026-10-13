@@ -428,6 +428,43 @@ local function stationWarehouse(constrId, warehouses)
 	return parent and warehouses[parent] or nil
 end
 
+-- Pasażerowie czekający w grupach stacji: (wszyscy, niezadowoleni) albo nil, gdy API zawiedzie.
+-- Tak samo liczy okno statystyk stacji w grze (gui/statistics/statistic_stations.tl).
+local passengerCargo
+local function passengerCargoId()
+	if passengerCargo == nil then
+		local ok, id = pcall(function() return api.res.cargoTypeRep.getPassengerCargoTypeId() end)
+		passengerCargo = ok and id or false
+	end
+	return passengerCargo or nil
+end
+
+-- Pasażerowie czekający na danej linii na jej przystanku (stopIndex od 0, jak vehicles[].stop) albo nil.
+local function lineStopWaiting(line, stopIndex)
+	local cargo = passengerCargoId()
+	if not cargo then return nil end
+	local ok, n = pcall(function()
+		return api.engine.system.simEntityAtTerminalSystem.getLineStopSimEntitiesCount(line, stopIndex, cargo)
+	end)
+	return ok and tonumber(n) or nil
+end
+
+local function waitingPassengers(groups)
+	local passengerCargo = passengerCargoId()
+	if not passengerCargo then return nil end
+	local total, bad, any = 0, 0, false
+	for _, group in ipairs(groups) do
+		local ok, q = pcall(function() return api.engine.util.cargo.getCargoQualityDataAtStationGroup(group, passengerCargo) end)
+		if ok and q then
+			any = true
+			total = total + (tonumber(util.field(q, "countTotal")) or 0)
+			bad = bad + (tonumber(util.field(q, "countBad")) or 0)
+		end
+	end
+	if not any then return nil end
+	return total, bad
+end
+
 local function stationKind(carriers, file)
 	for _, p in ipairs(STATION_PATHS) do
 		if file and string.find(file, p[1], 1, true) then return p[2] end
@@ -496,6 +533,8 @@ function C.stations()
 			local warehouse = stationWarehouse(constrId, warehouses)
 			if kind or industry or warehouse then -- stacja przemysłu / magazynu zostaje, nawet bez rozpoznanego rodzaju
 				for _, st in ipairs(stations) do kindOf[st] = kind end
+				local waiting, waitingBad
+				if passengers then waiting, waitingBad = waitingPassengers(groups) end
 				out[#out + 1] = {
 					id = constrId,
 					kind = kind or "OTHER",
@@ -508,6 +547,8 @@ function C.stations()
 					owner = util.owner(constrId) or util.owner(stations[1]),
 					passengers = passengers,
 					cargo = cargo,
+					waiting = waiting, -- pasażerowie czekający w grupie stacji
+					waitingBad = waitingBad, -- z nich niezadowoleni (za długo czekają)
 					groups = groups,
 					stations = stations,
 				}
@@ -769,6 +810,13 @@ function C.lines(vehicles, stationKinds)
 		end
 		return stopPos[key] or nil
 	end
+	-- Czekający pasażerowie na przystanku przy ulicy (grupa bez dworca z C.stations - dworce liczą je same).
+	local stopWaiting = {}
+	local function waitingAt(group, station)
+		if stationKinds and station and stationKinds[station] then return nil end
+		if stopWaiting[group] == nil then stopWaiting[group] = waitingPassengers({ group }) or false end
+		return stopWaiting[group] or nil
+	end
 
 	local out = {}
 	for _, id in ipairs(ids) do
@@ -788,6 +836,8 @@ function C.lines(vehicles, stationKinds)
 					entity = stationOf(s.stationGroup, s.station), -- encja stacji, por. stations[].stations
 					pos = stationPos(s.stationGroup, s.station),
 					name = util.name(s.stationGroup),
+					waiting = waitingAt(s.stationGroup, stationOf(s.stationGroup, s.station)),
+					lineWaiting = lineStopWaiting(id, i - 1), -- czekający właśnie na tę linię
 				}
 			end
 			local color = util.comp(id, ct.COLOR)

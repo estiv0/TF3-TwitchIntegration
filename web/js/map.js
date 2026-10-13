@@ -32,6 +32,10 @@ const COLOR_VARS = ["--map-bg", "--map-street", "--map-street-tunnel", "--map-tr
 // Ikony stacji: od tej skali kółko z ikoną, poniżej sama kropka w kolorze rodzaju.
 const STATION_ICON_SCALE = 0.05;
 const STATION_ICON_PX = 24;
+// Przystanki przy ulicy: widoczne od STATION_ICON_SCALE, liczba czekających od STOP_LABEL_SCALE.
+const STOP_R = 4;
+const STOP_LABEL_SCALE = 0.15;
+const WAITING_ICON_PX = 16; // ikonka pasażerów przy liczbie czekających
 const OUTPUT_ICON_PX = 30; // ikonki produkcji nad zakładem
 const PIN_HEAD_Y = 22;      // główka pinezki tyle px nad wskazanym punktem
 const DIM = 0.3;            // krycie reszty mapy, gdy na liście w panelu wskazano jeden obiekt
@@ -43,6 +47,26 @@ const UPDATE_MS_MIN = 2000, UPDATE_MS_MAX = 30000, SNAP_AFTER_MS = 60000;
 const ON_ROUTE_M = 40; // pozycja pojazdu tak blisko trasy linii = jedzie po niej (animacja wzdłuż trasy)
 
 // Kolory z CSS (motyw) odczytywane raz na klatkę, nie dla każdego obiektu.
+// Przystanki przy ulicy: przystanki linii (dynamic.lines[].stops), które nie należą do żadnej stacji
+// z dynamic.stations - jeden punkt na grupę stacji, z liniami, które się na nim zatrzymują.
+function stopsOf(dynamic) {
+  const stationEntities = new Set((dynamic.stations ?? []).flatMap((s) => s.stations ?? []));
+  const byGroup = new Map();
+  for (const l of dynamic.lines ?? []) {
+    for (const s of l.stops ?? []) {
+      if (!s.pos || stationEntities.has(s.entity)) continue;
+      let st = byGroup.get(s.group);
+      if (!st) {
+        st = { kind: "stop", id: s.group, name: s.name, px: s.pos[0], py: -s.pos[1], type: l.carrier ?? "ROAD", waiting: s.waiting, lines: [] };
+        byGroup.set(s.group, st);
+      }
+      if (s.waiting != null) st.waiting = s.waiting;
+      if (!st.lines.includes(l)) st.lines.push(l);
+    }
+  }
+  return [...byGroup.values()];
+}
+
 function readTheme() {
   const style = getComputedStyle(document.documentElement);
   return Object.fromEntries(COLOR_VARS.map((v) => [v, style.getPropertyValue(v).trim()]));
@@ -74,6 +98,7 @@ export class MapView {
     this.warehouses = [];       // magazyny gracza (dynamic.warehouses)
     this.showWarehouses = true;
     this.stations = [];         // dworce, porty, lotniska (bez przystanków)
+    this.stops = [];            // przystanki przy ulicy z przystanków linii (stopsOf)
     this.showStations = true;
     this.vehicleData = [];      // dynamic.vehicles
     this.vehicleAnim = new Map(); // id pojazdu -> ruch po trasie linii (retargetVehicles)
@@ -170,6 +195,7 @@ export class MapView {
     this.stations = (dynamic.stations ?? []).filter((s) => s.pos && !stationIndustry.has(s.id) && !stationWarehouse.has(s.id)).map((s) => ({
       kind: "station", id: s.id, data: s, px: s.pos[0], py: -s.pos[1], type: s.kind,
     }));
+    this.stops = stopsOf(dynamic);
 
     if (!this.bbox && this.towns.length) {
       const xs = this.towns.map((t) => t.px), ys = this.towns.map((t) => t.py);
@@ -407,6 +433,7 @@ export class MapView {
     else for (const id of selLines) this.drawLine(id);
     if (this.showIndustries) this.drawIndustries(spot);
     if (this.showWarehouses) this.drawWarehouses(spot);
+    if (this.showStations) this.drawStops();
     if (this.showStations) this.drawStations(spot);
     // pojazdy innych linii przygaszone raz (gdy reszta mapy już jest przygaszona - bez dodatkowego DIM)
     if (this.showVehicles) this.drawVehicles((v) => !focusLines.has(v.line), !focusLines.size || ctx.globalAlpha < 1 ? 1 : DIM);
@@ -754,6 +781,53 @@ export class MapView {
     }
   }
 
+  // Przystanki przy ulicy (tylko przybliżone): kropka w kolorze nośnika; po większym przybliżeniu
+  // pod nią liczba czekających pasażerów (jak stan magazynu).
+  drawStops() {
+    if (this.view.scale < STATION_ICON_SCALE) return;
+    const css = (name) => this.theme[name];
+    const { ctx } = this;
+    const big = this.view.scale > STOP_LABEL_SCALE;
+    for (const st of this.stops) {
+      const [x, y] = this.toScreen(st.px, st.py);
+      if (x < -20 || y < -20 || x > this.w + 20 || y > this.h + 20) continue;
+      // pierścień jak małe kółko stacji - pełne kropki to pojazdy
+      ctx.fillStyle = css("--panel");
+      ctx.strokeStyle = css(`--station-${String(st.type).toLowerCase()}`) || css("--station-road");
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, STOP_R, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      if (this.isMarked(st)) this.ring(x, y, STOP_R * 2);
+      if (big && st.waiting != null) this.drawWaiting(st.waiting, x, y + STOP_R + 2);
+    }
+  }
+
+  // Czekający pasażerowie pod punktem (topY = góra napisu): ikonka pasażerów z gry (jak przy ładunku
+  // pojazdów) i liczba, razem wyśrodkowane na x.
+  drawWaiting(n, x, topY) {
+    const css = (name) => this.theme[name];
+    const { ctx } = this;
+    const label = fmtInt(n), s = WAITING_ICON_PX, gap = 2;
+    ctx.font = `600 11px ${css("--font")}`;
+    const icon = this.image(cargoImg("passengers"));
+    const w = (icon ? s + gap : 0) + ctx.measureText(label).width;
+    let left = x - w / 2;
+    if (icon) {
+      ctx.drawImage(icon, left, topY - 1, s, s);
+      left += s + gap;
+    }
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = css("--map-bg");
+    ctx.strokeText(label, left, topY + s / 2);
+    ctx.fillStyle = css("--town-label");
+    ctx.fillText(label, left, topY + s / 2);
+    ctx.textAlign = "start";
+  }
+
   // Przybliżone: ciemne kółko z obwódką w kolorze rodzaju i ikoną; oddalone: sama kropka.
   drawStations(skip) {
     for (const st of this.stations) if (st !== skip) this.drawStation(st);
@@ -792,6 +866,7 @@ export class MapView {
       ctx.stroke();
     }
     if (this.isMarked(st)) this.ring(x, y, r * 2);
+    if (this.view.scale > STOP_LABEL_SCALE && st.data.waiting != null) this.drawWaiting(st.data.waiting, x, y + r + 3);
   }
 
   // ---------------------------------------------------------------- pojazdy
@@ -1069,6 +1144,7 @@ export class MapView {
     if (this.showWarehouses) for (const w of this.warehouses) consider(w, 9);
     if (this.showStations) {
       const r = this.view.scale >= STATION_ICON_SCALE ? 11 : 6;
+      if (this.view.scale >= STATION_ICON_SCALE) for (const s of this.stops) consider(s, STOP_R + 3);
       for (const s of this.stations) consider(s, r);
     }
     for (const v of this.vehicles) consider(v, 6); // pozycje z ostatniej klatki - tam, gdzie je widać
@@ -1183,8 +1259,9 @@ export class MapView {
       }
       const hit = this.hitTest(...local(e));
       if (hit?.kind === "pin") return; // pinezka ma tylko tooltip
-      // pojazd: zaznaczamy jego linię
-      const sel = hit?.kind === "vehicle" ? { kind: "line", id: hit.line, data: this.lines.get(hit.line) } : hit;
+      // pojazd: zaznaczamy jego linię, przystanek: pierwszą linię, która się na nim zatrzymuje
+      const line = hit?.kind === "vehicle" ? hit.line : hit?.kind === "stop" ? hit.lines[0]?.id : undefined;
+      const sel = line !== undefined ? { kind: "line", id: line, data: this.lines.get(line) } : hit?.kind === "stop" ? null : hit;
       this.select(sel?.kind, sel?.id);
       this.onSelect?.(sel);
     });

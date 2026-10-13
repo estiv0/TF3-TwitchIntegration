@@ -104,6 +104,17 @@ export const STATION_ORDER = ["RAIL", "ROAD", "TRAM", "WATER", "AIR", "INDUSTRY"
 export const stationUse = (s) =>
   s.passengers && s.cargo ? t("use.both") : s.cargo ? t("use.cargo") : s.passengers ? t("use.passengers") : "";
 
+/**
+ * Pasażerowie czekający na linię `l` na jej przystankach spełniających `atStop(stop)` (stops[].lineWaiting z moda).
+ * null, gdy mod tego nie podaje albo linia nie wozi pasażerów (zero na linii towarowej nic nie mówi).
+ */
+export function lineWaitingAt(l, atStop) {
+  let n = null;
+  for (const s of l.stops ?? []) if (s.lineWaiting != null && atStop(s)) n = (n ?? 0) + s.lineWaiting;
+  const passengers = (l.stats?.cargo ?? []).some((c) => String(c.cargo).includes("passengers"));
+  return n && n > 0 ? n : n === 0 && passengers ? 0 : null;
+}
+
 /** id stacji (konstrukcji) -> linie, które się na niej zatrzymują (stop.entity ∈ station.stations). */
 export function linesByStation(dynamic) {
   const constrOf = new Map();

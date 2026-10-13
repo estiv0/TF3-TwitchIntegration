@@ -234,6 +234,7 @@ button { font: inherit; color: inherit; }
 .line-links button:hover { color: var(--accent); }
 .line-links .link-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .line-links .link-value { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stop-waiting { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* ---------------------------------------------------------------- panel */
 .sidebar {

@@ -2,9 +2,9 @@
 // (szczegóły w osobnym, pływającym okienku nad mapą - element detail, js/float.js).
 
 import {
-  STATION_ORDER, carrierIcon, carrierName, cargoImg, cargoLabel, cargoName, escapeHtml as esc, iconHtml, landUseName, stationName,
+  STATION_ORDER, cargoIcon, carrierIcon, carrierName, cargoImg, cargoLabel, cargoName, escapeHtml as esc, iconHtml, landUseName, stationName,
   fmtAge, fmtDate, vehicleImgHtml, fmtDec, fmtInt, fmtMoney, fmtMoneyShort, fmtPercent, fmtSignedPercent, industryOfStation, linesByIndustry, linesByStation, rgb, stationImg, warehouseOfStation,
-  stationUse, townGrowth, townSize,
+  lineWaitingAt, stationUse, townGrowth, townSize,
 } from "./format.js";
 import { companyHtml } from "./company.js";
 import { townEarnings } from "./earnings.js";
@@ -744,10 +744,14 @@ function effectsHtml(x) {
 }
 
 // Linie są klikalne (data-line) - przełączają wybór na linię.
-function lineLinks(lines) {
-  const rows = [...lines].sort((a, b) => (b.vehicleCount ?? 0) - (a.vehicleCount ?? 0)).map((l) => `
+// waitingOf(linia) -> pasażerowie czekający na nią tutaj albo null: wtedy liczba przy linii i sortowanie po niej.
+function lineLinks(lines, waitingOf) {
+  const w = new Map(waitingOf ? lines.map((l) => [l, waitingOf(l)]) : []);
+  const rows = [...lines].sort((a, b) => (w.get(b) ?? -1) - (w.get(a) ?? -1) || (b.vehicleCount ?? 0) - (a.vehicleCount ?? 0)).map((l) => `
     <li><button type="button" data-line="${l.id}">
-      <span class="swatch" style="background:${rgb(l.color)}"></span>${carrierIcon(l.carrier, l.carrier)} ${esc(l.name)}
+      <span class="swatch" style="background:${rgb(l.color)}"></span>${carrierIcon(l.carrier, l.carrier)}
+      <span class="link-name">${esc(l.name)}</span>
+      ${w.get(l) != null ? `<span class="link-value" title="${esc(t("station.waiting"))}">${cargoIcon("passengers")}${fmtInt(w.get(l))}</span>` : ""}
     </button></li>`).join("");
   return rows ? `<h3>${esc(t("lines"))}</h3><ul class="line-links">${rows}</ul>` : "";
 }
@@ -761,8 +765,10 @@ function stationDetail(s, lines) {
     <dl class="stats">
       ${stat(t("lines"), fmtInt(lines.length))}
       ${stat(t("station.vehicles"), fmtInt(lines.some((l) => l.vehicleCount == null) ? null : lines.reduce((n, l) => n + l.vehicleCount, 0)))}
+      ${s.waiting != null ? stat(t("station.waiting"), fmtInt(s.waiting)) : ""}
+      ${s.waitingBad ? stat(t("station.waitingBad"), fmtInt(s.waitingBad)) : ""}
     </dl>
-    ${lineLinks(lines)}`;
+    ${lineLinks(lines, (l) => { const own = new Set(s.stations ?? []); return lineWaitingAt(l, (stop) => own.has(stop.entity)); })}`;
 }
 
 // Zysk linii przypisany miastu (townEarnings): sumy i linie z udziałem miasta w ich przystankach.
@@ -963,7 +969,9 @@ function highlight(text, filter) {
 function lineDetail(l, focusedStop, dynamic) {
   const fleet = lineFleet(l, dynamic);
   const stops = (l.stops ?? []).map((s, i) => {
-    const name = esc(s.name ?? t("line.stop", { n: i + 1 }));
+    const n = lineWaitingAt(l, (stop) => stop === s);
+    const name = esc(s.name ?? t("line.stop", { n: i + 1 }))
+      + (n != null ? ` <span class="stop-waiting" title="${esc(t("station.waiting"))}">${cargoIcon("passengers")}${fmtInt(n)}</span>` : "");
     if (!s.pos) return `<li>${name}</li>`;
     return `<li data-stop="${i}" aria-current="${focusedStop === i}"><button type="button">${name}</button></li>`;
   }).join("");
