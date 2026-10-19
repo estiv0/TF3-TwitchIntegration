@@ -1,7 +1,7 @@
-// Pobieranie danych opublikowanych przez Tf3Bridge (latest/meta.json, dynamic.json, network.json, terrain.*,
+// Downloading the data published by Tf3Bridge (latest/meta.json, dynamic.json, network.json, terrain.*,
 // terrain-site.png, terrain-zone.png, build-rules.json).
-// Polling: co pollMs pobieramy mały meta.json; dynamic/network/terrain tylko gdy zmienił się ich seq.
-// W ukrytej karcie polling stoi.
+// Polling: every pollMs we download the small meta.json; dynamic/network/terrain only when their seq changed.
+// Polling stops in a hidden tab.
 
 import { config } from "../config.js";
 
@@ -20,8 +20,8 @@ function loadImage(url) {
   });
 }
 
-// Obrazek z danymi (piksele czytane w JS): fetch zamiast <img>, żeby obrazek z innej domeny (Blob Storage,
-// CORS) nie "skaził" canvasu, i bez konwersji kolorów, żeby wartości kanałów zostały dokładnie takie jak w pliku.
+// An image with data (pixels read in JS): fetch instead of <img>, so an image from another domain (Blob Storage,
+// CORS) doesn't "taint" the canvas, and without color conversion, so the channel values stay exactly as in the file.
 async function loadBitmap(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
@@ -29,7 +29,7 @@ async function loadBitmap(url) {
 }
 
 export class DataFeed {
-  // onPoll(err) po każdym sprawdzeniu: null - wszystko pobrane, inaczej błąd (pierwszy z nieudanych plików).
+  // onPoll(err) after every check: null - everything downloaded, otherwise an error (the first of the failed files).
   constructor({ onMeta, onDynamic, onNetwork, onTerrain, onRules, onPoll }) {
     this.handlers = { onMeta, onDynamic, onNetwork, onTerrain, onRules, onPoll };
     this.rulesKey = null;
@@ -40,7 +40,7 @@ export class DataFeed {
     this.busy = false;
   }
 
-  // W ukrytej karcie nie odpytujemy (ruch z Blob Storage kosztuje); po powrocie od razu sprawdzamy.
+  // We don't poll in a hidden tab (Blob Storage traffic costs money); after coming back we check right away.
   start() {
     const tick = async () => {
       this.timer = null;
@@ -66,8 +66,8 @@ export class DataFeed {
     tick();
   }
 
-  // Bez meta.json nie ma czego sprawdzać; pozostałe pliki pobieramy niezależnie, żeby np. brakujący
-  // terrain.png nie zatrzymał odświeżania dynamic.json. Nieudany plik spróbujemy przy następnym sprawdzeniu.
+  // Without meta.json there's nothing to check; the other files are downloaded independently, so e.g. a missing
+  // terrain.png doesn't stop dynamic.json from refreshing. A failed file is retried on the next check.
   async poll() {
     const meta = await fetchJson("meta.json");
     this.handlers.onMeta?.(meta);
@@ -89,15 +89,15 @@ export class DataFeed {
       });
     }
 
-    // Teren zmienia się rzadko: terrain.json (zakres w świecie) + terrain.png z kluczem w URL,
-    // żeby obrazek mógł być keszowany, a nowa wersja i tak się pobrała.
+    // Terrain changes rarely: terrain.json (world extent) + terrain.png with a key in the URL,
+    // so the image can be cached and a new version still gets downloaded.
     const terrainKey = `${meta.terrainSession}:${meta.terrainSeq}`;
     if (meta.terrainSeq != null && terrainKey !== this.terrainKey) {
       await step(async () => {
         const info = await fetchJson("terrain.json");
         const v = `?v=${encodeURIComponent(terrainKey)}`;
         const image = await loadImage(`${config.dataBaseUrl}terrain.png${v}`);
-        // Teren pod budowę (woda i zbocza dla miast, regiony dla zakładów); starszy Tf3Bridge ich nie publikuje.
+        // Terrain for building (water and slopes for towns, regions for industries); an older Tf3Bridge doesn't publish them.
         const [sites, zones] = await Promise.all(["terrain-site.png", "terrain-zone.png"]
           .map((name) => loadBitmap(`${config.dataBaseUrl}${name}${v}`).catch(() => null)));
         this.terrainKey = terrainKey;
@@ -105,7 +105,7 @@ export class DataFeed {
       });
     }
 
-    // Gdzie wolno stawiać zakłady (ustawienia streamera w Tf3Bridge); zmienia się rzadko.
+    // Where industries may be placed (the streamer's settings in Tf3Bridge); changes rarely.
     if (meta.rulesVersion && meta.rulesVersion !== this.rulesKey) {
       await step(async () => {
         const rules = await fetchJson("build-rules.json");

@@ -1,13 +1,13 @@
-// Zarobek linii przypisany do miast: zysk linii dzielony według jej przystanków.
-// Przystanek należy do miasta, którego nazwę zawiera (najdłuższa pasująca, np. "Jelenia Góra", nie "Góra");
-// bez nazwy miasta (przystanki od ulic: "Mickiewicza", "Rynek") - do najbliższego miasta w promieniu
-// TOWN_RADIUS; dalej (porty, kopalnie w polu) - "poza miastami".
+// Line earnings attributed to towns: a line's profit split by its stops.
+// A stop belongs to the town whose name it contains (the longest match, e.g. "Jelenia Góra", not "Góra");
+// without a town name (stops named after streets: "Mickiewicza", "Rynek") - to the nearest town within
+// TOWN_RADIUS; further away (harbors, mines in the countryside) - "outside towns".
 
 const TOWN_RADIUS = 1500; // m
 
 /**
- * -> { towns: Map(id miasta -> wpis), outside: wpis }, wpis = { profit12m, profitPrevYear, prevYear,
- *    lines: [{ line, share, profit12m }] }; share = część przystanków linii w mieście (0..1).
+ * -> { towns: Map(town id -> entry), outside: entry }, entry = { profit12m, profitPrevYear, prevYear,
+ *    lines: [{ line, share, profit12m }] }; share = the share of the line's stops in the town (0..1).
  */
 export function townEarnings(dynamic) {
   const townOf = stopTownResolver(dynamic.towns ?? []);
@@ -17,7 +17,7 @@ export function townEarnings(dynamic) {
   for (const line of dynamic.lines ?? []) {
     const stops = line.stops ?? [];
     if (!stops.length || !line.stats) continue;
-    const counts = new Map(); // id miasta (null = poza miastami) -> liczba przystanków
+    const counts = new Map(); // town id (null = outside towns) -> number of stops
     for (const stop of stops) {
       const id = townOf(stop);
       counts.set(id, (counts.get(id) ?? 0) + 1);
@@ -49,7 +49,7 @@ function add(e, line, share) {
   e.lines.push({ line, share, profit12m });
 }
 
-// Przystanek -> id miasta albo null. Wyniki po nazwie trzymamy, bo stacje powtarzają się na wielu liniach.
+// Stop -> town id or null. Results are kept by name, because stations repeat on many lines.
 function stopTownResolver(towns) {
   const named = towns.filter((t) => t.name).map((t) => ({ id: t.id, re: wordRegex(t.name), len: t.name.length }))
     .sort((a, b) => b.len - a.len);
@@ -71,6 +71,6 @@ function stopTownResolver(towns) {
   };
 }
 
-// Nazwa miasta jako całe słowo(a), bez rozróżniania wielkości liter ("Góra" nie trafia w "Górna").
+// A town name as whole word(s), case-insensitive ("Góra" doesn't match "Górna").
 const wordRegex = (name) =>
   new RegExp(`(?<![\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}])`, "iu");

@@ -1,8 +1,8 @@
-// Formatowanie i nazwy do wyświetlania danych gry (w bieżącym języku, patrz i18n.js).
+// Formatting and names for displaying game data (in the current language, see i18n.js).
 
 import { dict, locale, t } from "./i18n.js";
 
-// Formatery liczb per język (tworzenie Intl.NumberFormat jest kosztowne).
+// Number formatters per language (creating an Intl.NumberFormat is expensive).
 const formatters = new Map();
 function nf(kind) {
   const key = `${locale()}|${kind}`;
@@ -17,12 +17,12 @@ function nf(kind) {
 export const fmtInt = (n) => (n == null ? "–" : nf("int").format(Math.round(n)));
 export const fmtDec = (n) => (n == null ? "–" : nf("dec").format(n));
 export const fmtMoney = (n) => (n == null ? "∞" : `$ ${nf("int").format(n)}`);
-/** Kwota skrócona ("$ 1,5 mln" / "$ 1.5M") - do tabel i osi wykresów. */
+/** A shortened amount ("$ 1,5 mln" / "$ 1.5M") - for tables and chart axes. */
 export const fmtMoneyShort = (n) => (n == null ? "–" : `$ ${nf("compact").format(n)}`);
 export const fmtShort = (n) => (n == null ? "–" : nf("compact").format(n));
 export const fmtPercent = (n) => (n == null ? "–" : `${Math.round(n * 100)}%`);
 export const fmtSignedPercent = (n) => (n == null ? "–" : `${n > 0 ? "+" : ""}${Math.round(n * 100)}%`);
-/** Wiek w latach: "1 rok", "3 lata", "2,5 roku" / "1 year", "2.5 years". */
+/** Age in years: "1 rok", "3 lata", "2,5 roku" / "1 year", "2.5 years". */
 export function fmtAge(years) {
   if (years == null) return "–";
   const n = Math.round(years * 10) / 10;
@@ -33,28 +33,28 @@ export const fmtDate = (d) => (d ? `${d.day} ${dict().months[d.month - 1] ?? d.m
 
 const cargoKey = (res) => String(res ?? "").split("/").pop().replace(/\.cargo$/, "");
 
-/** "::/cargos/fish/fish.cargo" -> "Ryby" / "Fish" */
+/** "::/cargos/fish/fish.cargo" -> "Fish" / "Ryby" */
 export function cargoName(res) {
   if (!res) return "–";
   const key = cargoKey(res);
   return dict().cargo[key] ?? key.replace(/_/g, " ");
 }
 
-/** Kolorowa ikonka ładunku z gry (web/img/resources); brakujący plik po prostu znika. */
+/** A colored cargo icon from the game (web/img/resources); a missing file simply disappears. */
 export function cargoIcon(res) {
   const src = cargoImg(res);
   return src ? `<img class="cargo-ico" src="${src}" alt="" onerror="this.remove()">` : "";
 }
 
-/** Adres ikonki ładunku albo null (nazwa spoza [a-z0-9_]). */
+/** The cargo icon address, or null (a name outside [a-z0-9_]). */
 export function cargoImg(res) {
   const key = cargoKey(res);
   return /^[a-z0-9_]+$/.test(key) ? `img/resources/${key}.png` : null;
 }
 
 /**
- * Obrazek modelu pojazdu z boku (web/img/vehicles, z plików gry przez tools/extract_game_icons.py).
- * model = dynamic.models[id] ({ name, icon }); brak ikonki albo pliku -> nic.
+ * Side image of a vehicle model (web/img/vehicles, from the game files via tools/extract_game_icons.py).
+ * model = dynamic.models[id] ({ name, icon }); no icon or file -> nothing.
  */
 export function vehicleImgHtml(model, cls = "veh-img") {
   const icon = model?.icon;
@@ -62,31 +62,31 @@ export function vehicleImgHtml(model, cls = "veh-img") {
     ? `<img class="${cls}" src="img/vehicles/${icon}.png" alt="" loading="lazy" onerror="this.remove()">` : "";
 }
 
-/** m/s -> "87 km/h" / "87 km/h". */
+/** m/s -> "87 km/h". */
 export const fmtSpeed = (ms) => (ms == null ? "–" : `${nf("int").format(Math.round(ms * 3.6))} km/h`);
 
-/** Ikonka + nazwa ładunku (do chipów i list). */
+/** Icon + cargo name (for chips and lists). */
 export const cargoLabel = (res) => `${cargoIcon(res)}${escapeHtml(cargoName(res))}`;
 
-/** Nazwa nośnika (RAIL -> "Kolej" / "Rail") albo undefined dla nieznanego. */
+/** Carrier name (RAIL -> "Rail" / "Kolej") or undefined for an unknown one. */
 export const carrierName = (carrier) => dict().carrier[carrier];
 
-// Ikonki pojazdów z gry (web/img/stations): białe maski, barwione kolorem (CSS mask / canvas).
+// Vehicle icons from the game (web/img/stations): white masks, tinted with a color (CSS mask / canvas).
 const CARRIER_IMG = {
   RAIL: "vehicle_train_front_32", ROAD: "vehicle_bus_front_32", TRAM: "vehicle_tram_front_32",
   WATER: "vehicle_ship_front_32", AIR: "vehicle_airplane_front_32", TRUCK: "vehicle_truck_front_32",
 };
 const imgUrl = (key) => (CARRIER_IMG[key] ? `img/stations/${CARRIER_IMG[key]}.png` : null);
 
-/** Obrazek nośnika albo null. */
+/** The carrier image, or null. */
 export const carrierImg = (carrier) => imgUrl(carrier);
 
-/** Obrazek stacji: dworzec drogowy tylko dla ładunków dostaje ciężarówkę zamiast autobusu. */
+/** Station image: a road station for cargo only gets a truck instead of a bus. */
 export const stationImg = (s) => imgUrl(s.kind === "ROAD" && s.cargo && !s.passengers ? "TRUCK" : s.kind);
 
 /**
- * Ikonka jako <span> z maską CSS, barwiona przez `color` (domyślnie kolor tekstu).
- * `tint` = rodzaj z kolorem z motywu (np. "RAIL" -> var(--station-rail)).
+ * An icon as a <span> with a CSS mask, tinted by `color` (the text color by default).
+ * `tint` = a kind with a color from the theme (e.g. "RAIL" -> var(--station-rail)).
  */
 export function iconHtml(src, tint) {
   if (!src) return "";
@@ -96,17 +96,17 @@ export function iconHtml(src, tint) {
 
 export const carrierIcon = (carrier, tint) => iconHtml(carrierImg(carrier), tint);
 
-/** Rodzaj stacji (stations[].kind, też "INDUSTRY") -> nazwa albo undefined. */
+/** Station kind (stations[].kind, also "INDUSTRY") -> name, or undefined. */
 export const stationName = (kind) => dict().station[kind];
 export const STATION_ORDER = ["RAIL", "ROAD", "TRAM", "WATER", "AIR", "INDUSTRY", "OTHER"];
 
-/** Pasażerska / towarowa / mieszana */
+/** Passenger / cargo / mixed */
 export const stationUse = (s) =>
   s.passengers && s.cargo ? t("use.both") : s.cargo ? t("use.cargo") : s.passengers ? t("use.passengers") : "";
 
 /**
- * Pasażerowie czekający na linię `l` na jej przystankach spełniających `atStop(stop)` (stops[].lineWaiting z moda).
- * null, gdy mod tego nie podaje albo linia nie wozi pasażerów (zero na linii towarowej nic nie mówi).
+ * Passengers waiting for line `l` at its stops matching `atStop(stop)` (stops[].lineWaiting from the mod).
+ * null when the mod doesn't provide it or the line doesn't carry passengers (zero on a cargo line says nothing).
  */
 export function lineWaitingAt(l, atStop) {
   let n = null;
@@ -115,7 +115,7 @@ export function lineWaitingAt(l, atStop) {
   return n && n > 0 ? n : n === 0 && passengers ? 0 : null;
 }
 
-/** id stacji (konstrukcji) -> linie, które się na niej zatrzymują (stop.entity ∈ station.stations). */
+/** Station (construction) id -> the lines that stop there (stop.entity ∈ station.stations). */
 export function linesByStation(dynamic) {
   const constrOf = new Map();
   for (const s of dynamic.stations ?? []) for (const e of s.stations ?? []) constrOf.set(e, s.id);
@@ -131,8 +131,8 @@ export function linesByStation(dynamic) {
 }
 
 /**
- * id stacji -> id zakładu, do którego stacja należy. Z moda (stations[].industry), a dla starszych
- * eksportów po tej samej konstrukcji: ten sam plik .con i ta sama pozycja (środek konstrukcji).
+ * Station id -> id of the industry the station belongs to. From the mod (stations[].industry), and for older
+ * exports by the same construction: the same .con file and the same position (the construction's center).
  */
 export function industryOfStation(dynamic) {
   const ids = new Set((dynamic.industries ?? []).map((i) => i.id));
@@ -146,7 +146,7 @@ export function industryOfStation(dynamic) {
   return out;
 }
 
-/** id stacji -> id magazynu (dynamic.warehouses), do którego stacja należy (stations[].warehouse z moda). */
+/** Station id -> id of the warehouse (dynamic.warehouses) the station belongs to (stations[].warehouse from the mod). */
 export function warehouseOfStation(dynamic) {
   const ids = new Set((dynamic.warehouses ?? []).map((w) => w.id));
   return new Map((dynamic.stations ?? []).filter((s) => ids.has(s.warehouse)).map((s) => [s.id, s.warehouse]));
@@ -155,7 +155,7 @@ export function warehouseOfStation(dynamic) {
 const placeKey = (file, pos) =>
   pos ? `${String(file ?? "").replace(/^::\//, "")}@${Math.round(pos[0])},${Math.round(pos[1])}` : "";
 
-/** id zakładu -> linie obsługujące jego stacje, bez powtórzeń. */
+/** Industry id -> the lines serving its stations, without repeats. */
 export function linesByIndustry(dynamic, stationLines = linesByStation(dynamic), stationIndustry = industryOfStation(dynamic)) {
   const out = new Map();
   for (const [stationId, industryId] of stationIndustry) {
@@ -166,12 +166,12 @@ export function linesByIndustry(dynamic, stationLines = linesByStation(dynamic),
   return new Map([...out].map(([id, set]) => [id, [...set]]));
 }
 
-// TF: initialLandUseCapacities = [mieszkalne, usługowe, przemysłowe]
+// TF: initialLandUseCapacities = [residential, commercial, industrial]
 export const landUseName = (i) => dict().landUse[i];
 
 /**
- * Obiekty mają w grze nazwy "Nazwa | Właściciel" (bez "| ..." - bez właściciela). Rozdziela je w miejscu:
- * name = sama nazwa (mapa, listy), owner = właściciel albo null.
+ * In the game objects are named "Name | Owner" (without "| ..." - no owner). Splits them in place:
+ * name = the bare name (map, lists), owner = the owner or null.
  */
 function splitOwners(items) {
   for (const x of items ?? []) {
@@ -185,17 +185,17 @@ function splitOwners(items) {
 }
 
 /**
- * Miasta, zakłady, magazyny, stacje i linie (z przystankami) z dynamic.json.
- * Gra nazywa stacje od miasta, także kupionego: "Dworzec Szczecin | estiv0 Zachód" to nie stacja widza
- * "estiv0 Zachód", tylko "Dworzec Szczecin Zachód". Dlatego w nazwach stacji i przystanków pełne nazwy
- * miast i zakładów z właścicielem zamieniamy najpierw na same nazwy.
+ * Towns, industries, warehouses, stations and lines (with stops) from dynamic.json.
+ * The game names stations after the town, including a bought one: "Dworzec Szczecin | estiv0 Zachód" is not the station of viewer
+ * "estiv0 Zachód", but "Dworzec Szczecin Zachód". So in station and stop names the full names
+ * of towns and industries with their owner are first replaced with the bare names.
  */
 export function splitAllOwners(dynamic) {
   const owned = [...(dynamic.towns ?? []), ...(dynamic.industries ?? [])]
     .map((x) => x.name).filter((n) => typeof n === "string" && n.includes("|"))
-    .sort((a, b) => b.length - a.length) // dłuższa nazwa pierwsza ("Nowa Góra | x" przed "Góra | x")
+    .sort((a, b) => b.length - a.length) // the longer name first ("Nowa Góra | x" before "Góra | x")
     .map((full) => ({
-      re: new RegExp(`${escapeRegex(full)}(?![\\p{L}\\p{N}_])`, "gu"), // "Bar | ab" nie trafia w "Bar | abc"
+      re: new RegExp(`${escapeRegex(full)}(?![\\p{L}\\p{N}_])`, "gu"), // "Bar | ab" doesn't match "Bar | abc"
       plain: full.slice(0, full.lastIndexOf("|")).trim(),
     }));
   const unOwn = (items) => {
@@ -215,15 +215,15 @@ export function splitAllOwners(dynamic) {
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-// Efekty z nagród za punkty kanału (dynamic.effects z moda): rodzaj efektu -> lista obiektów.
+// Effects from channel points rewards (dynamic.effects from the mod): effect kind -> object list.
 const EFFECT_TARGET = {
   townBoost: "towns", industryBoost: "industries", industryStrike: "industries", industryTaxRaid: "industries",
   lineStop: "lines", lineHold: "lines", lineFuelPremium: "lines", lineFuelBad: "lines",
 };
 
 /**
- * Dokleja aktywne efekty do miast, zakładów i linii (x.effects). Postęp efektu (0..1, ile już minęło)
- * z czasu gry eksportu: effect.progress.
+ * Attaches active effects to towns, industries and lines (x.effects). The effect's progress (0..1, how much has passed)
+ * from the export's game time: effect.progress.
  */
 export function attachEffects(dynamic) {
   const effects = Array.isArray(dynamic.effects) ? dynamic.effects : [];
@@ -241,13 +241,13 @@ export function attachEffects(dynamic) {
 
 export const townSize = (t) => (t.capacities ?? []).reduce((a, b) => a + b, 0);
 
-/** Wzrost miasta od startu gry (obecna pojemność / initialCapacities - 1) albo null. */
+/** Town growth since game start (current capacity / initialCapacities - 1), or null. */
 export function townGrowth(t) {
   const start = (t.initialCapacities ?? []).reduce((a, b) => a + b, 0);
   return start > 0 ? townSize(t) / start - 1 : null;
 }
 
-/** Kolor linii z gry (0..1) -> CSS */
+/** Line color from the game (0..1) -> CSS */
 export function rgb(color, fallback = "#8a94a6") {
   if (!Array.isArray(color) || color.length < 3) return fallback;
   const c = color.map((v) => Math.round(Math.max(0, Math.min(1, v)) * 255));

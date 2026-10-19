@@ -1,39 +1,39 @@
-// Budowa za punkty kanału: przycisk otwiera okienko (miasto albo zakład, nazwa), a każde kliknięcie
-// w mapę, dopóki okienko jest otwarte, stawia albo przestawia miejsce budowy. Strona daje kod do wklejenia w nagrodę na Twitchu (Twitch nie ma linku, który wypełnia tekst nagrody).
-// Tf3Bridge czyta kod (middle_app/src/Tf3Bridge/Rewards/BuildCode.cs), sprawdza miejsce jeszcze raz
-// i wysyła komendę do moda (lua_mod/content/tf3export/create.lua).
+// Building for channel points: the button opens a window (town or industry, name), and every click
+// on the map while the window is open places or moves the building spot. The website gives a code to paste into the Twitch reward (Twitch has no link that fills in the reward text).
+// Tf3Bridge reads the code (middle_app/src/Tf3Bridge/Rewards/BuildCode.cs), checks the spot again
+// and sends a command to the mod (lua_mod/content/tf3export/create.lua).
 //
-// Kod: "[x, y] Nazwa" (miasto) albo "[x, y, rodzaj] Nazwa" (zakład, np. coal_mine); x, y w metrach gry.
-// Teren (woda, zbocza, regiony jak góry) i czerwona nakładka zakazanych miejsc: ground.js.
+// Code: "[x, y] Name" (town) or "[x, y, kind] Name" (industry, e.g. coal_mine); x, y in game meters.
+// Terrain (water, slopes, regions like mountains) and the red overlay of forbidden places: ground.js.
 
 import { config } from "../config.js";
 import { dict, locale, t } from "./i18n.js";
 import { Ground, ON_WATER, TOWN_MAX_STEEP, TOWN_MAX_WATER } from "./ground.js";
 
-// Te same liczby co w BuildCode.cs: tu tylko podpowiedź, rozstrzyga Tf3Bridge.
+// The same numbers as in BuildCode.cs: here only a hint, Tf3Bridge decides.
 const MIN_NAME = 2, MAX_NAME = 40;
 const TOWN_FROM_TOWN = 1500, TOWN_FROM_INDUSTRY = 600, INDUSTRY_FROM_TOWN = 800, INDUSTRY_FROM_INDUSTRY = 600, MAP_MARGIN = 300;
 const pct = (share) => Math.round(share * 100);
-// Kierunki co 45°, od północy zgodnie z zegarem (klucze dir.* w i18n).
+// Directions every 45°, clockwise from north (dir.* keys in i18n).
 const DIRECTIONS = ["n", "ne", "e", "se", "s", "sw", "w", "nw"];
 
-/** "coal_mine" z "::/industries/coal_mine/coal_mine.con"; null dla innych plików. */
+/** "coal_mine" from "::/industries/coal_mine/coal_mine.con"; null for other files. */
 export const industryType = (file) => String(file ?? "").match(/^::\/industries\/(\w+)\/\1\.con$/)?.[1] ?? null;
 
-/** Jak TargetResolver.Normalize w Tf3Bridge: małe litery, bez ogonków, pojedyncze spacje. */
+/** Like TargetResolver.Normalize in Tf3Bridge: lower case, no diacritics, single spaces. */
 const normalize = (s) => s.normalize("NFD").replace(/\p{Mn}/gu, "").replace(/[łŁ]/g, "l").toLowerCase()
   .replace(/[\s|]+/g, " ").trim();
 
-/** Nazwa jak w BuildCode.cs: bez znaków sterujących i "|", pojedyncze spacje. */
+/** A name as in BuildCode.cs: no control characters and no "|", single spaces. */
 const cleanName = (s) => s.replace(/[\p{Cc}|]/gu, "").replace(/\s+/g, " ").trim();
 
-/** Kod do nagrody. */
+/** The code for the reward. */
 export function buildCode({ x, y, type, name }) {
   return `[${Math.round(x)}, ${Math.round(y)}${type ? `, ${type}` : ""}] ${cleanName(name)}`;
 }
 
 export class BuildController {
-  /** getDynamic() - ostatni dynamic.json (nazwy już bez " | właściciel", patrz splitAllOwners). */
+  /** getDynamic() - the last dynamic.json (names already without " | owner", see splitAllOwners). */
   constructor(map, { form, button, getDynamic }) {
     this.map = map;
     this.form = form;
@@ -49,14 +49,14 @@ export class BuildController {
     this.how = form.querySelector("[data-build-how]");
     this.twitch = form.querySelector("[data-build-twitch]");
     this.draft = null; // { x, y }
-    this.ground = null; // Ground albo null (brak terenu)
-    this.rules = {};    // build-rules.json: rodzaj zakładu -> region ("mountains", ...)
-    this.nearest = null; // { key, value } - ostatnio policzone najbliższe dozwolone miejsce
+    this.ground = null; // Ground or null (no terrain)
+    this.rules = {};    // build-rules.json: industry kind -> region ("mountains", ...)
+    this.nearest = null; // { key, value } - the last computed nearest allowed spot
 
     if (config.twitchUrl) this.twitch.href = config.twitchUrl;
     else this.twitch.hidden = true;
 
-    // Tryb "build" trwa tak długo jak okienko: włączenie je otwiera, wyłączenie zamyka (modeChanged).
+    // The "build" mode lasts as long as the window: turning it on opens it, turning it off closes it (modeChanged).
     button.addEventListener("click", () => map.setPlaceMode(map.placeMode === "build" ? null : "build"));
     for (const input of this.kindInputs) input.addEventListener("change", () => this.update());
     this.type.addEventListener("change", () => this.update());
@@ -72,7 +72,7 @@ export class BuildController {
       if (e.key !== "Escape") return;
       if (map.placeMode !== "build") return;
       map.setPlaceMode(null);
-      e.preventDefault(); // obsłużone - main.js nie odznacza już zaznaczenia
+      e.preventDefault(); // handled - main.js no longer clears the selection
     });
   }
 
@@ -80,14 +80,14 @@ export class BuildController {
     return this.kindInputs.find((i) => i.checked)?.value === "industry";
   }
 
-  // Wywoływane przez MapView (onPlaceMode): okienko otwarte dokładnie wtedy, gdy trwa tryb budowy.
+  // Called by MapView (onPlaceMode): the window is open exactly while the build mode is on.
   modeChanged(on) {
     this.button.setAttribute("aria-pressed", String(on));
     if (on && this.form.hidden) this.open();
     else if (!on && !this.form.hidden) this.close();
   }
 
-  // Okienko od razu, miejsce wskazuje się potem na mapie (i można je zmieniać do woli).
+  // The window right away; the spot is picked afterwards on the map (and can be changed at will).
   open() {
     this.draft = null;
     this.fillTypes();
@@ -96,7 +96,7 @@ export class BuildController {
     this.name.focus();
   }
 
-  // Nowy teren z DataFeed: { info, sites, zones } (obrazki = ImageBitmap albo null).
+  // New terrain from DataFeed: { info, sites, zones } (images = ImageBitmap or null).
   setGround({ info, sites, zones }) {
     try {
       this.ground = sites || zones ? new Ground(info, sites, zones) : null;
@@ -109,7 +109,7 @@ export class BuildController {
     this.refresh();
   }
 
-  // Nowe build-rules.json (streamer zmienił, gdzie wolno stawiać zakłady).
+  // A new build-rules.json (the streamer changed where industries may be placed).
   setRules(rules) {
     this.rules = rules?.industries ?? {};
     this.nearest = null;
@@ -118,7 +118,7 @@ export class BuildController {
     this.refresh();
   }
 
-  /** Region, który ogranicza ten rodzaj zakładu na tej mapie; null = żaden. */
+  /** The region that restricts this industry kind on this map; null = none. */
   zoneOf(type) {
     return type ? this.ground?.activeZone(this.rules[type]) ?? null : null;
   }
@@ -127,22 +127,22 @@ export class BuildController {
     return this.industry ? this.type.value || null : null;
   }
 
-  // Czerwone miejsca, gdzie nie wolno budować wybranego miasta albo zakładu: przy wybieraniu miejsca i w okienku budowy.
+  // Red areas where the selected town or industry may not be built: while picking the spot and in the build window.
   showOverlay() {
     const building = !this.form.hidden;
-    if (this.industry && !this.type.value) this.fillTypes(); // przed pierwszym okienkiem lista rodzajów jest pusta
+    if (this.industry && !this.type.value) this.fillTypes(); // before the first window the list of kinds is empty
     const type = this.selectedType;
     this.map.setOverlay(building && this.ground && (!this.industry || type) ? this.ground.overlay(type, this.zoneOf(type)) : null);
   }
 
-  // Wywoływane przez MapView (onPlace): kliknięcie w mapę przy otwartym okienku stawia/przestawia miejsce.
+  // Called by MapView (onPlace): a click on the map with the window open places/moves the spot.
   place({ x, y }) {
     if (this.form.hidden) return;
     this.draft = { x, y };
     this.update();
   }
 
-  // Rodzaje zakładów, które są na tej mapie (Tf3Bridge przyjmuje tylko takie), po nazwie.
+  // The industry kinds present on this map (Tf3Bridge only accepts those), by name.
   fillTypes() {
     const keep = this.type.value;
     const types = new Set((this.getDynamic()?.industries ?? []).map((i) => industryType(i.file)).filter(Boolean));
@@ -164,7 +164,7 @@ export class BuildController {
     this.copyBtn.textContent = t("build.copy");
 
     if (!this.draft) {
-      // Jeszcze bez miejsca: podpowiedź zamiast sprawdzania, bez kodu i znacznika.
+      // No spot yet: a hint instead of the check, no code and no marker.
       this.check.textContent = t("build.pick");
       this.check.classList.remove("neg");
       this.code.value = "";
@@ -178,19 +178,19 @@ export class BuildController {
     const problem = this.problem(name, industry, type);
     this.check.textContent = problem ?? t("build.ok");
     this.check.classList.toggle("neg", !!problem);
-    // Na wodzie i na zboczach kodu nie dajemy: gra i tak by tu nic nie zbudowała.
+    // On water and on slopes we give no code: the game wouldn't build anything there anyway.
     const ready = name.length >= MIN_NAME && (!industry || type) && !this.groundProblem(industry, type);
     this.code.value = ready ? buildCode({ ...this.draft, type, name }) : "";
     this.copyBtn.disabled = !ready;
     this.map.setMarker({
       ...this.draft,
       label: name || t(industry ? "build.industry" : "build.town"),
-      radius: industry ? INDUSTRY_FROM_TOWN : TOWN_FROM_TOWN, // największa z odległości: okrąg, w którym nie powinno być miast
+      radius: industry ? INDUSTRY_FROM_TOWN : TOWN_FROM_TOWN, // the largest of the distances: a circle that shouldn't contain towns
       ok: !problem,
     });
   }
 
-  // Pierwszy powód, dla którego Tf3Bridge odrzuci kod (i odda punkty); null = wygląda dobrze.
+  // The first reason Tf3Bridge will reject the code (and refund the points); null = looks fine.
   problem(name, industry, type) {
     const dynamic = this.getDynamic();
     if (!dynamic) return t("build.noData");
@@ -215,7 +215,7 @@ export class BuildController {
     return this.tooClose(dynamic.towns, fromTown) ?? this.tooClose(dynamic.industries, fromIndustry);
   }
 
-  // Woda, zbocza albo zły region w miejscu budowy; null = w porządku albo nie wiadomo.
+  // Water, slopes or a wrong region at the building spot; null = fine or unknown.
   groundProblem(industry, type) {
     const ground = this.ground;
     if (!ground) return null;
@@ -239,7 +239,7 @@ export class BuildController {
     return problem && `${problem} ${this.nearestHint(type)}`.trim();
   }
 
-  // "Najbliżej: 3,2 km na północny wschód." - gdzie najbliżej wolno postawić to, co wybrano.
+  // "Nearest: 3.2 km to the north-east." - where the nearest spot for what was chosen is allowed.
   nearestHint(type) {
     const zone = this.zoneOf(type);
     const key = `${this.draft.x},${this.draft.y},${type},${zone}`;
@@ -249,7 +249,7 @@ export class BuildController {
     const n = this.nearest.value;
     if (!n) return t("build.nowhere");
     const d = Math.hypot(n.dx, n.dy);
-    const angle = (Math.atan2(n.dx, n.dy) * 180) / Math.PI; // 0 = północ, zgodnie z zegarem
+    const angle = (Math.atan2(n.dx, n.dy) * 180) / Math.PI; // 0 = north, clockwise
     const dir = DIRECTIONS[Math.round(((angle + 360) % 360) / 45) % 8];
     const km = new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(Math.max(0.1, d / 1000));
     return t("build.nearest", { km, dir: t(`dir.${dir}`) });
@@ -265,14 +265,14 @@ export class BuildController {
     return best && bestD < min ? t("build.tooClose", { name: best.name, d: Math.round(bestD), min }) : null;
   }
 
-  // Nowe dane albo inny język: rodzaje zakładów i sprawdzenie miejsca w otwartym okienku od nowa.
+  // New data or another language: industry kinds and the spot check in the open window again.
   refresh() {
     if (this.form.hidden) return;
     this.fillTypes();
     this.update();
   }
 
-  // Kopiuje kod; bez schowka (np. http) zostaje zaznaczony do ręcznego Ctrl+C.
+  // Copies the code; without a clipboard (e.g. http) it stays selected for a manual Ctrl+C.
   async copy() {
     if (!this.code.value) return;
     this.code.select();

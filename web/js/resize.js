@@ -1,9 +1,9 @@
-// Szerokość panelu bocznego: uchwyt na jego lewej krawędzi (przeciąganie, strzałki, dwuklik = domyślna).
-// Szerokość to zmienna CSS --sidebar-w na .layout, zapamiętana w localStorage tej przeglądarki.
-// Mapa dopasowuje się sama (ResizeObserver w MapView).
+// Side panel width: a handle on its left edge (dragging, arrow keys, double-click = default).
+// The width is the CSS variable --sidebar-w on .layout, remembered in this browser's localStorage.
+// The map adapts on its own (ResizeObserver in MapView).
 
 const KEY = "tf3-sidebar-width";
-// MIN: tyle potrzebują wszystkie zakładki panelu (PL i EN); węższy zapisany panel rozszerza się do MIN.
+// MIN: what all the panel tabs need (EN and PL); a narrower saved panel widens to MIN.
 const DEFAULT = 520, MIN = 520, MAP_MIN = 320, STEP = 20;
 
 export function initSidebarResize(layout, handle) {
@@ -16,26 +16,26 @@ export function initSidebarResize(layout, handle) {
     layout.style.setProperty("--sidebar-w", `${width}px`);
     handle.setAttribute("aria-valuenow", String(width));
     if (save) {
-      try { localStorage.setItem(KEY, String(width)); } catch { /* brak localStorage */ }
+      try { localStorage.setItem(KEY, String(width)); } catch { /* no localStorage */ }
     }
   };
 
   let saved = NaN;
-  try { saved = Number(localStorage.getItem(KEY)); } catch { /* brak localStorage */ }
+  try { saved = Number(localStorage.getItem(KEY)); } catch { /* no localStorage */ }
   apply(Number.isFinite(saved) && saved > 0 ? saved : DEFAULT, false);
   handle.setAttribute("aria-valuemin", String(MIN));
 
-  let drag = null; // { x, w } z chwili złapania
+  let drag = null; // { x, w } from the moment it was grabbed
   handle.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
     e.preventDefault();
     drag = { x: e.clientX, w: width };
     handle.classList.add("dragging");
     document.body.classList.add("resizing");
-    try { handle.setPointerCapture(e.pointerId); } catch { /* wskaźnik już nieaktywny */ }
+    try { handle.setPointerCapture(e.pointerId); } catch { /* the pointer is no longer active */ }
   });
   handle.addEventListener("pointermove", (e) => {
-    if (drag) apply(drag.w + (drag.x - e.clientX), false); // panel jest po prawej: w lewo = szerzej
+    if (drag) apply(drag.w + (drag.x - e.clientX), false); // the panel is on the right: to the left = wider
   });
   const end = () => {
     if (!drag) return;
@@ -57,7 +57,7 @@ export function initSidebarResize(layout, handle) {
       apply(DEFAULT);
     }
   });
-  // Mniejsze okno: panel nie może zasłonić całej mapy.
+  // A smaller window: the panel must not cover the whole map.
   window.addEventListener("resize", () => {
     if (width > max()) apply(width, false);
   });

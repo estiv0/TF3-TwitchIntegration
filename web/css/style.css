@@ -1,4 +1,4 @@
-/* TF3 Live – ciemny motyw pod stream. Kolory mapy też tutaj (map.js czyta zmienne CSS). */
+/* TF3 Live – a dark theme for streaming. The map colors live here too (map.js reads the CSS variables). */
 :root {
   --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
 
@@ -54,7 +54,7 @@ body {
 h1, h2, h3, p { margin: 0; }
 button { font: inherit; color: inherit; }
 
-/* ---------------------------------------------------------------- górny pasek */
+/* ---------------------------------------------------------------- top bar */
 .topbar {
   display: flex;
   align-items: center;
@@ -65,7 +65,7 @@ button { font: inherit; color: inherit; }
 }
 
 .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
-/* logo z site.json (config.logo); bez niego zostaje ukryte */
+/* logo from site.json (config.logo); without it, it stays hidden */
 .brand-logo { height: 34px; width: auto; flex: none; display: block; }
 .brand-logo[hidden] { display: none; }
 .brand h1 { font-size: 17px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -88,7 +88,7 @@ button { font: inherit; color: inherit; }
 .status[data-state="stale"]::before { background: var(--stale); }
 .status[data-state="error"]::before { background: var(--error); }
 
-/* Link do łańcuchów produkcji: pigułka jak status, ikona w kolorze akcentu. */
+/* Link to the production chains: a pill like the status, the icon in the accent color. */
 .chains-btn {
   display: inline-flex; align-items: center; gap: 7px; flex: none;
   padding: 6px 12px; border-radius: 999px;
@@ -99,7 +99,7 @@ button { font: inherit; color: inherit; }
 .chains-btn:hover { border-color: var(--accent); color: var(--accent); }
 .chains-ico { width: 14px; height: 14px; flex: none; fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 
-/* Przycisk streamu (js/stream.js): kolor Twitcha; czerwona pulsująca kropka, gdy gra wysyła świeże dane. */
+/* Stream button (js/stream.js): Twitch color; a pulsing red dot when the game sends fresh data. */
 .stream-btn {
   display: inline-flex; align-items: center; gap: 8px; flex: none;
   padding: 6px 12px; border-radius: 999px; cursor: pointer;
@@ -117,10 +117,10 @@ button { font: inherit; color: inherit; }
 }
 @media (prefers-reduced-motion: reduce) { .stream-dot { animation: none !important; } }
 
-/* ---------------------------------------------------------------- układ */
+/* ---------------------------------------------------------------- layout */
 .layout {
   display: grid;
-  grid-template-columns: 1fr var(--sidebar-w, 520px); /* --sidebar-w: uchwyt panelu (js/resize.js) */
+  grid-template-columns: 1fr var(--sidebar-w, 520px); /* --sidebar-w: the panel handle (js/resize.js) */
   min-height: 0;
 }
 
@@ -148,7 +148,7 @@ button { font: inherit; color: inherit; }
 
 .map-tools button[aria-pressed="true"]#pin { border-color: var(--pin); }
 
-/* Formularz pinezki: przy klikniętym miejscu (main.js ustawia left/top). */
+/* Pin form: next to the clicked spot (main.js sets left/top). */
 .pin-form {
   position: absolute; z-index: 3; width: 280px;
   display: grid; gap: 8px; padding: 12px;
@@ -174,8 +174,8 @@ button { font: inherit; color: inherit; }
 
 .map-tools button[aria-pressed="true"]#build { border-color: var(--accent); }
 
-/* Budowa za punkty kanału (js/build.js): ten sam wygląd co formularz pinezki, kilka pól więcej. */
-/* Stałe miejsce w rogu mapy: okienko nie skacze, gdy widz przestawia miejsce budowy kliknięciami. */
+/* Building for channel points (js/build.js): the same look as the pin form, a few more fields. */
+/* A fixed spot in the map corner: the window doesn't jump when the viewer moves the building spot with clicks. */
 .build-form { top: 12px; left: 12px; width: 300px; max-height: calc(100% - 24px); overflow-y: auto; }
 .build-form > strong { font-size: 14px; }
 .build-field { display: grid; gap: 4px; }
@@ -212,13 +212,13 @@ button { font: inherit; color: inherit; }
 .dot-vehicle { border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 1.5px var(--map-bg); }
 .swatch { width: 10px; height: 10px; flex: none; border-radius: 3px; }
 
-/* Ikonki z gry: białe maski barwione kolorem tekstu (format.js: iconHtml), kolorowe ładunki jako <img>. */
+/* Game icons: white masks tinted with the text color (format.js: iconHtml), colored cargo as <img>. */
 .ico {
   display: inline-block; flex: none; width: 1.2em; height: 1.2em; vertical-align: -0.22em;
   background-color: currentColor;
   -webkit-mask: center / contain no-repeat;
   mask: center / contain no-repeat;
-  /* obrazek: mask-image w stylu inline (url w zmiennej CSS liczyłby się względem css/, nie strony) */
+  /* image: mask-image in an inline style (a url in a CSS variable would resolve relative to css/, not the page) */
 }
 .ico-rail { color: var(--station-rail); }
 .ico-road { color: var(--station-road); }
@@ -244,7 +244,7 @@ button { font: inherit; color: inherit; }
   background: var(--panel); border-left: 1px solid var(--border);
 }
 
-/* Zakładki nie mieszczą się w wąskim panelu: przewijają się w poziomie (bez paska), wybrana wjeżdża w widok (sidebar.js). */
+/* The tabs don't fit in a narrow panel: they scroll horizontally (no scrollbar), the selected one scrolls into view (sidebar.js). */
 .tabs {
   display: flex; padding: 10px 10px 0; gap: 4px; border-bottom: 1px solid var(--border);
   overflow-x: auto; scrollbar-width: none;
@@ -282,7 +282,7 @@ button { font: inherit; color: inherit; }
 .filters button:hover { color: var(--text); }
 .filters button[aria-pressed="true"] { color: var(--text); border-color: var(--accent); }
 .filters button span { opacity: .7; margin-left: 2px; }
-/* "?" z dymkiem (opis punktów majątku): najechanie albo fokus (dotknięcie na telefonie). */
+/* "?" with a tooltip (explanation of the estate points): hover or focus (a tap on a phone). */
 .help {
   position: relative; display: inline-flex; align-items: center; justify-content: center; align-self: center;
   width: 20px; height: 20px; margin-left: auto; border-radius: 50%; cursor: help;
@@ -298,12 +298,12 @@ button { font: inherit; color: inherit; }
 .help-tip b { display: block; margin-bottom: 4px; }
 .help-tip span { display: block; }
 .help:hover .help-tip, .help:focus .help-tip, .help:focus-within .help-tip { display: block; }
-/* Zakłady: przełącznik produkcja/zużycie w osobnym wierszu, ładunki jako ikonki z liczbą. */
+/* Industries: the production/consumption switch in its own row, cargo as icons with a number. */
 .filter-modes { display: flex; gap: 6px; width: 100%; }
 .filters .cargo-btn { display: inline-flex; align-items: center; padding: 3px 8px 3px 6px; }
 .filters .cargo-btn .cargo-ico { margin-right: 3px; }
 
-/* Kwadracik zakładu z ikonkami produkcji; obwódka w kolorze rodzaju (jak .dot-raw / .dot-processing). */
+/* The industry square with production icons; the border in the kind's color (like .dot-raw / .dot-processing). */
 .ind-badge {
   display: inline-flex; flex: none; gap: 1px; padding: 1px; border-radius: 4px;
   border: 2px solid var(--industry-processing); background: var(--panel-2);
@@ -316,8 +316,8 @@ button { font: inherit; color: inherit; }
 .row-hint { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-hint mark { background: none; color: var(--accent); }
 
-/* Szczegóły: osobne pływające okienka nad mapą (zaznaczony obiekt i przypięte; js/float.js ustawia
-   left/top/max-height/z-index każdego), przewijane w środku. Warstwa na całą mapę przepuszcza kliknięcia. */
+/* Details: separate floating windows over the map (the selected object and pinned ones; js/float.js sets
+   left/top/max-height/z-index of each), scrolled inside. The full-map layer lets clicks through. */
 .detail { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
 .detail-card {
   position: absolute; top: 12px; left: 12px;
@@ -328,14 +328,14 @@ button { font: inherit; color: inherit; }
 }
 .detail-card[data-pinned="true"] { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
 .detail-card[data-pinned="true"][aria-current="true"] { border-color: var(--accent); }
-/* zwinięte przypięte okienko: sam nagłówek */
+/* collapsed pinned window: just the header */
 .detail-card.collapsed { padding-block: 10px; }
 .detail-card.collapsed > :not(h2, .detail-tools) { display: none; }
 .detail h2, .detail .detail-sub { cursor: move; user-select: none; }
 .detail-card.dragging { opacity: .92; }
 .detail h2 { font-size: 16px; padding-right: 64px; }
 .detail-card[data-pinned="true"] h2 { padding-right: 88px; }
-/* przyciski zostają w rogu przy przewijaniu treści */
+/* the buttons stay in the corner while the content scrolls */
 .detail-tools {
   position: sticky; top: 0; float: right; z-index: 1; margin: -6px -6px 0 0;
   display: flex; gap: 2px; border-radius: 6px; background: var(--panel-2);
@@ -347,15 +347,15 @@ button { font: inherit; color: inherit; }
 }
 .detail-tool:hover { color: var(--text); background: var(--bg); }
 .detail-close { font-size: 18px; }
-/* pinezka szara, dopóki nie przypięta */
+/* the pin is gray until pinned */
 .detail-pin { filter: grayscale(1); opacity: .6; }
 .detail-pin:hover { opacity: 1; }
 .detail-pin[aria-pressed="true"] { filter: none; opacity: 1; }
-/* Mini-player streamu: własna warstwa nad okienkami szczegółów. Twitch wymaga playera min. 400x300 px
-   i "czystej" widoczności (IntersectionObserver v2), inaczej wyłącza autoplay: nad iframe nie może być
-   przezroczystości, transformacji, filtrów ani przycinania z zaokrąglonymi rogami (border-radius +
-   overflow) - dlatego okienko nie przewija się w środku, nie zmienia rozmiaru i nie blednie przy
-   przeciąganiu. W czasie przeciągania iframe nie łapie myszy. */
+/* Stream mini player: its own layer above the detail windows. Twitch requires a player of at least 400x300 px
+   and "clean" visibility (IntersectionObserver v2), otherwise it turns off autoplay: above the iframe there can be no
+   opacity, transforms, filters or clipping with rounded corners (border-radius +
+   overflow) - so the window doesn't scroll inside, doesn't resize and doesn't fade while
+   dragging. While dragging, the iframe doesn't catch the mouse. */
 .stream-layer { z-index: 3; }
 .stream-card { width: 560px; max-width: calc(100% - 24px); overflow: visible; }
 .stream-card.dragging { opacity: 1; }
@@ -373,20 +373,20 @@ button { font: inherit; color: inherit; }
 .detail-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
 .detail-owner { font-size: 12px; margin-top: 4px; color: var(--muted); }
 .detail-owner strong { color: var(--accent); }
-/* Nazwa właściciela (i główne miasto) jako link do majątku widza. */
+/* The owner's name (and main town) as a link to the viewer's estate. */
 .owner-link {
   padding: 0; border: 0; background: none; cursor: pointer;
   font: inherit; font-weight: 600; color: var(--accent);
 }
 .owner-link:hover { text-decoration: underline; }
 
-/* Lista właścicieli: liczniki obiektów (miasta, zakłady, stacje, linie). */
+/* Owner list: object counters (towns, industries, stations, lines). */
 .own-counts { display: flex; gap: 10px; flex: none; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .own-count { display: inline-flex; align-items: center; gap: 4px; }
 .own-count .ico { width: 14px; height: 14px; }
 .own-line { width: 10px; height: 3px; border-radius: 2px; background: var(--muted); }
 .own-main { color: var(--accent); }
-/* Tabelka właścicieli: nazwa z licznikami obiektów i trzy kolumny liczb; nagłówek przyklejony, kolumny sortują. */
+/* Owner table: the name with object counters and three number columns; a sticky header, the columns sort. */
 .own-head, .row.own-row { display: grid; grid-template-columns: minmax(0, 1fr) 84px 64px 64px; gap: 6px; }
 .own-row .row-main { gap: 2px; }
 .own-row .own-counts { gap: 8px; font-size: 11px; }
@@ -402,14 +402,14 @@ button { font: inherit; color: inherit; }
 .own-col[data-owner-sort="name"] { text-align: left; }
 .own-col:hover, .own-col[aria-pressed="true"] { color: var(--text); }
 .own-col-help { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
-/* Dymek "?" na całą szerokość nagłówka (inaczej wychodziłby poza listę). */
+/* The "?" tooltip across the whole header width (otherwise it would stick out of the list). */
 .own-head .help { position: static; width: 16px; height: 16px; margin: 0; font-size: 10px; flex: none; }
 .own-head .help-tip { left: 0; right: 0; width: auto; top: 100%; text-transform: none; letter-spacing: 0; }
 .own-fleet { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; font-size: 13px; font-variant-numeric: tabular-nums; }
 .own-fleet span { display: inline-flex; align-items: center; gap: 4px; }
-.own-lines { margin-top: 10px; } /* lista linii pod ich statystykami razem */
+.own-lines { margin-top: 10px; } /* the list of lines below their combined statistics */
 
-/* Efekty od widzów (nagrody za punkty kanału): znaczki na liście i lista w szczegółach. */
+/* Effects from viewers (channel points rewards): badges in the list and a list in the details. */
 .fx-badge { flex: none; font-size: 12px; line-height: 1; cursor: help; }
 .effects { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .effects li {
@@ -456,37 +456,37 @@ button { font: inherit; color: inherit; }
 .row-value { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .empty { padding: 16px; color: var(--muted); text-align: center; }
 
-/* ---------------------------------------------------------------- wąskie ekrany */
+/* ---------------------------------------------------------------- narrow screens */
 .sheet-toggle { display: none; }
 
 @media (max-width: 900px) {
-  /* Górny pasek w dwóch niskich wierszach: logo + nazwa, status i język; pod nimi wskaźniki w jednej linii. */
+  /* The top bar in two low rows: logo + name, status and language; below them the indicators in one line. */
   .topbar { flex-wrap: wrap; gap: 8px 10px; padding: 8px 12px; }
   .brand { flex: 1; gap: 8px; }
   .brand-logo { height: 24px; }
   .brand h1 { font-size: 15px; }
   .brand-sub { display: none; }
-  /* sam kolorowy punkt; opis stanu i czas aktualizacji w podpowiedzi (title) */
+  /* just the colored dot; the state and update time in the tooltip (title) */
   .status { font-size: 0; gap: 0; padding: 7px; }
   .lang-switch button { padding: 3px 8px; font-size: 11px; }
-  /* telefon: przycisk streamu to sam link do Twitcha (bez playera), kompaktowy */
+  /* phone: the stream button is just a link to Twitch (no player), compact */
   .stream-btn { padding: 5px 10px; font-size: 11px; gap: 6px; }
-  /* sama ikona; opis w podpowiedzi (title) */
+  /* just the icon; the description in the tooltip (title) */
   .chains-btn { font-size: 0; gap: 0; padding: 6px; }
   .stream-layer { display: none !important; }
   .kpis {
     order: 3; width: 100%; margin: 0; gap: 14px;
-    overflow-x: auto; scrollbar-width: none; /* na bardzo wąskich ekranach przewijane w bok */
+    overflow-x: auto; scrollbar-width: none; /* scrolled sideways on very narrow screens */
   }
   .kpis dt { font-size: 9px; }
   .kpis dd { font-size: 13px; }
   .fleet { gap: 6px; }
   .kpi-edges, .kpi-link .spark { display: none; }
-  /* Mapa na całą resztę ekranu; panel z listami to arkusz wysuwany z dołu na mapę (#sheet-toggle). */
+  /* The map takes the rest of the screen; the panel with the lists is a sheet sliding up from the bottom over the map (#sheet-toggle). */
   .layout { grid-template-columns: 1fr; position: relative; }
   .sidebar {
     position: absolute; inset: 0; z-index: 4; border-left: 0;
-    padding-bottom: 64px; /* miejsce na przycisk */
+    padding-bottom: 64px; /* room for the button */
     transform: translateY(100%); visibility: hidden;
     transition: transform .2s ease, visibility 0s .2s;
   }
@@ -498,10 +498,10 @@ button { font: inherit; color: inherit; }
     background: var(--accent); border: 0; color: #1a1405;
     box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
   }
-  /* legenda zabiera telefonowi za dużo mapy */
+  /* the legend takes too much of the map on a phone */
   .legend { display: none; }
-  /* okienka szczegółów jedno pod drugim na dole mapy nad przyciskiem, razem na pół mapy (zaznaczony obiekt
-     zostaje widoczny nad nimi), bez przesuwania (js/float.js zdejmuje im left/top/max-height) */
+  /* detail windows one below the other at the bottom of the map above the button, half the map together (the selected object
+     stays visible above them), not movable (js/float.js removes their left/top/max-height) */
   .detail {
     inset: auto 8px 60px; max-height: 45%; overflow-y: auto; overscroll-behavior: contain;
     display: flex; flex-direction: column; gap: 8px; pointer-events: auto;
@@ -511,7 +511,7 @@ button { font: inherit; color: inherit; }
 }
 .chips li { align-items: center; }
 
-/* uchwyt szerokości panelu: pasek na lewej krawędzi, podświetlany przy najechaniu i przeciąganiu */
+/* panel width handle: a bar on the left edge, highlighted on hover and while dragging */
 .sidebar-resize {
   position: absolute; top: 0; bottom: 0; left: -4px; width: 8px; z-index: 5;
   cursor: col-resize; touch-action: none;
@@ -524,7 +524,7 @@ button { font: inherit; color: inherit; }
 .sidebar-resize:focus-visible { outline: none; }
 body.resizing { cursor: col-resize; user-select: none; }
 
-/* saldo w górnym pasku: klikalne, ze sparkline */
+/* balance in the top bar: clickable, with a sparkline */
 .kpi-link { display: flex; align-items: center; gap: 8px; cursor: pointer; border-radius: 6px; }
 .kpi-link:hover, .kpi-link:focus-visible { color: var(--accent); outline: none; }
 .spark { flex: none; }
@@ -532,7 +532,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 .spark.up polyline { stroke: var(--live); }
 .spark.down polyline { stroke: var(--error); }
 
-/* zakładka Firma */
+/* Company tab */
 .company { overflow-y: auto; padding: 4px 14px 14px; min-height: 0; flex: 1; }
 .company h3 { margin: 14px 0 6px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .company .hint, .company .empty { color: var(--muted); font-size: 12px; margin-top: 12px; }
@@ -556,7 +556,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 .fin .fin-balance th { color: var(--text); }
 .fin .ico { width: 14px; height: 14px; vertical-align: -2px; }
 
-/* tabor linii: model, liczba, wiek, stan (sidebar.js: fleetTable) */
+/* a line's fleet: model, count, age, condition (sidebar.js: fleetTable) */
 .fleet-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
 .fleet-table th, .fleet-table td { padding: 4px 6px; text-align: left; border-bottom: 1px solid var(--border); }
 .fleet-table th { color: var(--muted); font-weight: 600; }
@@ -565,7 +565,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 .fleet-table .fleet-img { display: block; width: auto; height: auto; max-width: min(140px, 100%); max-height: 24px; margin-bottom: 2px; }
 .fleet-table .muted { color: var(--muted); white-space: nowrap; }
 
-/* magazyny zakładu */
+/* industry stocks */
 .stock { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
 .stock li { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 2px 8px; font-size: 13px; }
 .stock-name { display: flex; align-items: center; min-width: 0; }
@@ -575,11 +575,11 @@ body.resizing { cursor: col-resize; user-select: none; }
 .stock-bar b { display: block; height: 100%; background: var(--accent); }
 .detail-card > .stock-bar { display: block; margin: 2px 0 10px; }
 .chips li .cargo-ico { margin-right: 0; }
-/* obrazek modelu pojazdu z boku (@2x, wymiary różne: 68-3032 x 80-256 px), w ramce z zachowaniem proporcji */
+/* side image of a vehicle model (@2x, sizes vary: 68-3032 x 80-256 px), in a frame keeping the aspect ratio */
 .tooltip .tip-veh { display: block; width: auto; height: auto; max-width: 220px; max-height: 48px; margin: 4px 0 2px; }
 .tooltip .tip-note { color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
 
-/* Przełącznik języka PL | EN (main.js: renderLangSwitch) */
+/* Language switch EN | PL (main.js: renderLangSwitch) */
 .lang-switch {
   display: inline-flex; flex: none; padding: 2px; border-radius: 999px;
   background: var(--panel-2); border: 1px solid var(--border);

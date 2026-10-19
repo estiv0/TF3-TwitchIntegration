@@ -1,17 +1,17 @@
-// Konfiguracja strony: skąd brać dane i jak często sprawdzać zmiany.
+// Website configuration: where to get the data and how often to check for changes.
 //
-// Ustawienia konkretnego streamera (nazwa, logo, kanał, adres danych) są w site.json obok
-// index.html - pliku nie ma w repozytorium, wzór: site.example.json. Bez site.json strona działa
-// z domyślną nazwą, bez logo i bez streamu.
+// Settings of a specific streamer (name, logo, channel, data address) are in site.json next to
+// index.html - the file isn't in the repository, template: site.example.json. Without site.json the website works
+// with the default name, no logo and no stream.
 //
-// Adres danych (pierwsze pasujące):
-//   1. parametr w adresie strony, do testów:
-//        http://localhost:5080/?data=https://<konto>.blob.core.windows.net/live/latest/
-//   2. lokalnie (localhost): data/latest/ (tu publikuje Tf3Bridge)
-//   3. dataUrl z site.json
-//   4. strona hostowana jako "Static website" konta Storage (https://<konto>.z<N>.web.core.windows.net):
-//        kontener "live" tego samego konta
-//   5. data/latest/ obok strony
+// Data address (the first that matches):
+//   1. a parameter in the page address, for testing:
+//        http://localhost:5080/?data=https://<account>.blob.core.windows.net/live/latest/
+//   2. locally (localhost): data/latest/ (Tf3Bridge publishes here)
+//   3. dataUrl from site.json
+//   4. a site hosted as a Storage account "Static website" (https://<account>.z<N>.web.core.windows.net):
+//        the "live" container of the same account
+//   5. data/latest/ next to the site
 const site = await fetch("site.json", { cache: "no-cache" })
   .then((r) => (r.ok ? r.json() : {}))
   .catch(() => ({}));
@@ -31,13 +31,13 @@ function dataBaseUrl() {
 export const config = {
   dataBaseUrl: dataBaseUrl(),
   pollMs: 5000,
-  // meta.updatedAtUtc starsze niż to = gra wstrzymana albo Tf3Bridge nie działa
+  // meta.updatedAtUtc older than this = the game is paused or Tf3Bridge isn't running
   staleAfterMs: 30000,
-  // Nazwa w górnym pasku i w tytule karty
+  // Name in the top bar and the tab title
   title: site.title || "TF3 Live",
-  // Logo przed nazwą (adres obrazka względem strony, np. "img/logo.png"); puste = bez logo
+  // Logo before the name (image address relative to the page, e.g. "img/logo.png"); empty = no logo
   logo: site.logo || "",
-  // Kanał streamera ("https://www.twitch.tv/<kanał>"): przycisk streamu w górnym pasku z mini-playerem
-  // (js/stream.js) i link w okienku budowy (js/build.js); pusty = bez linku i bez playera.
+  // The streamer's channel ("https://www.twitch.tv/<channel>"): the stream button in the top bar with a mini player
+  // (js/stream.js) and a link in the build window (js/build.js); empty = no link and no player.
   twitchUrl: site.twitchUrl || "",
 };

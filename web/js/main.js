@@ -1,4 +1,4 @@
-// Spina dane (DataFeed), mapę (MapView) i panel (Sidebar).
+// Ties together the data (DataFeed), the map (MapView) and the panel (Sidebar).
 
 import { config } from "../config.js";
 import { DataFeed } from "./api.js";
@@ -24,10 +24,10 @@ const status = $("#status");
 let lastMeta = null;
 let lastDynamic = null;
 let loadError = false;
-let pollError = null;                   // błąd pobierania któregoś pliku przy działającym meta.json
-let pendingSelection = readSelection(); // zaznaczenie z linku - zastosujemy, gdy przyjdą dane
-// Link z czatu do świeżo zbudowanego miasta / zakładu może przyjść, zanim obiekt będzie w eksporcie:
-// czekamy na tyle kolejnych danych, zanim uznamy, że go nie ma.
+let pollError = null;                   // an error downloading one of the files while meta.json works
+let pendingSelection = readSelection(); // the selection from a link - applied once the data arrives
+// A chat link to a freshly built town / industry may arrive before the object is in the export:
+// we wait this many more data batches before deciding it isn't there.
 const PENDING_SELECTION_TRIES = 6;
 let pendingMisses = 0;
 
@@ -63,7 +63,7 @@ const map = new MapView($("#map"), {
   onVisibleLines(ids) {
     sidebar.setVisibleLines(ids);
   },
-  // telefon (jak @media w CSS): obiekt w górnej części mapy, nad okienkiem szczegółów
+  // phone (like @media in CSS): the object in the upper part of the map, above the detail window
   focusAnchorY: () => (window.innerWidth <= 900 ? 0.3 : 0.5),
 });
 
@@ -82,8 +82,8 @@ const stream = new StreamPlayer({ button: $("#stream-btn"), layer: $("#stream"),
 const sidebar = new Sidebar($("#sidebar"), $("#detail"), {
   windows: new FloatingWindows($("#detail"), $(".map-wrap")),
   onPick(kind, id) {
-    setSheet(false); // telefon: wybór z listy pokazuje obiekt na mapie
-    // Właściciel (majątek widza) nie jest jednym obiektem mapy - mapa tylko gubi poprzednie zaznaczenie.
+    setSheet(false); // phone: picking from the list shows the object on the map
+    // An owner (a viewer's estate) isn't a single map object - the map only drops the previous selection.
     if (kind === "owner") map.select(null);
     else map.focus(kind, id);
     sidebar.setSelected(kind, id);
@@ -108,7 +108,7 @@ const sidebar = new Sidebar($("#sidebar"), $("#detail"), {
 
 initSidebarResize($(".layout"), $(".sidebar-resize"));
 
-// Telefon: przycisk na dole ekranu wysuwa panel z listami na mapę i chowa go z powrotem.
+// Phone: a button at the bottom of the screen slides the panel with the lists over the map and hides it again.
 const sheetToggle = $("#sheet-toggle");
 function setSheet(open) {
   $(".layout").classList.toggle("sheet-open", open);
@@ -118,7 +118,7 @@ function setSheet(open) {
 sheetToggle.addEventListener("click", () => setSheet(sheetToggle.getAttribute("aria-expanded") !== "true"));
 setSheet(false);
 $("#fit").addEventListener("click", () => map.fit());
-// Saldo w górnym pasku (ze sparkline) otwiera zakładkę Firma.
+// The balance in the top bar (with the sparkline) opens the Company tab.
 $("#balance").addEventListener("click", () => sidebar.showTab("company"));
 $("#balance").addEventListener("keydown", (e) => {
   if (e.key === "Enter" || e.key === " ") {
@@ -142,7 +142,7 @@ $("#vehicles").addEventListener("click", (e) => {
   e.currentTarget.setAttribute("aria-pressed", String(map.toggleVehicles()));
 });
 
-// Esc odznacza wybrany obiekt (linię, stację...), chyba że zamknął już pinezkę albo trwa pisanie w polu.
+// Esc deselects the selected object (line, station...), unless it already closed the pin or typing is going on in a field.
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || e.defaultPrevented) return;
   if (e.target.closest?.("input, textarea, select, [contenteditable]")) return;
@@ -150,7 +150,7 @@ document.addEventListener("keydown", (e) => {
   else if (sidebar.selected) clearSelection();
 });
 
-// Odznaczenie obiektu: Esc albo × w okienku szczegółów.
+// Deselecting an object: Esc or × in the detail window.
 function clearSelection() {
   map.select(null);
   sidebar.setSelected(null);
@@ -158,19 +158,19 @@ function clearSelection() {
   writeSelection(null);
 }
 
-// Zaznaczenie z adresu (#line=123, #town=...): po wczytaniu danych i po wklejeniu nowego linku.
-// Z pinezką w linku widok zostaje na pinezce, a obiekt jest tylko zaznaczony.
+// The selection from the address (#line=123, #town=...): after the data loads and after pasting a new link.
+// With a pin in the link the view stays on the pin, and the object is only selected.
 function applyPendingSelection() {
   const sel = pendingSelection;
   if (!sel || !lastDynamic) return;
   const d = lastDynamic;
   const list = { town: d.towns, industry: d.industries, warehouse: d.warehouses, station: d.stations, line: d.lines }[sel.kind];
   const exists = sel.kind === "owner" ? sidebar.owners.has(sel.id) : list?.some((x) => x.id === sel.id);
-  if (!exists && sel.kind !== "owner" && ++pendingMisses < PENDING_SELECTION_TRIES) return; // może jeszcze dojść
+  if (!exists && sel.kind !== "owner" && ++pendingMisses < PENDING_SELECTION_TRIES) return; // it may still arrive
   pendingSelection = null;
   pendingMisses = 0;
   if (!exists) {
-    writeSelection(sidebar.selected); // obiektu już nie ma (np. usunięta linia)
+    writeSelection(sidebar.selected); // the object is gone (e.g. a deleted line)
     return;
   }
   if (sel.kind === "owner") map.select(null);
@@ -184,11 +184,11 @@ window.addEventListener("hashchange", () => {
   applyPendingSelection();
 });
 
-let stationLines = new Map();  // id stacji -> linie (do tooltipa)
-let industryLines = new Map(); // id zakładu -> linie jego stacji
-let linesById = new Map();     // id linii -> linia (tooltip pojazdu)
+let stationLines = new Map();  // station id -> lines (for the tooltip)
+let industryLines = new Map(); // industry id -> the lines of its stations
+let linesById = new Map();     // line id -> line (vehicle tooltip)
 
-// Podgląd stanu z konsoli przeglądarki (debug).
+// State preview from the browser console (debug).
 window.tf3 = { map, sidebar, pins, build };
 
 function tooltipHtml(item) {
@@ -250,7 +250,7 @@ function tooltipHtml(item) {
     + (n ? lines(n) : "");
 }
 
-// Obrazek, model, wiek, stan i ładunek / pojemność pojazdu (lua_mod: collectors.vehicleDetails); bez szczegółów w danych - nic.
+// A vehicle's image, model, age, condition and cargo / capacity (lua_mod: collectors.vehicleDetails); without details in the data - nothing.
 function vehicleDetailsTip(v) {
   const m = lastDynamic?.models?.[v.model];
   const model = m?.name;
@@ -271,7 +271,7 @@ function renderHeader(dynamic) {
   $("#balance").title = t("kpi.balanceOpen");
   $("#date").textContent = fmtDate(dynamic.date);
 
-  // bez klucza vehicles mod ma wyłączone pojazdy (ustawienia w Tf3Bridge): "–" i bez przycisku na mapie
+  // without the vehicles key the mod has vehicles turned off (settings in Tf3Bridge): "–" and no button on the map
   $("#vehicles").hidden = !dynamic.vehicles;
   if (!dynamic.vehicles) {
     $("#fleet").textContent = "–";
@@ -305,8 +305,8 @@ function renderStatus() {
   status.title = t("status.updated", { time: new Date(lastMeta.updatedAtUtc).toLocaleTimeString(locale()) });
 }
 
-// ---------------------------------------------------------------- język
-// Przełącznik PL / EN w górnym pasku; po zmianie przerysowujemy wszystko, co budujemy w JS.
+// ---------------------------------------------------------------- language
+// The EN / PL switch in the top bar; after a change we redraw everything built in JS.
 const langSwitch = $("#lang");
 function renderLangSwitch() {
   langSwitch.innerHTML = LANGS.map((l) =>

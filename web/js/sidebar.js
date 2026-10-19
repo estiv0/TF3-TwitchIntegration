@@ -1,5 +1,5 @@
-// Panel boczny: listy (miasta, przemysł, stacje, linie, właściciele) i szczegóły zaznaczonego obiektu
-// (szczegóły w osobnym, pływającym okienku nad mapą - element detail, js/float.js).
+// Side panel: lists (towns, industry, stations, lines, owners) and the details of the selected object
+// (the details in a separate floating window over the map - the detail element, js/float.js).
 
 import {
   STATION_ORDER, cargoIcon, carrierIcon, carrierName, cargoImg, cargoLabel, cargoName, escapeHtml as esc, iconHtml, landUseName, stationName,
@@ -15,22 +15,22 @@ import { ownerKey, ownersIndex } from "./owners.js";
 export class Sidebar {
   constructor(root, detail, { windows, onPick, onStop, onClose, onPins, onLinesView, onHoverItem }) {
     this.root = root;
-    this.windows = windows;         // FloatingWindows (js/float.js): pozycje okienek szczegółów
+    this.windows = windows;         // FloatingWindows (js/float.js): positions of the detail windows
     this.onPick = onPick;
     this.onStop = onStop;
-    this.onPins = onPins;           // zmiana przypiętych obiektów -> mapa je podświetla
-    this.onLinesView = onLinesView; // { match } albo null - co mapa ma rysować na zakładce Linie
-    this.viewportOnly = loadViewportOnly(); // "oko": linie na mapie i na liście tylko z widoku mapy
-    this.visibleLines = null;               // Set id linii na ekranie mapy (od mapy), null = bez filtra
+    this.onPins = onPins;           // a change of pinned objects -> the map highlights them
+    this.onLinesView = onLinesView; // { match } or null - what the map should draw on the Lines tab
+    this.viewportOnly = loadViewportOnly(); // the "eye": lines on the map and in the list only from the map view
+    this.visibleLines = null;               // Set of line ids on the map screen (from the map), null = no filter
     this.tab = "towns";
     this.filter = "";
     this.dynamic = null;
     this.selected = null;
-    // Przypięte okienka szczegółów ({ kind, id }): zostają otwarte przy wyborze innych obiektów.
+    // Pinned detail windows ({ kind, id }): they stay open while other objects are selected.
     this.pinned = [];
     this.collapsed = new Set();
-    this.cardHtml = new WeakMap(); // okienko -> ostatnio wpisana treść (ta sama = bez przerysowania)  // klucze ("rodzaj:id") przypiętych okienek zwiniętych do nagłówka
-    this.focusedStop = null;    // { line, index } - przystanek linii, na który przeniesiono mapę
+    this.cardHtml = new WeakMap(); // window -> the last content written (the same = no redraw)  // keys ("kind:id") of pinned windows collapsed to the header
+    this.focusedStop = null;    // { line, index } - the line stop the map was moved to
 
     this.list = root.querySelector("[data-list]");
     this.company = root.querySelector("[data-company]");
@@ -39,20 +39,20 @@ export class Sidebar {
     this.search = root.querySelector("[data-search]");
     this.carriers = root.querySelector("[data-carriers]");
     this.viewportBtn = root.querySelector("[data-viewport]");
-    this.typeFilter = { lines: "", stations: "" }; // filtr nośnika / rodzaju stacji, "" = wszystkie
-    this.industryFilter = { mode: "out", cargo: "" }; // lista zakładów: produkuje ("out") / zużywa ("in") ładunek
-    this.townSort = "size";                        // lista miast: "size" (wielkość), "profit" (zarobek linii), "growth" (wzrost)
+    this.typeFilter = { lines: "", stations: "" }; // carrier / station kind filter, "" = all
+    this.industryFilter = { mode: "out", cargo: "" }; // industry list: produces ("out") / consumes ("in") a cargo
+    this.townSort = "size";                        // town list: "size", "profit" (line earnings), "growth"
     this.earnings = { towns: new Map(), outside: null }; // townEarnings()
-    this.stationLines = new Map();                 // id stacji -> linie
-    this.industryLines = new Map();                // id zakładu -> linie jego stacji
-    this.warehouseLines = new Map();               // id magazynu -> linie jego stacji
-    this.stationIndustry = new Map();              // id stacji -> id zakładu (stacje przemysłu)
-    this.owners = new Map();                       // klucz widza -> majątek (ownersIndex)
-    this.ownerSort = { key: "assets", desc: true }; // tabelka właścicieli: kolumna "name", "assets", "profit", "total"
+    this.stationLines = new Map();                 // station id -> lines
+    this.industryLines = new Map();                // industry id -> the lines of its stations
+    this.warehouseLines = new Map();               // warehouse id -> the lines of its stations
+    this.stationIndustry = new Map();              // station id -> industry id (industry stations)
+    this.owners = new Map();                       // viewer key -> estate (ownersIndex)
+    this.ownerSort = { key: "assets", desc: true }; // owner table: the "name", "assets", "profit", "total" column
 
     root.querySelectorAll("[data-tab]").forEach((btn) =>
       btn.addEventListener("click", () => this.showTab(btn.dataset.tab)));
-    // Zakładki, które się nie mieszczą: kółko myszy przewija pasek w poziomie (touchpad i palec przewijają same).
+    // Tabs that don't fit: the mouse wheel scrolls the bar horizontally (touchpad and finger scroll on their own).
     const tabBar = root.querySelector(".tabs");
     tabBar.addEventListener("wheel", (e) => {
       if (tabBar.scrollWidth <= tabBar.clientWidth || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
@@ -72,7 +72,7 @@ export class Sidebar {
       const cargo = e.target.closest("[data-ind-cargo]");
       if (mode || cargo) {
         if (mode) this.industryFilter.mode = mode.dataset.indMode;
-        // ponowny klik w wybrany ładunek zdejmuje filtr
+        // clicking the selected cargo again removes the filter
         else this.industryFilter.cargo = cargo.dataset.indCargo === this.industryFilter.cargo ? "" : cargo.dataset.indCargo;
         this.renderCarriers();
         this.renderList();
@@ -101,7 +101,7 @@ export class Sidebar {
     });
 
     this.list.addEventListener("click", (e) => {
-      // Nagłówek tabelki właścicieli: ta sama kolumna odwraca kolejność, nowa zaczyna od największych (nazwa od A).
+      // Owner table header: the same column reverses the order, a new one starts from the largest (name from A).
       const sort = e.target.closest("[data-owner-sort]");
       if (sort) {
         const key = sort.dataset.ownerSort;
@@ -113,8 +113,8 @@ export class Sidebar {
       if (row) this.onPick(row.dataset.kind, selId(row.dataset.kind, row.dataset.id));
     });
 
-    // Najechanie na pozycję listy (miasto, zakład, stacja, linia) podświetla ją na mapie.
-    // Właściciel nie jest jednym punktem na mapie.
+    // Hovering a list item (town, industry, station, line) highlights it on the map.
+    // An owner isn't a single point on the map.
     this.list.addEventListener("mouseover", (e) => {
       const row = e.target.closest("[data-kind]");
       const kind = row && row.dataset.kind !== "owner" ? row.dataset.kind : null;
@@ -122,8 +122,8 @@ export class Sidebar {
     });
     this.list.addEventListener("mouseleave", () => onHoverItem?.(null));
 
-    // Tak samo linie w szczegółach (miasta, stacji, zakładu): wskazana linia na mapie na tle zaznaczonego obiektu.
-    // W szczegółach właściciela tak samo jego miasta, zakłady i stacje (data-pick).
+    // The same for lines in the details (of a town, station, industry): the pointed line on the map against the selected object.
+    // In an owner's details the same for their towns, industries and stations (data-pick).
     this.detail.addEventListener("mouseover", (e) => {
       const line = e.target.closest("[data-line]");
       if (line) return onHoverItem?.("line", Number(line.dataset.line));
@@ -139,7 +139,7 @@ export class Sidebar {
       const cardId = selId(cardKind, cardRaw);
       const isActive = this.selected?.kind === cardKind && this.selected?.id === cardId;
       if (e.target.closest("[data-close]")) {
-        // × przypiętego okienka odpina je; zaznaczony obiekt (jak Esc) dodatkowo odznacza
+        // × of a pinned window unpins it; the selected object (like Esc) is also deselected
         if (this.isPinned(cardKind, cardId)) this.togglePin(cardKind, cardId);
         if (isActive) onClose?.();
         return;
@@ -164,7 +164,7 @@ export class Sidebar {
         this.onPick("line", Number(line.dataset.line));
         return;
       }
-      // Właściciel w szczegółach obiektu i obiekty w szczegółach właściciela.
+      // The owner in an object's details and the objects in an owner's details.
       const [kind, id] = splitPick(e.target.closest("[data-pick]"));
       if (kind) {
         this.onPick(kind, selId(kind, id));
@@ -180,7 +180,7 @@ export class Sidebar {
     this.renderSearch();
   }
 
-  // Przełącza zakładkę (też z zewnątrz: klik w saldo w górnym pasku otwiera Firmę).
+  // Switches the tab (also from outside: a click on the balance in the top bar opens Company).
   showTab(tab) {
     this.tab = tab;
     this.root.querySelectorAll("[data-tab]").forEach((b) => {
@@ -201,7 +201,7 @@ export class Sidebar {
     this.warehouseLines = linesByIndustry(dynamic, this.stationLines, warehouseOfStation(dynamic));
     this.earnings = townEarnings(dynamic);
     this.owners = ownersIndex(dynamic, this.stationIndustry);
-    // przypięte obiekty, których już nie ma (usunięta linia, zburzony zakład), znikają
+    // pinned objects that no longer exist (a deleted line, a demolished industry) disappear
     const pinned = this.pinned.filter((p) => this.findItem(p));
     if (pinned.length !== this.pinned.length) {
       this.pinned = pinned;
@@ -215,21 +215,21 @@ export class Sidebar {
     this.render();
   }
 
-  // Mapa zgłasza linie widoczne na ekranie (tylko gdy emitLinesView przekazał jej filtr).
+  // The map reports the lines visible on screen (only when emitLinesView gave it a filter).
   setVisibleLines(ids) {
     this.visibleLines = ids;
     if (this.tab === "lines") this.renderList();
   }
 
-  // Na zakładce Linie z włączonym okiem mapa rysuje wszystkie linie z ekranu, które przechodzą
-  // filtry panelu (typ + szukanie), i odsyła ich listę; poza tym - tylko zaznaczoną linię.
+  // On the Lines tab with the eye on, the map draws all lines on screen that pass
+  // the panel filters (type + search), and sends back their list; otherwise - only the selected line.
   emitLinesView() {
     const active = this.tab === "lines" && this.viewportOnly;
     if (!active) this.visibleLines = null;
     this.onLinesView?.(active ? { match: (l) => this.matchLine(l) !== null } : null);
   }
 
-  // Linia przechodzi filtry typu i szukania -> nazwy trafionych stacji (puste, gdy trafiła nazwa albo właściciel linii); inaczej null.
+  // A line passes the type and search filters -> names of the matching stations (empty when the line name or owner matched); otherwise null.
   matchLine(l) {
     const carrier = this.typeFilter.lines;
     if (carrier && carrierKey(l) !== carrier) return null;
@@ -245,14 +245,14 @@ export class Sidebar {
     this.focusedStop = null;
     this.renderList();
     this.renderDetail();
-    if (changed && kind) this.windows?.front(`${kind}:${id}`); // nowe albo wskazane przypięte okienko na wierzch
+    if (changed && kind) this.windows?.front(`${kind}:${id}`); // a new or pointed pinned window to the front
   }
 
   isPinned(kind, id) {
     return this.pinned.some((p) => p.kind === kind && p.id === id);
   }
 
-  // Przypina / odpina okienko obiektu. Odpięte okienko niezaznaczonego obiektu się zamyka.
+  // Pins / unpins an object's window. An unpinned window of an unselected object closes.
   togglePin(kind, id) {
     if (this.isPinned(kind, id)) {
       this.pinned = this.pinned.filter((p) => p.kind !== kind || p.id !== id);
@@ -264,11 +264,11 @@ export class Sidebar {
     this.onPins?.([...this.pinned]);
     this.renderList();
     this.renderDetail();
-    // przypięte okienko zapamiętuje swoje miejsce (następny wybrany obiekt otworzy się w domyślnym)
+    // a pinned window remembers its spot (the next selected object opens in the default one)
     if (this.isPinned(kind, id)) this.windows?.pin(`${kind}:${id}`);
   }
 
-  // Obiekt z danych dla { kind, id } albo undefined.
+  // The object from the data for { kind, id }, or undefined.
   findItem(sel) {
     const d = this.dynamic;
     if (sel.kind === "owner") return this.owners.get(sel.id);
@@ -276,7 +276,7 @@ export class Sidebar {
     return list.find((x) => x.id === sel.id);
   }
 
-  // Wszystko, co zależy od danych albo języka (po zmianie języka wołane z main.js).
+  // Everything that depends on the data or the language (called from main.js after a language change).
   render() {
     this.renderSearch();
     this.renderCarriers();
@@ -292,12 +292,12 @@ export class Sidebar {
     this.viewportBtn.title = t(this.viewportOnly ? "lines.viewportOn" : "lines.viewportOff");
   }
 
-  // Klucz filtra stacji: stacje zakładów osobno, niezależnie od nośnika.
+  // The station filter key: industry stations separately, regardless of the carrier.
   stationKey(s) {
     return this.stationIndustry.has(s.id) ? "INDUSTRY" : s.kind;
   }
 
-  // ---------------------------------------------------------------- listy
+  // ---------------------------------------------------------------- lists
   renderList() {
     const d = this.dynamic;
     if (!d) return;
@@ -306,7 +306,7 @@ export class Sidebar {
     const isSel = (kind, id) => (this.selected?.kind === kind && this.selected?.id === id) || this.isPinned(kind, id);
     let html = "";
 
-    // Firma: zamiast listy osobna sekcja (tabela finansów, wykresy).
+    // Company: a separate section instead of a list (the finance table, charts).
     const company = this.tab === "company";
     this.list.hidden = company;
     this.company.hidden = !company;
@@ -316,7 +316,7 @@ export class Sidebar {
     }
 
     if (this.tab === "towns") {
-      // Sortowanie po zarobku: miasta bez linii na końcu, a pod listą linie poza miastami.
+      // Sorting by earnings: towns without lines at the end, and below the list the lines outside towns.
       const byProfit = this.townSort === "profit", byGrowth = this.townSort === "growth";
       const profit = (x) => this.earnings.towns.get(x.id)?.profit12m ?? null;
       const order = byProfit
@@ -343,7 +343,7 @@ export class Sidebar {
           </li>`;
       }
     } else if (this.tab === "owners") {
-      // Szukanie po nazwie widza i po nazwach jego obiektów ("Gdańsk" pokaże właściciela Gdańska).
+      // Searching by the viewer's name and by the names of their objects ("Gdańsk" shows the owner of Gdańsk).
       const matchOwner = (o) => match(o.name)
         || [o.towns, o.industries, o.stations, o.lines].some((xs) => xs.some((x) => match(x.name)));
       const rows = [...this.owners.values()].filter(matchOwner).sort(ownerOrder(this.ownerSort))
@@ -373,7 +373,7 @@ export class Sidebar {
       html = (d.stations ?? []).filter((s) => (!kind || this.stationKey(s) === kind) && matchItem(s))
         .sort((a, b) => nLines(b) - nLines(a) || String(a.name).localeCompare(String(b.name), locale()))
         .map((s) => {
-          // Stacja zakładu: ikonka zakładu, a kliknięcie otwiera zakład (tam są też jego linie).
+          // An industry station: the industry icon, and a click opens the industry (its lines are there too).
           const ind = industries.get(this.stationIndustry.get(s.id));
           const [k, id] = ind ? ["industry", ind.id] : ["station", s.id];
           return `
@@ -384,8 +384,8 @@ export class Sidebar {
           </li>`;
         }).join("");
     } else {
-      // Szukanie po nazwie linii albo po nazwach jej stacji; trafione stacje pokazujemy pod nazwą.
-      // Z okiem: tylko linie na ekranie mapy (zaznaczona zostaje zawsze).
+      // Searching by line name or by the names of its stations; matching stations are shown below the name.
+      // With the eye: only lines on the map screen (the selected one always stays).
       const onMap = (l) => !this.visibleLines || this.visibleLines.has(l.id) || isSel("line", l.id);
       html = d.lines.filter(onMap)
         .map((l) => ({ l, stations: this.matchLine(l) }))
@@ -408,7 +408,7 @@ export class Sidebar {
     this.list.innerHTML = html || `<li class="empty">${esc(t(empty))}</li>`;
   }
 
-  // Przyciski typów linii / rodzajów stacji: tylko typy obecne w danych, z liczbą pozycji.
+  // Line type / station kind buttons: only the types present in the data, with the number of items.
   renderCarriers() {
     this.carriers.hidden = !(this.tab in this.typeFilter || ["towns", "industries"].includes(this.tab));
     if (this.tab === "industries") {
@@ -439,13 +439,13 @@ export class Sidebar {
         .map((c) => btn(c, `${carrierIcon(c, c)} ${esc(nameOf(c) ?? t("filter.none"))}`, counts.get(c))).join("");
   }
 
-  // Filtr zakładów: tryb (produkcja / zużycie) i jeden ładunek z liczbą zakładów, które go produkują / zużywają.
+  // Industry filter: the mode (production / consumption) and one cargo with the number of industries that produce / consume it.
   industryFilterHtml() {
     const f = this.industryFilter;
     const counts = new Map();
     for (const i of this.dynamic?.industries ?? [])
       for (const c of industryCargos(i, f.mode)) counts.set(c, (counts.get(c) ?? 0) + 1);
-    if (f.cargo && !counts.has(f.cargo)) counts.set(f.cargo, 0); // wybrany ładunek zostaje po zmianie trybu
+    if (f.cargo && !counts.has(f.cargo)) counts.set(f.cargo, 0); // the chosen cargo stays after the mode changes
     const modeBtn = (key) =>
       `<button type="button" data-ind-mode="${key}" aria-pressed="${f.mode === key}">${esc(t(key === "out" ? "industry.filterOut" : "industry.filterIn"))}</button>`;
     const cargoBtn = ([c, n]) => {
@@ -460,10 +460,10 @@ export class Sidebar {
     return `<div class="filter-modes">${modeBtn("out")}${modeBtn("in")}</div>${all}${cargos.map(cargoBtn).join("")}`;
   }
 
-  // ---------------------------------------------------------------- szczegóły
-  // Osobne okienka: przypięte (w kolejności przypinania) i zaznaczony obiekt, o ile nie jest przypięty.
-  // Elementy okienek zostają między odświeżeniami danych (pozycja, przewinięcie, przeciąganie),
-  // zmienia się tylko ich treść; okienko obiektu, którego już nie pokazujemy, znika.
+  // ---------------------------------------------------------------- details
+  // Separate windows: the pinned ones (in pinning order) and the selected object, unless it's pinned.
+  // The window elements survive data refreshes (position, scroll, dragging),
+  // only their content changes; the window of an object we no longer show disappears.
   renderDetail() {
     const sel = this.selected;
     const cards = [...this.pinned];
@@ -484,8 +484,8 @@ export class Sidebar {
       els.push(el);
     }
     for (const el of old.values()) el.remove();
-    // kolejność ma znaczenie tylko na telefonie (okienka jedno pod drugim); przenosimy tylko te nie na miejscu
-    // (przeniesiony element gubi przewinięcie)
+    // the order only matters on a phone (windows one below the other); we only move the ones out of place
+    // (a moved element loses its scroll position)
     els.forEach((el, i) => {
       if (this.detail.children[i] !== el) this.detail.insertBefore(el, this.detail.children[i] ?? null);
     });
@@ -493,7 +493,7 @@ export class Sidebar {
     this.windows?.layout();
   }
 
-  // Jedno okienko: przyciski (zwiń - tylko przypięte, przypnij, zamknij) i szczegóły obiektu.
+  // One window: buttons (collapse - pinned only, pin, close) and the object's details.
   fillCard(el, c, item) {
     const key = `${c.kind}:${c.id}`;
     const pinned = this.isPinned(c.kind, c.id);
@@ -525,7 +525,7 @@ export class Sidebar {
   }
 }
 
-// Przycisk kopiowania nazwy przy nagłówku (nagłówek służy do przeciągania okienka, więc tekstu nie da się w nim zaznaczyć).
+// A button for copying the name next to the header (the header is used for dragging the window, so its text can't be selected).
 function copyBtn(name) {
   if (!name) return "";
   return `<button type="button" class="detail-copy" data-copy="${esc(name)}" title="${esc(t("detail.copy"))}" aria-label="${esc(t("detail.copy"))}">⧉</button>`;
@@ -538,13 +538,13 @@ async function copyName(btn) {
     await navigator.clipboard.writeText(text);
     ok = true;
   } catch {
-    // bez Clipboard API (np. http bez localhost): stary sposób przez ukryte pole tekstowe
+    // without the Clipboard API (e.g. http without localhost): the old way through a hidden text field
     const ta = document.createElement("textarea");
     ta.value = text;
     ta.style.cssText = "position:fixed;opacity:0";
     document.body.append(ta);
     ta.select();
-    try { ok = document.execCommand("copy"); } catch { /* nic */ }
+    try { ok = document.execCommand("copy"); } catch { /* nothing */ }
     ta.remove();
   }
   btn.textContent = ok ? "✓" : "✕";
@@ -556,8 +556,8 @@ async function copyName(btn) {
   }, 1500);
 }
 
-// Pasek zakładek przewija się w poziomie (wąski panel, telefon): wybrana zakładka cała w widoku.
-// Bez scrollIntoView, bo ten przesuwa też stronę, gdy jest szersza od ekranu.
+// The tab bar scrolls horizontally (narrow panel, phone): the selected tab fully in view.
+// No scrollIntoView, because it also moves the page when it's wider than the screen.
 function scrollTabIntoView(btn) {
   const bar = btn.parentElement;
   const pad = parseFloat(getComputedStyle(bar).paddingLeft) || 0;
@@ -566,19 +566,19 @@ function scrollTabIntoView(btn) {
   else if (right > bar.scrollLeft + bar.clientWidth) bar.scrollLeft = right - bar.clientWidth;
 }
 
-// Zaznaczenie z listy albo linku: właściciel ma klucz tekstowy, reszta liczbowe id.
+// A selection from the list or a link: an owner has a text key, the rest numeric ids.
 const selId = (kind, id) => (kind === "owner" ? id : Number(id));
 
-// data-pick="rodzaj:id" (klucz właściciela może zawierać ":") -> [rodzaj, id] albo [].
-// attr: inny atrybut w tym formacie (data-card okienka szczegółów).
+// data-pick="kind:id" (an owner key may contain ":") -> [kind, id] or [].
+// attr: another attribute in this format (data-card of the detail windows).
 function splitPick(el, attr = "pick") {
   const v = el?.dataset[attr] ?? "";
   const i = v.indexOf(":");
   return i > 0 ? [v.slice(0, i), v.slice(i + 1)] : [];
 }
 
-// Właściciel z nazwy w grze ("Nazwa | Właściciel", splitAllOwners) i efekty od widzów (attachEffects).
-// Nazwa właściciela otwiera jego majątek.
+// The owner from the game name ("Name | Owner", splitAllOwners) and effects from viewers (attachEffects).
+// The owner's name opens their estate.
 function ownerHtml(x) {
   const owner = x.owner
     ? `${esc(t("owner"))}: <button type="button" class="owner-link" data-pick="owner:${esc(ownerKey(x.owner))}" title="${esc(t("owner.show"))}">${esc(x.owner)}</button>`
@@ -586,7 +586,7 @@ function ownerHtml(x) {
   return `<p class="detail-owner">${owner}</p>` + effectsHtml(x);
 }
 
-// Liczniki obiektów widza na liście (tylko niezerowe).
+// Counters of the viewer's objects in the list (non-zero only).
 function assetCounts(o) {
   const n = (count, icon, label) =>
     (count ? `<span class="own-count" title="${esc(label)}">${icon}${fmtInt(count)}</span>` : "");
@@ -599,7 +599,7 @@ function assetCounts(o) {
     + `</span>`;
 }
 
-// Pojazdy na liniach widza: "Pojazdy (N)", podział według nośnika i stanu (owners.js: fleet).
+// Vehicles on the viewer's lines: "Vehicles (N)", split by carrier and state (owners.js: fleet).
 function ownerFleetHtml(o) {
   const f = o.fleet;
   if (!o.lines.length || !f.total) return "";
@@ -614,7 +614,7 @@ function ownerFleetHtml(o) {
   return `<h3>${esc(t("owners.vehicles", { n: fmtInt(f.total) }))}</h3>${carriers}${states}`;
 }
 
-// Linie widza: statystyki wszystkich razem (owners.js: lineStats), lista linii i ładunek w pojazdach teraz.
+// The viewer's lines: statistics of all of them together (owners.js: lineStats), the list of lines and the cargo in vehicles now.
 function ownerLinesHtml(o) {
   if (!o.lines.length) return "";
   const s = o.lineStats;
@@ -635,14 +635,14 @@ function ownerLinesHtml(o) {
     ${cargo}`;
 }
 
-// Majątek widza: podsumowanie i klikalne obiekty (data-pick, linie: data-line); główne (największe) miasto pierwsze.
-// Majątek widza w punktach (owners.js: score), z opisem wzoru w podpowiedzi.
+// The viewer's estate: a summary and clickable objects (data-pick, lines: data-line); the main (largest) town first.
+// The viewer's estate in points (owners.js: score), with the formula explained in the tooltip.
 const scoreHtml = (o) => `<span title="${esc(t("owners.scoreHint"))}">${esc(t("owners.points", { n: fmtInt(o.score) }))}</span>`;
 
-// Zarobek sumaryczny widza: jego linie z zakończonych lat (owners.js: lineStats.profitTotal).
+// The viewer's total earnings: their lines over finished years (owners.js: lineStats.profitTotal).
 const ownerTotal = (o) => o.lineStats?.profitTotal ?? null;
 
-// Kolejność tabelki właścicieli; brak wartości (np. widz bez linii) zawsze na końcu, remis - po majątku i nazwie.
+// Owner table order; a missing value (e.g. a viewer without lines) always last, ties - by estate and name.
 function ownerOrder({ key, desc }) {
   const byName = (a, b) => a.name.localeCompare(b.name, locale());
   if (key === "name") return (a, b) => (desc ? -1 : 1) * byName(a, b);
@@ -654,8 +654,8 @@ function ownerOrder({ key, desc }) {
   };
 }
 
-// Nagłówek tabelki właścicieli: klikalne kolumny ze strzałką kierunku, "?" z opisem punktów majątku
-// (najechanie albo dotknięcie - fokus - pokazuje dymek).
+// Owner table header: clickable columns with a direction arrow, a "?" explaining the estate points
+// (hovering or tapping - focus - shows the tooltip).
 function ownerHeadHtml(sort) {
   const col = (key) => {
     const on = sort.key === key;
@@ -681,7 +681,7 @@ function ownerDetail(o, stationIndustry) {
     link(`town:${x.id}`, x.name, `<span class="dot dot-town"></span>`, (x === o.main ? main : "") + fmtInt(townSize(x)), x)).join("");
   const industries = o.industries.map((x) =>
     link(`industry:${x.id}`, x.name, industryBadge(x), esc(t("list.level", { n: x.level ?? "–" })), x)).join("");
-  // Stacja zakładu (innego widza albo bez właściciela) otwiera zakład, jak na liście stacji.
+  // An industry station (of another viewer or unowned) opens the industry, as in the station list.
   const stations = o.stations.map((s) => {
     const ind = stationIndustry.get(s.id);
     return link(ind != null ? `industry:${ind}` : `station:${s.id}`, s.name ?? stationName(s.kind), iconHtml(stationImg(s), s.kind));
@@ -707,7 +707,7 @@ function ownerDetail(o, stationIndustry) {
     ${ownerLinesHtml(o)}`;
 }
 
-// Nazwa efektu z siłą: "Boost miasta +50%", "Strajk −99%".
+// The effect name with its strength: "Town boost +50%", "Strike −99%".
 function effectName(e) {
   const name = t(`fx.${e.type}`);
   if (!e.factor) return name;
@@ -720,8 +720,8 @@ function effectTip(e) {
     .filter(Boolean).join(" · ");
 }
 
-// Znaczki na liście (miasta, zakłady, linie): ⚡ boost, ⏸ czeka na stacjach, ⛔ zatrzymana,
-// ✊ strajk, 🔍 skarbówka, ⛽ paliwo premium, 💧 chrzczone paliwo.
+// Badges in the list (towns, industries, lines): ⚡ boost, ⏸ waits at stations, ⛔ stopped,
+// ✊ strike, 🔍 tax raid, ⛽ premium fuel, 💧 watered-down fuel.
 const EFFECT_ICON = {
   townBoost: "⚡", industryBoost: "⚡", lineStop: "⛔", lineHold: "⏸",
   industryStrike: "✊", industryTaxRaid: "🔍", lineFuelPremium: "⛽", lineFuelBad: "💧",
@@ -731,7 +731,7 @@ function effectBadges(x) {
     `<span class="fx-badge fx-${esc(e.type)}" title="${esc(effectTip(e))}">${EFFECT_ICON[e.type] ?? "★"}</span>`).join("");
 }
 
-// W szczegółach: każdy efekt z datą końca w grze, kupującym widzem i paskiem upływu czasu.
+// In the details: each effect with its in-game end date, the buying viewer and a time bar.
 function effectsHtml(x) {
   if (!x.effects?.length) return "";
   const rows = x.effects.map((e) => `
@@ -743,8 +743,8 @@ function effectsHtml(x) {
   return `<h3 title="${esc(t("fx.hint"))}">${esc(t("fx.title"))}</h3><ul class="effects">${rows}</ul>`;
 }
 
-// Linie są klikalne (data-line) - przełączają wybór na linię.
-// waitingOf(linia) -> pasażerowie czekający na nią tutaj albo null: wtedy liczba przy linii i sortowanie po niej.
+// Lines are clickable (data-line) - they switch the selection to the line.
+// waitingOf(line) -> passengers waiting for it here, or null: then a number next to the line and sorting by it.
 function lineLinks(lines, waitingOf) {
   const w = new Map(waitingOf ? lines.map((l) => [l, waitingOf(l)]) : []);
   const rows = [...lines].sort((a, b) => (w.get(b) ?? -1) - (w.get(a) ?? -1) || (b.vehicleCount ?? 0) - (a.vehicleCount ?? 0)).map((l) => `
@@ -771,7 +771,7 @@ function stationDetail(s, lines) {
     ${lineLinks(lines, (l) => { const own = new Set(s.stations ?? []); return lineWaitingAt(l, (stop) => own.has(stop.entity)); })}`;
 }
 
-// Zysk linii przypisany miastu (townEarnings): sumy i linie z udziałem miasta w ich przystankach.
+// Line profit attributed to a town (townEarnings): sums and the lines with the town's share in their stops.
 function townEarningsHtml(e) {
   if (!e?.lines.length) return "";
   const rows = e.lines.map(({ line: l, share, profit12m }) => `
@@ -789,11 +789,11 @@ function townEarningsHtml(e) {
     <ul class="line-links">${rows}</ul>`;
 }
 
-// Wzrost ze znakiem, w kolorze ("+12%" zielony, "-3%" czerwony); brak danych -> "–".
+// Growth with a sign, in color ("+12%" green, "-3%" red); no data -> "–".
 const growthHtml = (g) => (g == null ? "–" : `<span class="${g < 0 ? "neg" : g > 0 ? "pos" : ""}">${esc(fmtSignedPercent(g))}</span>`);
 
-// Zaspokojenie potrzeb (town.supply z moda, jak statystyki miast w grze): ładunki z limitem > 0
-// albo bez limitu (-1), ale dostarczane; coverage = suma min(dostawa, limit) / suma limitów.
+// Needs satisfaction (town.supply from the mod, like the game's town statistics): cargo with a limit > 0
+// or without a limit (-1), but delivered; coverage = sum of min(delivery, limit) / sum of limits.
 export function townSupply(town) {
   const list = (town.supply ?? []).filter((s) => s.demand > 0 || (s.demand === -1 && s.supply > 0));
   if (!list.length) return null;
@@ -839,8 +839,8 @@ function townDetail(town, earnings) {
     ${townEarningsHtml(earnings)}`;
 }
 
-// Zakład: zapotrzebowanie i produkcja (na rok, gdy mod je podaje - stocks[].consumedYear,
-// producedYear), stan magazynów (stocks[].amount) i liczniki z ostatniego roku (year).
+// Industry: demand and production (per year, when the mod provides them - stocks[].consumedYear,
+// producedYear), stock levels (stocks[].amount) and the counters from the last year (year).
 function industryDetail(i, lines) {
   const outputs = industryOutputs(i);
   const produced = new Set(outputs.keys());
@@ -885,7 +885,7 @@ function industryDetail(i, lines) {
     ${lineLinks(lines)}`;
 }
 
-// Magazyn: zapełnienie, ładunki teraz, składy (dozwolone ładunki, stan / pojemność) i ruch z ostatniego roku.
+// Warehouse: fill level, cargo now, stores (allowed cargo, level / capacity) and traffic over the last year.
 function warehouseDetail(w, lines) {
   const fillBar = (amount, capacity) => {
     const fill = capacity ? Math.min(1, (amount ?? 0) / capacity) : 0;
@@ -915,17 +915,17 @@ function warehouseDetail(w, lines) {
     ${lineLinks(lines)}`;
 }
 
-// Starszy eksport nie ma flagi input: wejściem jest magazyn ładunku, którego zakład nie produkuje.
+// An older export has no input flag: the input is the stock of a cargo the industry doesn't produce.
 const isInputStock = (s, produced) => s.input ?? !produced.has(s.cargo);
 
-/** Ładunki, które zakład produkuje (mode "out") albo zużywa (mode "in"). */
+/** Cargo the industry produces (mode "out") or consumes (mode "in"). */
 function industryCargos(i, mode) {
   const produced = new Set(industryOutputs(i).keys());
   if (mode === "out") return produced;
   return new Set((i.stocks ?? []).filter((s) => isInputStock(s, produced)).map((s) => s.cargo));
 }
 
-// Kwadracik zakładu w kolorze rodzaju z ikonkami produkowanych ładunków (jak ikonka rodzaju przy stacjach).
+// The industry square in the kind's color with icons of the produced cargo (like the kind icon at stations).
 function industryBadge(i) {
   const imgs = [...industryOutputs(i).keys()].map(cargoImg).filter(Boolean)
     .map((src) => `<img src="${src}" alt="" onerror="this.remove()">`).join("");
@@ -933,27 +933,27 @@ function industryBadge(i) {
     : `<span class="dot dot-${industryKind(i)}"></span>`;
 }
 
-// Stan "oka" zapamiętany w przeglądarce; domyślnie włączone.
+// The "eye" state remembered in the browser; on by default.
 const VIEWPORT_KEY = "tf3-lines-viewport";
 function loadViewportOnly() {
   try { return localStorage.getItem(VIEWPORT_KEY) !== "0"; } catch { return true; }
 }
 function saveViewportOnly(on) {
-  try { localStorage.setItem(VIEWPORT_KEY, on ? "1" : "0"); } catch { /* brak localStorage */ }
+  try { localStorage.setItem(VIEWPORT_KEY, on ? "1" : "0"); } catch { /* no localStorage */ }
 }
 
-// Nośnik linii jest z pojazdów albo z rodzaju stacji; bez obu (np. same przystanki) ląduje w "NONE".
+// A line's carrier comes from its vehicles or the station kind; without either (e.g. only stops) it ends up in "NONE".
 const CARRIER_ORDER = ["RAIL", "ROAD", "TRAM", "WATER", "AIR", "OTHER", "NONE"];
 const carrierKey = (l) => l.carrier ?? "NONE";
 
-// Unikalne nazwy stacji linii pasujące do frazy (stacja bywa na linii dwa razy, np. w pętli).
+// Unique station names of a line matching the phrase (a station can be on a line twice, e.g. in a loop).
 function matchingStations(l, filter) {
   if (!filter) return [];
   const names = new Set((l.stops ?? []).map((s) => s.name).filter(Boolean));
   return [...names].filter((n) => n.toLowerCase().includes(filter));
 }
 
-// "przez A, B" / "via A, B" z podświetloną frazą; {names} podstawiamy po escapowaniu reszty napisu.
+// "via A, B" / "przez A, B" with the phrase highlighted; {names} is substituted after escaping the rest of the text.
 function viaHtml(stations, filter) {
   const [before, after = ""] = t("list.via").split("{names}");
   return esc(before) + stations.map((s) => highlight(s, filter)).join(", ") + esc(after);
@@ -965,7 +965,7 @@ function highlight(text, filter) {
   return esc(text.slice(0, i)) + `<mark>${esc(text.slice(i, i + filter.length))}</mark>` + esc(text.slice(i + filter.length));
 }
 
-// Przystanek z pozycją jest klikalny (data-stop = indeks na linii) - przenosi mapę do niego.
+// A stop with a position is clickable (data-stop = index on the line) - it moves the map to it.
 function lineDetail(l, focusedStop, dynamic) {
   const fleet = lineFleet(l, dynamic);
   const stops = (l.stops ?? []).map((s, i) => {
@@ -991,8 +991,8 @@ function lineDetail(l, focusedStop, dynamic) {
 }
 
 /**
- * Szczegóły pojazdów linii (lua_mod: collectors.vehicleDetails): średni wiek i stan, liczba po żywotności
- * i grupy według modelu (i długości składu). null, gdy dane nie mają szczegółów (wyłączone w modzie).
+ * Details of a line's vehicles (lua_mod: collectors.vehicleDetails): average age and condition, the number past their lifespan
+ * and groups by model (and consist length). null when the data has no details (turned off in the mod).
  */
 function lineFleet(l, dynamic) {
   const vs = (dynamic?.vehicles ?? []).filter((v) => v.line === l.id && (v.age != null || v.maint != null));
@@ -1045,7 +1045,7 @@ function fleetTable(f) {
     </table>`;
 }
 
-// Statystyki z moda, odświeżane raz na miesiąc gry (lua_mod: collectors.lineStats).
+// Statistics from the mod, refreshed once per game month (lua_mod: collectors.lineStats).
 function lineStats(s) {
   return `
       ${stat(t("line.profit12m"), money(s.profit12m))}
@@ -1056,9 +1056,9 @@ function lineStats(s) {
       ${stat(t("line.load"), fmtPercent(s.load))}`;
 }
 
-// Kwota w kolorze: zysk na zielono, strata na czerwono; brak danych -> "–".
+// An amount in color: profit in green, loss in red; no data -> "–".
 const money = (n) => (n == null ? "–" : `<span class="${n < 0 ? "neg" : "pos"}">${esc(fmtMoney(Math.round(n)))}</span>`);
-// Krótka kwota do wąskich kolumn ("$ 87,5 mln"), pełna w podpowiedzi.
+// A short amount for narrow columns ("$ 87.5M"), the full one in the tooltip.
 const moneyShort = (n) => (n == null ? "–"
   : `<span class="${n < 0 ? "neg" : "pos"}" title="${esc(fmtMoney(Math.round(n)))}">${esc(fmtMoneyShort(n))}</span>`);
 

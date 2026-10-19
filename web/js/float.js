@@ -1,47 +1,47 @@
-// Pływające okienka szczegółów nad mapą (js/sidebar.js je rysuje, tu tylko pozycje): każde osobno,
-// przeciągane za nagłówek (h2 / podtytuł), kliknięte wychodzi na wierzch. Okienko nie wychodzi poza mapę,
-// a jego wysokość sięga najwyżej do dolnej krawędzi mapy (dalej przewija się w środku).
-// Okienko zaznaczonego obiektu otwiera się w miejscu zapamiętanym w localStorage tej przeglądarki;
-// przypięte zostaje w miejscu przypięcia i ma własną pozycję (do odpięcia).
-// Na wąskich ekranach (CSS @media) okienka leżą jedno pod drugim na dole mapy i nie da się ich przesuwać.
+// Floating detail windows over the map (js/sidebar.js draws them, here only the positions): each one separately,
+// dragged by the header (h2 / subtitle), a clicked one comes to the front. A window doesn't leave the map,
+// and its height reaches at most the bottom edge of the map (beyond that it scrolls inside).
+// The selected object's window opens at the spot remembered in this browser's localStorage;
+// a pinned one stays where it was pinned and has its own position (until unpinned).
+// On narrow screens (CSS @media) the windows lie one below the other at the bottom of the map and can't be moved.
 
 const KEY = "tf3-detail-pos";
 const MARGIN = 12, MIN_VISIBLE_H = 160;
-// Jak @media (max-width: 900px) w CSS; innerWidth zamiast matchMedia, bo jego "change" potrafi
-// przyjść dopiero po ResizeObserverze i okienko zostałoby w złym miejscu.
+// Like @media (max-width: 900px) in CSS; innerWidth instead of matchMedia, because its "change" can
+// arrive only after the ResizeObserver and the window would stay in the wrong place.
 const isNarrow = () => window.innerWidth <= 900;
 
 export class FloatingWindows {
-  // key: wpis localStorage z pozycją (osobny dla każdej warstwy, np. okienko streamu w js/stream.js)
+  // key: the localStorage entry with the position (separate for each layer, e.g. the stream window in js/stream.js)
   constructor(layer, wrap, { key = KEY } = {}) {
     this.layer = layer;
     this.wrap = wrap;
     this.key = key;
-    this.home = { x: MARGIN, y: MARGIN }; // miejsce okienka zaznaczonego obiektu
-    this.saved = false;                   // pozycja z localStorage (a nie domyślna)
+    this.home = { x: MARGIN, y: MARGIN }; // the spot of the selected object's window
+    this.saved = false;                   // a position from localStorage (rather than the default)
     try {
       const saved = JSON.parse(localStorage.getItem(key));
       if (Number.isFinite(saved?.x) && Number.isFinite(saved?.y)) {
         this.home = saved;
         this.saved = true;
       }
-    } catch { /* brak localStorage albo zły wpis */ }
-    this.pinnedPos = new Map(); // klucz okienka ("rodzaj:id") -> { x, y } przypiętego
-    this.order = new Map();     // klucz -> kolejność na wierzchu (większe wyżej)
+    } catch { /* no localStorage or a bad entry */ }
+    this.pinnedPos = new Map(); // window key ("kind:id") -> { x, y } of a pinned one
+    this.order = new Map();     // key -> stacking order (higher on top)
     this.top = 0;
-    this.drag = null;           // { key, dx, dy } - punkt złapania względem lewego górnego rogu okienka
+    this.drag = null;           // { key, dx, dy } - the grab point relative to the window's top left corner
 
     layer.addEventListener("pointerdown", (e) => this.pointerDown(e));
-    // Przeciąganie przez okno, nie przez okienko: sidebar może w tym czasie przerysować jego element.
+    // Dragging through the window object, not the floating window: sidebar may redraw its element meanwhile.
     window.addEventListener("pointermove", (e) => this.pointerMove(e));
     window.addEventListener("pointerup", () => this.pointerUp());
     window.addEventListener("pointercancel", () => this.pointerUp());
-    // Dwuklik w nagłówek okienka zaznaczonego obiektu: z powrotem w domyślne miejsce.
+    // Double-click on the header of the selected object's window: back to the default spot.
     layer.addEventListener("dblclick", (e) => {
       const card = e.target.closest("[data-card]");
       if (isNarrow() || !card || this.isPinned(card) || !e.target.closest("h2, .detail-sub")) return;
       this.home = { x: MARGIN, y: MARGIN };
-      try { localStorage.removeItem(this.key); } catch { /* brak localStorage */ }
+      try { localStorage.removeItem(this.key); } catch { /* no localStorage */ }
       this.layout();
     });
 
@@ -61,11 +61,11 @@ export class FloatingWindows {
     return (this.isPinned(card) && this.pinnedPos.get(card.dataset.card)) || this.home;
   }
 
-  // Ustawia wszystkie okienka (po każdym przerysowaniu i zmianie rozmiaru mapy).
+  // Positions all windows (after every redraw and map resize).
   layout() {
     const cards = [...this.layer.querySelectorAll("[data-card]")];
     for (const card of cards) this.place(card);
-    // przypięte na wąskim ekranie (bez pozycji) - po poszerzeniu zostaje tam, gdzie się pokazało
+    // pinned on a narrow screen (no position) - after widening it stays where it showed up
     if (!isNarrow()) for (const card of cards) if (this.isPinned(card) && !this.pinnedPos.has(card.dataset.card)) this.pin(card.dataset.card);
   }
 
@@ -84,7 +84,7 @@ export class FloatingWindows {
     card.style.zIndex = String(this.order.get(card.dataset.card) ?? 0);
   }
 
-  // Okienko na wierzch (nowo zaznaczony obiekt, kliknięcie w okienko).
+  // A window to the front (a newly selected object, a click on the window).
   front(key) {
     if (this.order.get(key) === this.top && this.top) return;
     this.order.set(key, ++this.top);
@@ -92,7 +92,7 @@ export class FloatingWindows {
     if (card) this.place(card);
   }
 
-  // Przypięte okienko zostaje tam, gdzie jest (dalej ma własną pozycję, niezależną od okienka zaznaczonego obiektu).
+  // A pinned window stays where it is (it keeps its own position, independent of the selected object's window).
   pin(key) {
     const card = this.card(key);
     if (card && !isNarrow()) this.pinnedPos.set(key, { x: card.offsetLeft, y: card.offsetTop });
@@ -128,13 +128,13 @@ export class FloatingWindows {
     this.drag = null;
     if (!card) return;
     card.classList.remove("dragging");
-    // zapisujemy pozycję po dopasowaniu do mapy, żeby po zmniejszeniu okna nie "uciekała"
+    // we save the position after fitting it to the map, so it doesn't "run away" after the window shrinks
     const pos = { x: card.offsetLeft, y: card.offsetTop };
     if (this.isPinned(card)) {
       this.pinnedPos.set(card.dataset.card, pos);
       return;
     }
     this.home = pos;
-    try { localStorage.setItem(this.key, JSON.stringify(pos)); } catch { /* brak localStorage */ }
+    try { localStorage.setItem(this.key, JSON.stringify(pos)); } catch { /* no localStorage */ }
   }
 }

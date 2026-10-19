@@ -1,15 +1,15 @@
-// Teren pod budowę z Tf3Bridge: gdzie miasto się zbuduje i w jakim regionie jest każdy punkt.
+// Terrain for building from Tf3Bridge: where a town will get built and which region each point is in.
 //
-// Oba obrazki mają piksel na próbkę heightmapy, jak terrain.png (północ u góry, pół próbki za skrajnymi):
-//   terrain-site.png (Processing/TownSites.cs):    R = udział wody, G = udział stromych zboczy w obszarze miasta
-//                                                  (±250 m), B = 255 pod wodą
-//   terrain-zone.png (Processing/TerrainZones.cs): R = góry, G = woda w promieniu ok. 1 km, B = płaska nizina
-// Reguły dla zakładów (build-rules.json, Rewards/IndustryZones.cs): rodzaj -> "mountains" | "nearWater" |
-// "lowland" | "inland". Progi i logika jak w C#; tu tylko podpowiedź, rozstrzyga Tf3Bridge.
+// Both images have a pixel per heightmap sample, like terrain.png (north at the top, half a sample beyond the outermost ones):
+//   terrain-site.png (Processing/TownSites.cs):    R = share of water, G = share of steep slopes in the town area
+//                                                  (±250 m), B = 255 under water
+//   terrain-zone.png (Processing/TerrainZones.cs): R = mountains, G = water within about 1 km, B = flat lowland
+// Rules for industries (build-rules.json, Rewards/IndustryZones.cs): kind -> "mountains" | "nearWater" |
+// "lowland" | "inland". Thresholds and logic as in C#; here only a hint, Tf3Bridge decides.
 
 export const TOWN_MAX_WATER = 0.3, TOWN_MAX_STEEP = 0.5;
-export const ON_WATER = new Set(["oil_platform", "fishing_grounds", "dredging_platform"]); // jak w create.lua
-const BLOCKED_RGBA = [220, 60, 50, 90]; // nakładka na mapie: tu nie wolno budować
+export const ON_WATER = new Set(["oil_platform", "fishing_grounds", "dredging_platform"]); // as in create.lua
+const BLOCKED_RGBA = [220, 60, 50, 90]; // map overlay: building not allowed here
 
 function pixels(bitmap) {
   const canvas = document.createElement("canvas");
@@ -21,7 +21,7 @@ function pixels(bitmap) {
 }
 
 export class Ground {
-  /** sites, zones: ImageBitmap albo null (starszy Tf3Bridge); info: terrain.json. */
+  /** sites, zones: ImageBitmap or null (an older Tf3Bridge); info: terrain.json. */
   constructor(info, sites, zones) {
     this.info = info;
     const size = sites ?? zones;
@@ -29,12 +29,12 @@ export class Ground {
     this.h = size?.height ?? 0;
     this.sites = sites ? pixels(sites) : null;
     this.zones = zones && zones.width === this.w && zones.height === this.h ? pixels(zones) : null;
-    this.masks = new Map();    // klucz ("town" albo rodzaj zakładu + strefa) -> Uint8Array: 1 = wolno
-    this.overlays = new Map(); // ten sam klucz -> canvas z czerwonymi miejscami
+    this.masks = new Map();    // key ("town" or industry kind + zone) -> Uint8Array: 1 = allowed
+    this.overlays = new Map(); // the same key -> canvas with the red areas
     this.zoneExists = new Map();
   }
 
-  /** Indeks próbki pod (x, y) w metrach gry; -1 poza mapą. */
+  /** Index of the sample under (x, y) in game meters; -1 outside the map. */
   index(x, y) {
     const { minX, maxY, step } = this.info;
     const i = Math.floor((x - minX) / step), row = Math.floor((maxY - y) / step);
@@ -45,7 +45,7 @@ export class Ground {
     return this.sites ? this.sites[k * 4 + 2] > 127 : false;
   }
 
-  /** { water, steep, onWater } dla miasta w (x, y); null poza mapą albo bez terrain-site.png. */
+  /** { water, steep, onWater } for a town at (x, y); null outside the map or without terrain-site.png. */
   site(x, y) {
     const k = this.index(x, y);
     if (k < 0 || !this.sites) return null;
@@ -64,7 +64,7 @@ export class Ground {
     }
   }
 
-  /** Czy region jest gdziekolwiek na lądzie; gdy nie (np. mapa bez gór), nic nie ogranicza (jak TerrainZones.Exists). */
+  /** Whether the region exists anywhere on land; when not (e.g. a map without mountains), it restricts nothing (like TerrainZones.Exists). */
   hasZone(zone) {
     if (!this.zones || !zone) return false;
     if (!this.zoneExists.has(zone)) {
@@ -75,12 +75,12 @@ export class Ground {
     return this.zoneExists.get(zone);
   }
 
-  /** Strefa, która naprawdę ogranicza ten rodzaj zakładu (null = żadna). */
+  /** The zone that really restricts this industry kind (null = none). */
   activeZone(zone) {
     return zone && zone !== "any" && this.hasZone(zone) ? zone : null;
   }
 
-  // Czy w próbce k wolno postawić: miasto (type null) albo zakład danego rodzaju w strefie zone.
+  // Whether sample k may be built on: a town (type null) or an industry of a given kind in zone zone.
   allowedAt(k, type, zone) {
     if (!type) {
       const o = k * 4, d = this.sites;
@@ -104,12 +104,12 @@ export class Ground {
     return this.masks.get(key);
   }
 
-  /** Czy jest czym ograniczać: miasto potrzebuje terrain-site.png, zakład - wody albo regionu. */
+  /** Whether there's anything to restrict: a town needs terrain-site.png, an industry water or a region. */
   restricts(type, zone) {
     return type ? !!this.sites || !!zone : !!this.sites;
   }
 
-  /** Canvas z czerwonymi miejscami, gdzie nie wolno budować (null = nic nie ogranicza). */
+  /** Canvas with red areas where building isn't allowed (null = nothing restricts). */
   overlay(type, zone) {
     if (!this.restricts(type, zone)) return null;
     const key = this.key(type, zone);
@@ -127,7 +127,7 @@ export class Ground {
     return this.overlays.get(key);
   }
 
-  /** Najbliższe miejsce, gdzie wolno: { dx, dy } w metrach (y na północ); null, gdy nigdzie. */
+  /** The nearest allowed spot: { dx, dy } in meters (y to the north); null when there's none. */
   nearestAllowed(x, y, type, zone) {
     const m = this.mask(type, zone);
     const { minX, maxY, step } = this.info;

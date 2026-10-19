@@ -1,17 +1,17 @@
-// Trasa linii po sieci: graf z krawędzi network.json, przystanki dociągane do najbliższych
-// węzłów właściwego typu (tor / droga) w tym samym spójnym kawałku sieci, odcinki między
-// przystankami szukane przez A*.
-// Gra nie eksportuje ścieżki linii, więc to przybliżenie: najkrótsza droga; po torach z kierunkiem
-// jazdy (bez zawracania na rozjazdach, przez przystanek dalej w tę samą stronę), po drogach bez.
-// Układ współrzędnych jak w map.js: (x, -y) ze świata gry.
+// A line's route over the network: a graph from the network.json edges, stops snapped to the nearest
+// nodes of the right type (track / street) in the same connected piece of the network, segments between
+// stops searched with A*.
+// The game doesn't export the line path, so this is an approximation: the shortest way; on tracks with the direction
+// of travel (no U-turns at switches, through a stop onwards in the same direction), on streets without it.
+// Coordinates as in map.js: (x, -y) from the game world.
 
-const SNAP_DISTANCE = 300; // m - dalej od sieci przystanek łączymy linią prostą
-const SNAP_CANDIDATES = 8; // tyle najbliższych węzłów przystanku bierzemy pod uwagę przy łączeniu odcinka
-const STOP_RADIUS = 60; // m - węzły sieci kierunkowej tak blisko przystanku należą do stacji (perony)
+const SNAP_DISTANCE = 300; // m - further from the network a stop is connected with a straight line
+const SNAP_CANDIDATES = 8; // how many of a stop's nearest nodes we consider when connecting a segment
+const STOP_RADIUS = 60; // m - nodes of a directional network this close to the stop belong to the station (platforms)
 
-// Nośnik linii -> typ krawędzi, po której jeździ (WATER/AIR: linia prosta).
+// Line carrier -> the type of edge it runs on (WATER/AIR: a straight line).
 const ROAD_FOR_CARRIER = { RAIL: "TRACK", ROAD: "STREET", TRAM: "STREET" };
-// Sieci, po których pojazd nie zawraca w dowolnym miejscu (pociąg: tylko na stacji końcowej).
+// Networks where a vehicle doesn't turn around just anywhere (train: only at a terminal station).
 const DIRECTED = new Set(["TRACK"]);
 
 export class RouteGraph {
@@ -36,14 +36,14 @@ export class RouteGraph {
         c0x: x0 + e[f.tx0] / 3, c0y: y0 - e[f.ty0] / 3,
         c1x: x1 - e[f.tx1] / 3, c1y: y1 + e[f.ty1] / 3,
       };
-      // długość: średnia cięciwy i łamanej przez punkty kontrolne (wystarczy dla krzywych TF)
+      // length: the average of the chord and the polyline through the control points (enough for TF curves)
       const chord = Math.hypot(x1 - x0, y1 - y0);
       const poly = Math.hypot(edge.c0x - x0, edge.c0y - y0) + Math.hypot(edge.c1x - edge.c0x, edge.c1y - edge.c0y)
         + Math.hypot(x1 - edge.c1x, y1 - edge.c1y);
       const len = (chord + poly) / 2;
       this.edges.push(edge);
 
-      // kierunek wyjazdu z węzła (dx, dy) i wjazdu do węzła docelowego (ax, ay): styczne krawędzi
+      // the direction leaving the node (dx, dy) and entering the target node (ax, ay): the edge tangents
       const t0x = e[f.tx0], t0y = -e[f.ty0], t1x = e[f.tx1], t1y = -e[f.ty1];
       const a = node(n0, x0, y0), b = node(n1, x1, y1);
       a.roads.add(edge.road);
@@ -52,7 +52,7 @@ export class RouteGraph {
       b.adj.push({ to: a, edge, len, forward: false, dx: -t1x, dy: -t1y, ax: -t0x, ay: -t0y });
     }
 
-    // Siatka węzłów (komórka = SNAP_DISTANCE): przy wszystkich liniach na mapie przystanków jest dużo.
+    // A node grid (cell = SNAP_DISTANCE): with all lines on the map there are many stops.
     this.grid = new Map();
     for (const n of this.nodes.values()) {
       const k = cellKey(Math.floor(n.x / SNAP_DISTANCE), Math.floor(n.y / SNAP_DISTANCE));
@@ -61,9 +61,9 @@ export class RouteGraph {
       else this.grid.set(k, [n]);
     }
 
-    // Spójne kawałki sieci osobno dla dróg i torów (n.comp[road] = numer kawałka). Eksport ma
-    // odcięte fragmenty (np. dojazdy do stacji, których krawędzie łączące należą do konstrukcji),
-    // a najbliższy przystankowi węzeł bywa w takim fragmencie - wtedy A* nie znalazłby drogi.
+    // Connected pieces of the network, separately for streets and tracks (n.comp[road] = piece number). The export has
+    // cut-off fragments (e.g. station access roads whose connecting edges belong to the construction),
+    // and the node nearest to a stop is sometimes in such a fragment - then A* wouldn't find a way.
     let comp = 0;
     for (const start of this.nodes.values()) {
       start.comp ??= {};
@@ -84,7 +84,7 @@ export class RouteGraph {
     }
   }
 
-  // Do limit najbliższych węzłów danego typu w promieniu SNAP_DISTANCE: [{ n, d }] od najbliższego.
+  // Up to limit nearest nodes of a given type within SNAP_DISTANCE: [{ n, d }] from the nearest.
   nearestNodes(x, y, road, limit = SNAP_CANDIDATES) {
     const out = [];
     const cx = Math.floor(x / SNAP_DISTANCE), cy = Math.floor(y / SNAP_DISTANCE);
@@ -100,8 +100,8 @@ export class RouteGraph {
     return out.sort((a, b) => a.d - b.d).slice(0, limit);
   }
 
-  // Para węzłów (po jednym z kandydatów każdego przystanku) w tym samym kawałku sieci, z najmniejszą
-  // sumą odległości od przystanków; null, gdy przystanków nie łączy żaden kawałek.
+  // A pair of nodes (one from each stop's candidates) in the same network piece, with the smallest
+  // sum of distances from the stops; null when no piece connects the stops.
   snapPair(ca, cb, road) {
     let best = null, bestD = Infinity;
     for (const a of ca) {
@@ -129,7 +129,7 @@ export class RouteGraph {
     return best;
   }
 
-  // A* między węzłami, tylko po krawędziach danego typu. Zwraca listę kroków {edge, forward} albo null.
+  // A* between nodes, only along edges of a given type. Returns a list of {edge, forward} steps, or null.
   path(from, to, road) {
     if (from === to) return [];
     const h = (n) => Math.hypot(n.x - to.x, n.y - to.y);
@@ -163,9 +163,9 @@ export class RouteGraph {
     return null;
   }
 
-  // Węzły przystanku na sieci kierunkowej: wszystkie w promieniu STOP_RADIUS od niego (stacja ma kilka
-  // torów peronowych, a pociąg staje na tym, na który mu po drodze), a gdy żadnego - najbliższe.
-  // Zbiór z położeniem przystanku (x, y) dla heurystyki A*.
+  // A stop's nodes on a directional network: all within STOP_RADIUS of it (a station has several
+  // platform tracks, and the train stops at the one on its way), and when there are none - the nearest.
+  // A set with the stop position (x, y) for the A* heuristic.
   stopNodes(p, road) {
     const near = this.nearestNodes(p.x, p.y, road, Infinity);
     const inStation = near.filter((c) => c.d <= STOP_RADIUS);
@@ -173,12 +173,12 @@ export class RouteGraph {
     return Object.assign(set, { x: p.x, y: p.y });
   }
 
-  // A* z kierunkiem jazdy z dowolnego węzła zbioru from (kierunek jazdy: heading = { x, y }, { 0, 0 } =
-  // dowolny; perony stacji są równoległe, więc kierunek pasuje do każdego) przez kolejne zbiory węzłów
-  // targets (stopNodes). Z węzła tylko krawędziami, które nie zawracają względem kierunku wjazdu.
-  // Dalsze zbiory to podgląd następnego odcinka: dojazd do targets[0] ma pozwolić pojechać dalej bez
-  // zawracania. Zwraca { from, steps, heading } dla odcinka do targets[0] (from: węzeł startu,
-  // heading: kierunek wjazdu do targets[0]) albo null.
+  // A* with the direction of travel from any node of the from set (direction of travel: heading = { x, y }, { 0, 0 } =
+  // any; station platforms are parallel, so the direction fits each of them) through successive node sets
+  // targets (stopNodes). From a node only along edges that don't turn back relative to the entry direction.
+  // The further sets are a preview of the next segment: reaching targets[0] must allow continuing without
+  // turning back. Returns { from, steps, heading } for the segment to targets[0] (from: the start node,
+  // heading: the direction of entry into targets[0]), or null.
   directedPath(from, targets, road, heading) {
     const last = targets.length - 1;
     const rest = targets.map((_, k) => {
@@ -186,11 +186,11 @@ export class RouteGraph {
       for (let m = k; m < last; m++) d += Math.hypot(targets[m + 1].x - targets[m].x, targets[m + 1].y - targets[m].y);
       return Math.max(0, d - 2 * STOP_RADIUS * (last - k));
     });
-    // stan: krawędź (wpis adj), którą wjechano do węzła, + numer zbioru, do którego jedziemy
+    // state: the edge (an adj entry) the node was entered by, + the number of the set we're heading to
     const states = targets.map(() => new Map());
     const heap = new MinHeap();
     const reach = (a, k, g, prev) => {
-      while (k < last && targets[k].has(a.to)) k++; // wjazd na przystanek: dalej do następnego
+      while (k < last && targets[k].has(a.to)) k++; // entering a stop: on to the next one
       let s = states[k].get(a);
       if (!s) states[k].set(a, (s = { a, k, g: Infinity, prev: null }));
       if (g >= s.g) return;
@@ -223,10 +223,10 @@ export class RouteGraph {
     return null;
   }
 
-  // Odcinek po sieci kierunkowej ze zbioru from do zbioru to (next: zbiór następnego przystanku).
-  // Pociąg jedzie dalej w kierunku, w którym dojechał do przystanku, i tak, żeby z to ruszyć dalej
-  // bez zawracania; gdy się nie da - bez podglądu; potem tak samo z zawracaniem na przystanku
-  // (stacja końcowa). Zwraca wynik directedPath albo null.
+  // A segment on a directional network from the from set to the to set (next: the next stop's set).
+  // The train keeps going in the direction it reached the stop, and so that it can continue from to
+  // without turning back; when that's impossible - without the preview; then the same with turning back at the stop
+  // (a terminal station). Returns the directedPath result, or null.
   directedLeg(from, to, next, road, heading) {
     const hd = heading ?? { x: 0, y: 0 };
     for (const dir of heading ? [hd, { x: -hd.x, y: -hd.y }] : [hd]) {
@@ -238,9 +238,9 @@ export class RouteGraph {
     return null;
   }
 
-  // Odcinki pętli linii po sieci kierunkowej: [{ from, steps }] (null: odcinka nie da się poprowadzić).
-  // Kierunek jazdy przy pierwszym przystanku nieznany: pierwsze okrążenie tylko po to, żeby poznać
-  // kierunek dojazdu do niego na ostatnim odcinku, drugie już naprawdę.
+  // The line loop segments on a directional network: [{ from, steps }] (null: the segment can't be routed).
+  // The direction of travel at the first stop is unknown: the first lap only serves to learn
+  // the direction of approach to it on the last segment, the second one is for real.
   directedLegs(stops, road) {
     const n = stops.length;
     const sets = stops.map((s) => this.stopNodes(s, road));
@@ -255,13 +255,13 @@ export class RouteGraph {
     return out;
   }
 
-  // Path2D trasy linii (zamknięta pętla, jak w grze) + bbox + łamana po kolei (poly: do sprawdzania,
-  // czy linia jest na ekranie, i do ruchu pojazdów; cum = odległość od startu do każdego punktu,
-  // length = długość pętli) + legs: indeks przystanku na linii -> { start, end, first, last }, odcinek
-  // dojazdu do niego od poprzedniego przystanku (odległości wzdłuż pętli i indeksy w poly). Przystanki bez pozycji pomijamy.
+  // The Path2D of the line route (a closed loop, as in the game) + bbox + the polyline in order (poly: for checking
+  // whether the line is on screen, and for vehicle movement; cum = the distance from the start to each point,
+  // length = the loop length) + legs: stop index on the line -> { start, end, first, last }, the segment
+  // leading to it from the previous stop (distances along the loop and indices in poly). Stops without a position are skipped.
   routeLine(line) {
     const all = line.stops ?? [];
-    const index = [];  // indeks w stops (po odfiltrowaniu) -> indeks przystanku na linii
+    const index = [];  // index in stops (after filtering) -> stop index on the line
     const stops = [];
     all.forEach((s, i) => {
       if (!s.pos) return;
@@ -280,7 +280,7 @@ export class RouteGraph {
     for (let i = 0; i < stops.length; i++) {
       const j = (i + 1) % stops.length;
       const a = stops[i], b = stops[j];
-      // gdy po sieci kierunkowej się nie da: najkrótsza droga bez kierunku
+      // when it's impossible on the directional network: the shortest way without direction
       let na = directed[i]?.from, steps = directed[i]?.steps;
       if (!directed[i]) {
         const pair = this.snapPair(candidates[i], candidates[j], road);
@@ -296,13 +296,13 @@ export class RouteGraph {
         for (const { edge: e, forward } of steps) {
           if (forward) path.bezierCurveTo(e.c0x, e.c0y, e.c1x, e.c1y, e.x1, e.y1);
           else path.bezierCurveTo(e.c1x, e.c1y, e.c0x, e.c0y, e.x0, e.y0);
-          // kilka punktów z krzywej, żeby pojazdy na długich łukach nie ścinały zakrętu
+          // a few points from the curve, so vehicles on long arcs don't cut the corner
           for (const t of BEZIER_SAMPLES) poly.push(bezierPoint(e, forward ? t : 1 - t));
           poly.push(forward ? { x: e.x1, y: e.y1 } : { x: e.x0, y: e.y0 });
         }
       }
       path.lineTo(b.x, b.y);
-      legs.set(index[j], { first, last: poly.length }); // last = indeks punktu b (początek następnego)
+      legs.set(index[j], { first, last: poly.length }); // last = index of point b (the start of the next one)
     }
     poly.push(stops[0]);
 
@@ -312,7 +312,7 @@ export class RouteGraph {
     return { path, stops, bbox: bboxOf(poly), poly, cum, length: cum[poly.length - 1], legs };
   }
 
-  // Linia bez pojazdów nie ma znanego nośnika - wybierz typ sieci bliższy pierwszemu przystankowi.
+  // A line without vehicles has no known carrier - pick the network type closer to the first stop.
   guessRoad(p) {
     const t = this.nearestNode(p.x, p.y, "TRACK"), s = this.nearestNode(p.x, p.y, "STREET");
     if (!t) return s ? "STREET" : null;
@@ -321,12 +321,12 @@ export class RouteGraph {
   }
 }
 
-/** Punkt trasy (wynik routeLine) w odległości d wzdłuż pętli (d dowolne, liczone modulo długość). */
+/** A route point (a routeLine result) at distance d along the loop (any d, taken modulo the length). */
 export function pointAtDistance(route, d) {
   const { poly, cum, length } = route;
   if (!(length > 0)) return poly[0];
   d = ((d % length) + length) % length;
-  let lo = 0, hi = cum.length - 1; // ostatni punkt z cum[i] <= d
+  let lo = 0, hi = cum.length - 1; // the last point with cum[i] <= d
   while (hi - lo > 1) {
     const mid = (lo + hi) >> 1;
     if (cum[mid] <= d) lo = mid;
@@ -338,9 +338,9 @@ export function pointAtDistance(route, d) {
 }
 
 /**
- * Rzut punktu (układ ścieżki) na odcinek trasy dojazdu do przystanku stop: { d, dist } - odległość
- * wzdłuż pętli i odległość punktu od trasy; null, gdy linia nie ma takiego odcinka. Tylko ten odcinek,
- * bo tam i z powrotem pociąg jedzie po tych samych torach - cała pętla nie rozstrzygnęłaby kierunku.
+ * Projection of a point (path coordinates) onto the route segment leading to stop: { d, dist } - the distance
+ * along the loop and the point's distance from the route; null when the line has no such segment. Only this segment,
+ * because a train runs on the same tracks there and back - the whole loop wouldn't settle the direction.
  */
 export function projectOnLeg(route, stop, p) {
   const leg = route.legs.get(stop);
@@ -364,19 +364,19 @@ function bezierPoint(e, t) {
   return { x: a * e.x0 + b * e.c0x + c * e.c1x + d * e.x1, y: a * e.y0 + b * e.c0y + c * e.c1y + d * e.y1 };
 }
 
-/** Czy trasa (wynik routeLine) przecina prostokąt { minX, minY, maxX, maxY } w układzie ścieżki. */
+/** Whether a route (a routeLine result) crosses the rectangle { minX, minY, maxX, maxY } in path coordinates. */
 export function routeInRect(route, r) {
   const b = route?.bbox;
   if (!b || b.maxX < r.minX || b.minX > r.maxX || b.maxY < r.minY || b.minY > r.maxY) return false;
   if (b.minX >= r.minX && b.maxX <= r.maxX && b.minY >= r.minY && b.maxY <= r.maxY) return true;
   const p = route.poly;
-  if (p.length === 1) return true; // pojedynczy przystanek: bbox to punkt, już sprawdzony
+  if (p.length === 1) return true; // a single stop: the bbox is a point, already checked
   for (let i = 1; i < p.length; i++) if (segmentInRect(p[i - 1], p[i], r)) return true;
   return false;
 }
 
-// Odcinek przecina prostokąt, gdy ich bboxy się nakładają, a prosta odcinka nie zostawia
-// wszystkich narożników prostokąta po jednej stronie.
+// A segment crosses a rectangle when their bboxes overlap and the segment's line doesn't leave
+// all corners of the rectangle on one side.
 function segmentInRect(a, b, r) {
   if (Math.max(a.x, b.x) < r.minX || Math.min(a.x, b.x) > r.maxX
     || Math.max(a.y, b.y) < r.minY || Math.min(a.y, b.y) > r.maxY) return false;

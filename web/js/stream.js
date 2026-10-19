@@ -1,18 +1,18 @@
-// Stream na Twitchu: przycisk w górnym pasku i pływający mini-player nad mapą.
-// Przycisk to zwykły link do kanału (config.twitchUrl); na szerokim ekranie kliknięcie otwiera/zamyka
-// okienko z playerem zamiast przechodzić na Twitcha (Ctrl/środkowy przycisk dalej otwiera nową kartę).
-// Na wąskim ekranie (telefon) player zasłoniłby mapę - tam przycisk po prostu otwiera Twitcha.
-// Player (iframe) ładuje się dopiero po otwarciu okienka i znika po zamknięciu: bez transferu i bez
-// podwójnego dźwięku u widzów, którzy oglądają już na Twitchu. Startuje wyciszony.
-// Twitch wymaga parent=<domena strony> (u nas location.hostname: tf3.example.com albo localhost)
-// i playera co najmniej 400x300 px (CSS .stream-frame).
+// The Twitch stream: a button in the top bar and a floating mini player over the map.
+// The button is a plain link to the channel (config.twitchUrl); on a wide screen a click opens/closes
+// the player window instead of going to Twitch (Ctrl/middle button still opens a new tab).
+// On a narrow screen (phone) the player would cover the map - there the button just opens Twitch.
+// The player (iframe) only loads once the window opens and disappears when it closes: no traffic and no
+// double audio for viewers already watching on Twitch. It starts muted.
+// Twitch requires parent=<site domain> (here location.hostname: e.g. tf3.example.com or localhost)
+// and a player of at least 400x300 px (CSS .stream-frame).
 
 import { config } from "../config.js";
 import { FloatingWindows } from "./float.js";
 import { t } from "./i18n.js";
 
 const OPEN_KEY = "tf3-stream-open";
-const MARGIN = 12, TOOLS_W = 46; // map-tools (34 px) w prawym górnym rogu mapy + odstęp
+const MARGIN = 12, TOOLS_W = 46; // map-tools (34 px) in the top right corner of the map + a gap
 const isNarrow = () => window.innerWidth <= 900;
 
 export class StreamPlayer {
@@ -30,7 +30,7 @@ export class StreamPlayer {
     }
     button.href = config.twitchUrl;
     for (const a of layer.querySelectorAll("[data-stream-link]")) a.href = config.twitchUrl;
-    if (!this.channel) return; // nie da się osadzić - zostaje sam link
+    if (!this.channel) return; // can't be embedded - only the link remains
     layer.querySelector("[data-stream-name]").textContent = this.channel;
 
     this.windows = new FloatingWindows(layer, wrap, { key: "tf3-stream-pos" });
@@ -40,16 +40,16 @@ export class StreamPlayer {
       this.toggle(this.layer.hidden);
     });
     layer.querySelector("[data-stream-close]").addEventListener("click", () => this.toggle(false));
-    // zwężenie okna: okienko znika (na telefonie go nie ma), razem z dźwiękiem
+    // the window narrows: the player window disappears (there's none on a phone), together with the audio
     window.addEventListener("resize", () => { if (isNarrow() && !this.layer.hidden) this.toggle(false, false); });
 
     let wasOpen = false;
-    try { wasOpen = localStorage.getItem(OPEN_KEY) === "1"; } catch { /* brak localStorage */ }
+    try { wasOpen = localStorage.getItem(OPEN_KEY) === "1"; } catch { /* no localStorage */ }
     if (wasOpen && !isNarrow()) this.toggle(true, false);
     else this.refresh();
   }
 
-  // remember=false: bez zapisu (otwarcie po przeładowaniu, zamknięcie przez zwężenie okna)
+  // remember=false: not stored (opening after a reload, closing because the window narrowed)
   toggle(open, remember = true) {
     this.layer.hidden = !open;
     if (open) {
@@ -58,13 +58,13 @@ export class StreamPlayer {
           + `&parent=${encodeURIComponent(location.hostname)}&muted=true&autoplay=true`;
         this.frame.innerHTML = `<iframe src="${src}" allow="autoplay; fullscreen" title="Twitch"></iframe>`;
       }
-      // pierwsze otwarcie: prawy górny róg mapy, obok przycisków mapy
+      // the first opening: the top right corner of the map, next to the map buttons
       if (!this.windows.saved) {
         this.windows.home = {
           x: this.wrap.clientWidth - this.card.offsetWidth - MARGIN - TOOLS_W,
           y: MARGIN,
         };
-        this.windows.saved = true; // dalej trzyma się miejsca, w które widz je przesunie
+        this.windows.saved = true; // from then on it sticks to where the viewer moves it
       }
       this.windows.front("stream");
       this.windows.layout();
@@ -72,12 +72,12 @@ export class StreamPlayer {
       this.frame.replaceChildren();
     }
     if (remember) {
-      try { localStorage.setItem(OPEN_KEY, open ? "1" : "0"); } catch { /* brak localStorage */ }
+      try { localStorage.setItem(OPEN_KEY, open ? "1" : "0"); } catch { /* no localStorage */ }
     }
     this.refresh();
   }
 
-  // live: dane z gry są świeże (main.js: renderStatus) - gra chodzi, więc stream w praktyce też
+  // live: the game data is fresh (main.js: renderStatus) - the game is running, so in practice the stream too
   setLive(live) {
     this.button.dataset.live = String(!!live);
     this.refresh();

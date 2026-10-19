@@ -1,8 +1,8 @@
-// Tłumaczenia strony (PL / EN).
-//   * t("klucz", { n: 3 })  - napis interfejsu z podstawieniem {n}
-//   * dict().cargo / .carrier / .station / ... - słowniki nazw z gry
-//   * statyczny HTML: atrybuty data-i18n (tekst), data-i18n-title, data-i18n-placeholder, data-i18n-aria
-// Język: ?lang=pl|en w adresie > zapamiętany wybór > język przeglądarki (polski -> pl, reszta -> en).
+// Website translations (EN / PL).
+//   * t("key", { n: 3 })  - a UI text with {n} substituted
+//   * dict().cargo / .carrier / .station / ... - dictionaries of game names
+//   * static HTML: data-i18n (text), data-i18n-title, data-i18n-placeholder, data-i18n-aria attributes
+// Language: ?lang=pl|en in the address > the remembered choice > the browser language (Polish -> pl, anything else -> en).
 
 const DICT = {
   pl: {
@@ -272,7 +272,7 @@ const DICT = {
       "use.cargo": "towarowa",
       "use.passengers": "pasażerska",
     },
-    // jednostka wieku według Intl.PluralRules; ułamki ("2,5 roku") dają "other"
+    // the age unit by Intl.PluralRules; fractions ("2,5 roku") give "other"
     years: { one: "rok", few: "lata", many: "lat", other: "roku" },
     months: ["sty", "lut", "mar", "kwi", "maj", "cze", "lip", "sie", "wrz", "paź", "lis", "gru"],
     landUse: ["Mieszkalne", "Usługowe", "Przemysłowe"],
@@ -281,7 +281,7 @@ const DICT = {
       RAIL: "Dworzec kolejowy", ROAD: "Dworzec drogowy", TRAM: "Stacja tramwajowa", WATER: "Port", AIR: "Lotnisko",
       INDUSTRY: "Przemysł", OTHER: "Inne",
     },
-    // nazwy jak w grze (base/strings/pl/LC_MESSAGES/base.mo)
+    // names as in the game (base/strings/pl/LC_MESSAGES/base.mo)
     cargo: {
       beverages: "Napoje", books: "Książki", cement: "Cement", chemicals: "Chemikalia",
       clothes: "Ubrania", coal: "Węgiel", crude_oil: "Ropa surowa", dyes: "Barwniki",
@@ -618,7 +618,7 @@ function detect() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (DICT[saved]) return saved;
-  } catch { /* brak dostępu do localStorage (tryb prywatny itp.) */ }
+  } catch { /* no access to localStorage (private mode etc.) */ }
   return (navigator.language ?? "").toLowerCase().startsWith("pl") ? "pl" : "en";
 }
 
@@ -634,7 +634,7 @@ export function t(key, vars) {
   return vars ? s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m)) : s;
 }
 
-/** Przepisuje statyczne napisy oznaczone data-i18n* w podanym fragmencie dokumentu. */
+/** Rewrites the static texts marked with data-i18n* in the given document fragment. */
 export function applyStatic(root = document) {
   document.documentElement.lang = current;
   for (const el of root.querySelectorAll("[data-i18n]")) el.textContent = t(el.dataset.i18n);
@@ -646,12 +646,12 @@ export function applyStatic(root = document) {
 export function setLang(next) {
   if (!DICT[next] || next === current) return;
   current = next;
-  try { localStorage.setItem(STORAGE_KEY, next); } catch { /* jw. */ }
+  try { localStorage.setItem(STORAGE_KEY, next); } catch { /* as above */ }
   applyStatic();
   for (const fn of listeners) fn(next);
 }
 
-/** fn(lang) po każdej zmianie języka - do przerysowania części budowanych w JS. */
+/** fn(lang) after every language change - for redrawing the parts built in JS. */
 export function onLangChange(fn) {
   listeners.add(fn);
 }

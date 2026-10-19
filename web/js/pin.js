@@ -1,15 +1,15 @@
-// Pinezki z linkiem: miejsce na mapie + opis zapisane w adresie strony, bez serwera.
-// Format: #pin=<x>_<y>_<skala>&note=<opis> - x, y we współrzędnych gry (m, y na północ),
-// skala = przybliżenie widoku w chwili tworzenia linku. Podkreślniki zamiast przecinków, bo czat
-// Twitcha ucina link na przecinku; stare linki z przecinkami nadal działają.
+// Pins with a link: a spot on the map + a description stored in the page address, no server.
+// Format: #pin=<x>_<y>_<scale>&note=<description> - x, y in game coordinates (m, y to the north),
+// scale = the view zoom when the link was created. Underscores instead of commas, because Twitch chat
+// cuts a link at a comma; old links with commas still work.
 
 import { hashWith } from "./hash.js";
 import { t } from "./i18n.js";
 
-// Krótko, bo link z polskimi znakami (%C5%9B...) szybko rośnie, a wiadomość na czacie ma limit.
+// Short, because a link with Polish characters (%C5%9B...) grows fast, and a chat message has a limit.
 export const NOTE_MAX = 120;
 
-/** Pinezka z hasha adresu albo null. */
+/** The pin from the address hash, or null. */
 export function readPinHash(hash = location.hash) {
   const params = new URLSearchParams(hash.replace(/^#/, ""));
   if (!params.has("pin")) return null;
@@ -22,15 +22,15 @@ export function readPinHash(hash = location.hash) {
   };
 }
 
-/** Części hasha pinezki ("pin=...", "note=..."). */
+/** The pin's hash parts ("pin=...", "note=..."). */
 function pinParts({ x, y, note }, scale) {
-  // Ręcznie zamiast URLSearchParams.toString(), żeby link był czytelny (%20 zamiast "+").
+  // By hand instead of URLSearchParams.toString(), so the link is readable (%20 instead of "+").
   const pin = [`pin=${Math.round(x)}_${Math.round(y)}_${Number(scale.toPrecision(3))}`];
   if (note) pin.push(`note=${encodeURIComponent(note.slice(0, NOTE_MAX))}`);
   return pin;
 }
 
-/** Link do udostępnienia: adres strony z samą pinezką w hashu (bez zaznaczonego obiektu, np. &line=...). */
+/** A link to share: the page address with only the pin in the hash (no selected object, e.g. &line=...). */
 export function pinUrl(pin, scale) {
   const url = new URL(location.href);
   url.hash = pinParts(pin, scale).join("&");
@@ -38,8 +38,8 @@ export function pinUrl(pin, scale) {
 }
 
 /**
- * Stawianie pinezki: przycisk włącza tryb (następne kliknięcie w mapę), prawy przycisk myszy
- * stawia od razu. Formularz przy pinezce zbiera opis i tworzy link (kopiowany do schowka).
+ * Placing a pin: the button turns on the mode (the next click on the map), the right mouse button
+ * places it right away. The form next to the pin collects a description and creates a link (copied to the clipboard).
  */
 export class PinController {
   constructor(map, { form, button, wrap }) {
@@ -54,7 +54,7 @@ export class PinController {
     this.urlInput = form.querySelector("#pin-url");
     this.copyBtn = form.querySelector("[data-pin-copy]");
     this.cancelBtn = form.querySelector("[data-pin-cancel]");
-    this.saved = null; // pinezka z linku - wraca po anulowaniu nowej
+    this.saved = null; // the pin from the link - comes back after a new one is cancelled
     this.draft = null;
 
     button.addEventListener("click", () => map.setPlaceMode(map.placeMode === "pin" ? null : "pin"));
@@ -63,7 +63,7 @@ export class PinController {
       if (!this.draft) return;
       this.draft.note = this.note.value;
       this.showCount();
-      this.showLink(false); // opis się zmienił - stary link już nie pasuje
+      this.showLink(false); // the description changed - the old link no longer fits
       map.setPin(this.draft);
     });
 
@@ -79,19 +79,19 @@ export class PinController {
       if (map.placeMode === "pin") map.setPlaceMode(null);
       else if (!form.hidden) this.cancel();
       else return;
-      e.preventDefault(); // obsłużone - main.js nie odznacza już zaznaczenia
+      e.preventDefault(); // handled - main.js no longer clears the selection
     });
 
     window.addEventListener("hashchange", () => this.loadFromHash());
     this.loadFromHash();
   }
 
-  // Wywoływane przez MapView (onPlaceMode).
+  // Called by MapView (onPlaceMode).
   modeChanged(on) {
     this.button.setAttribute("aria-pressed", String(on));
   }
 
-  // Wywoływane przez MapView (onPlace): nowa pinezka w klikniętym miejscu + formularz.
+  // Called by MapView (onPlace): a new pin at the clicked spot + the form.
   place({ x, y, sx, sy }) {
     this.draft = { x, y, note: "" };
     this.map.setPin(this.draft);
@@ -113,8 +113,8 @@ export class PinController {
   createLink() {
     if (!this.draft) return;
     const url = pinUrl(this.draft, this.map.view.scale);
-    // Adres w pasku też wskazuje pinezkę, ale zachowuje zaznaczenie z ekranu
-    // (bez hashchange, więc widok się nie przestawia).
+    // The address bar also points at the pin, but keeps the on-screen selection
+    // (without hashchange, so the view doesn't move).
     history.replaceState(null, "", `#${hashWith(["pin", "note"], pinParts(this.draft, this.map.view.scale))}`);
     this.saved = { ...this.draft };
     this.urlInput.value = url;
@@ -127,7 +127,7 @@ export class PinController {
     this.count.textContent = `${this.note.value.length}/${NOTE_MAX}`;
   }
 
-  // Link gotowy: pole z linkiem i "Zamknij" zamiast "Anuluj" (pinezka jest już zapisana w linku).
+  // The link is ready: the field with the link and "Close" instead of "Cancel" (the pin is already stored in the link).
   showLink(on) {
     clearTimeout(this.closeTimer);
     this.linkRow.hidden = !on;
@@ -135,8 +135,8 @@ export class PinController {
     this.copyBtn.textContent = t("pin.copy");
   }
 
-  // Po skopiowaniu chwilę pokazujemy "Skopiowano" i zamykamy okienko. Bez schowka (np. http)
-  // okienko zostaje z zaznaczonym linkiem do ręcznego Ctrl+C.
+  // After copying we briefly show "Copied" and close the window. Without a clipboard (e.g. http)
+  // the window stays with the link selected for a manual Ctrl+C.
   async copyAndClose() {
     clearTimeout(this.closeTimer);
     this.urlInput.select();
@@ -150,7 +150,7 @@ export class PinController {
     this.closeTimer = setTimeout(() => this.cancel(), 900);
   }
 
-  // Formularz został przy pinezce: jej pozycja na ekranie (do ponownego dopasowania po zmianie wysokości).
+  // The form stayed next to the pin: its position on screen (for refitting after a height change).
   formAnchor() {
     const [sx, sy] = this.map.toScreen(this.draft.x, -this.draft.y);
     return [sx, sy];
