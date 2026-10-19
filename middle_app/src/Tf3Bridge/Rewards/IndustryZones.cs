@@ -10,19 +10,24 @@ namespace Tf3Bridge.Rewards;
 /// </summary>
 public static class IndustryZones
 {
-    /// <summary>Base game industries (base/content/industries) with their in-game Polish names (base/strings/pl), in dialog order.</summary>
-    public static IReadOnlyList<(string Type, string Name)> Known { get; } =
+    /// <summary>
+    /// Base game industries (base/content/industries) with their in-game English and Polish names (the same as the
+    /// website's web/js/i18n.js), in dialog order.
+    /// </summary>
+    public static IReadOnlyList<(string Type, string En, string Pl)> Known { get; } =
     [
-        ("coal_mine", "Kopalnia węgla"), ("iron_ore_mine", "Kopalnia rudy żelaza"), ("quarry", "Kamieniołom"),
-        ("sand_excavator", "Pogłębiarka"), ("sand_pit", "Piaskarnia"), ("clay_pit", "Glinianka"),
-        ("farm", "Gospodarstwo rolne"), ("livestock_farm", "Hodowla bydła"), ("cotton_farm", "Plantacja bawełny"),
-        ("rubber_farm", "Plantacja kauczuku"), ("forest", "Poręba"), ("oil_well", "Kiwon"),
-        ("brewery", "Browar"), ("bricks_works", "Cegielnia"), ("cement_plant", "Cementownia"), ("chemical_plant", "Fabryka chemiczna"),
-        ("food_factory", "Fabryka konserw"), ("furniture_factory", "Fabryka mebli"), ("glass_works", "Huta szkła"),
-        ("machine_factory", "Fabryka maszyn"), ("oil_refinery", "Rafineria"), ("paper_mill", "Papiernia"),
-        ("printing_press", "Drukarnia"), ("saw_mill", "Tartak"), ("steel_mill", "Stalownia"),
-        ("textile_factory", "Fabryka tkanin"), ("tire_factory", "Fabryka opon"), ("tool_factory", "Fabryka narzędzi"),
-        ("vehicle_factory", "Fabryka samochodów"), ("weaving_mill", "Tkalnia"),
+        ("coal_mine", "Coal Mine", "Kopalnia węgla"), ("iron_ore_mine", "Iron Ore Mine", "Kopalnia rudy żelaza"), ("quarry", "Quarry", "Kamieniołom"),
+        ("sand_excavator", "Sand Dredger", "Pogłębiarka"), ("sand_pit", "Sand Pit", "Piaskarnia"), ("clay_pit", "Clay Pit", "Glinianka"),
+        ("farm", "Crop Farm", "Gospodarstwo rolne"), ("livestock_farm", "Livestock Farm", "Hodowla bydła"), ("cotton_farm", "Cotton Farm", "Plantacja bawełny"),
+        ("rubber_farm", "Rubber Farm", "Plantacja kauczuku"), ("forest", "Logging Camp", "Poręba"), ("oil_well", "Oil Well", "Kiwon"),
+        ("brewery", "Brewery", "Browar"), ("bricks_works", "Brickworks", "Cegielnia"), ("cement_plant", "Cement Plant", "Cementownia"),
+        ("chemical_plant", "Chemical Plant", "Fabryka chemiczna"), ("food_factory", "Canning Factory", "Fabryka konserw"),
+        ("furniture_factory", "Furniture Factory", "Fabryka mebli"), ("glass_works", "Glassworks", "Huta szkła"),
+        ("machine_factory", "Machine Factory", "Fabryka maszyn"), ("oil_refinery", "Oil Refinery", "Rafineria"), ("paper_mill", "Paper Mill", "Papiernia"),
+        ("printing_press", "Printing Factory", "Drukarnia"), ("saw_mill", "Saw Mill", "Tartak"), ("steel_mill", "Steel Mill", "Stalownia"),
+        ("textile_factory", "Textile Factory", "Fabryka tkanin"), ("tire_factory", "Tire Factory", "Fabryka opon"),
+        ("tool_factory", "Tools Factory", "Fabryka narzędzi"), ("vehicle_factory", "Vehicle Factory", "Fabryka samochodów"),
+        ("weaving_mill", "Weaving Mill", "Tkalnia"),
     ];
 
     public static IReadOnlyDictionary<string, IndustryZone> Defaults { get; } = new Dictionary<string, IndustryZone>
@@ -41,16 +46,16 @@ public static class IndustryZones
     };
 
     public static string Name(string type) =>
-        Known.FirstOrDefault(k => k.Type == type).Name ?? type.Replace('_', ' ');
+        Known.FirstOrDefault(k => k.Type == type) is { Type: not null } k ? Loc.T(k.En, k.Pl) : type.Replace('_', ' ');
 
-    /// <summary>"w górach" ("in the mountains") etc., after "można budować tylko" ("can only be built").</summary>
+    /// <summary>"in the mountains" / "w górach" etc., after "can only be built" / "można budować tylko".</summary>
     public static string Label(IndustryZone zone) => zone switch
     {
-        IndustryZone.Mountains => "w górach",
-        IndustryZone.NearWater => "przy wodzie (do 1 km od niej)",
-        IndustryZone.Lowland => "na płaskiej nizinie",
-        IndustryZone.Inland => "z dala od wody (ponad 1 km)",
-        _ => "wszędzie",
+        IndustryZone.Mountains => Loc.T("in the mountains", "w górach"),
+        IndustryZone.NearWater => Loc.T("near water (within 1 km)", "przy wodzie (do 1 km od niej)"),
+        IndustryZone.Lowland => Loc.T("on flat lowland", "na płaskiej nizinie"),
+        IndustryZone.Inland => Loc.T("away from water (over 1 km)", "z dala od wody (ponad 1 km)"),
+        _ => Loc.T("anywhere", "wszędzie"),
     };
 
     /// <summary>Lower-case keys, only real restrictions (no Any), unknown values dropped.</summary>

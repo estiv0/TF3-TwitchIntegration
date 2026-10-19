@@ -16,12 +16,12 @@ public sealed class ChatApi(TwitchSession session, HttpClient http)
 
     public async Task SendAsync(string message, CancellationToken ct)
     {
-        var userId = session.UserId ?? throw new TwitchAuthException("niezalogowano", rejected: false);
+        var userId = session.UserId ?? throw new TwitchAuthException(Loc.T("not logged in", "niezalogowano"), rejected: false);
         if (message.Length > MaxLength) message = message[..(MaxLength - 1)] + "…";
         for (var attempt = 0; ; attempt++)
         {
             var token = await session.GetAccessTokenAsync(ct, forceRefresh: attempt > 0)
-                ?? throw new TwitchAuthException("niezalogowano", rejected: false);
+                ?? throw new TwitchAuthException(Loc.T("not logged in", "niezalogowano"), rejected: false);
             using var request = new HttpRequestMessage(HttpMethod.Post, Url)
             {
                 Content = JsonContent.Create(new { broadcaster_id = userId, sender_id = userId, message }),
@@ -38,7 +38,7 @@ public sealed class ChatApi(TwitchSession session, HttpClient http)
             // Twitch accepts the request but may still reject the message itself (e.g. AutoMod).
             var sent = json?["data"]?[0];
             if (sent is not null && (bool?)sent["is_sent"] == false)
-                throw new TwitchAuthException($"wiadomość odrzucona: {(string?)sent["drop_reason"]?["message"] ?? "bez powodu"}", rejected: false);
+                throw new TwitchAuthException(Loc.T("message rejected: ", "wiadomość odrzucona: ") + ((string?)sent["drop_reason"]?["message"] ?? Loc.T("no reason", "bez powodu")), rejected: false);
             return;
         }
     }

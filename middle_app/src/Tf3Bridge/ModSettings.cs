@@ -73,7 +73,7 @@ public static partial class ModSettingsStore
     {
         static string B(bool v) => v ? "true" : "false";
         var sb = new StringBuilder();
-        sb.Append("-- Written by Tf3Bridge (\"Ustawienia moda\"); the mod re-reads it every few seconds.\r\n");
+        sb.Append("-- Written by Tf3Bridge (\"Mod settings\"); the mod re-reads it every few seconds.\r\n");
         sb.Append("function data()\r\nreturn {\r\n");
         sb.Append(CultureInfo.InvariantCulture, $"\tdynamicEveryDays = {s.DynamicEveryDays},\r\n");
         sb.Append(CultureInfo.InvariantCulture, $"\tminDynamicWallSec = {s.MinDynamicWallSec},\r\n");

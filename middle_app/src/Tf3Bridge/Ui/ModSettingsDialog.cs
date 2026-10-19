@@ -6,9 +6,9 @@ public sealed class ModSettingsDialog : Form
     private readonly NumericUpDown _everyDays = Number(ModSettings.DynamicEveryDaysRange);
     private readonly NumericUpDown _minWallSec = Number(ModSettings.MinDynamicWallSecRange);
     private readonly NumericUpDown _budgetMs = Number(ModSettings.DynamicBudgetMsRange);
-    private readonly CheckBox _vehicles = new() { Text = "Pojazdy (ruch na mapie, flota, liczba pojazdów na liniach)", AutoSize = true };
-    private readonly CheckBox _vehicleDetails = new() { Text = "Szczegóły pojazdów (model, wiek, stan techniczny, pojemność)", AutoSize = true };
-    private readonly CheckBox _terrain = new() { Text = "Eksport terenu (tło mapy)", AutoSize = true };
+    private readonly CheckBox _vehicles = new() { Text = Loc.T("Vehicles (traffic on the map, fleet, vehicle count on lines)", "Pojazdy (ruch na mapie, flota, liczba pojazdów na liniach)"), AutoSize = true };
+    private readonly CheckBox _vehicleDetails = new() { Text = Loc.T("Vehicle details (model, age, condition, capacity)", "Szczegóły pojazdów (model, wiek, stan techniczny, pojemność)"), AutoSize = true };
+    private readonly CheckBox _terrain = new() { Text = Loc.T("Terrain export (map background)", "Eksport terenu (tło mapy)"), AutoSize = true };
     private readonly NumericUpDown _terrainStep = Number(ModSettings.TerrainStepMRange);
 
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
@@ -17,7 +17,7 @@ public sealed class ModSettingsDialog : Form
     public ModSettingsDialog(ModSettings current)
     {
         Settings = current;
-        Text = "Tf3Bridge: ustawienia moda";
+        Text = Loc.T("Tf3Bridge: mod settings", "Tf3Bridge: ustawienia moda");
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = MinimizeBox = false;
         ShowInTaskbar = false;
@@ -30,18 +30,18 @@ public sealed class ModSettingsDialog : Form
         form.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         form.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         form.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        AddRow(form, "Eksport danych co:", _everyDays, "dni gry");
-        AddRow(form, "…ale nie częściej niż co:", _minWallSec, "s");
-        AddRow(form, "Czas pracy na klatkę:", _budgetMs, "ms");
+        AddRow(form, Loc.T("Export data every:", "Eksport danych co:"), _everyDays, Loc.T("game days", "dni gry"));
+        AddRow(form, Loc.T("…but not more often than every:", "…ale nie częściej niż co:"), _minWallSec, "s");
+        AddRow(form, Loc.T("Work time per frame:", "Czas pracy na klatkę:"), _budgetMs, "ms");
         AddWide(form, _vehicles);
         AddWide(form, _vehicleDetails);
         AddWide(form, _terrain);
-        AddRow(form, "Dokładność terenu:", _terrainStep, "m między próbkami");
+        AddRow(form, Loc.T("Terrain detail:", "Dokładność terenu:"), _terrainStep, Loc.T("m between samples", "m między próbkami"));
 
-        var ok = new Button { Text = "Zapisz", DialogResult = DialogResult.OK, AutoSize = true, MinimumSize = new Size(90, 28) };
-        var cancel = new Button { Text = "Anuluj", DialogResult = DialogResult.Cancel, AutoSize = true, MinimumSize = new Size(90, 28) };
-        var defaults = new Button { Text = "Domyślne", AutoSize = true, MinimumSize = new Size(90, 28) };
-        var buttons = HelpDialog.ButtonRow(HelpDialog.Button(this, "Ustawienia moda: jak to działa", HelpSections), cancel, ok, defaults);
+        var ok = new Button { Text = Loc.T("Save", "Zapisz"), DialogResult = DialogResult.OK, AutoSize = true, MinimumSize = new Size(90, 28) };
+        var cancel = new Button { Text = Loc.T("Cancel", "Anuluj"), DialogResult = DialogResult.Cancel, AutoSize = true, MinimumSize = new Size(90, 28) };
+        var defaults = new Button { Text = Loc.T("Defaults", "Domyślne"), AutoSize = true, MinimumSize = new Size(90, 28) };
+        var buttons = HelpDialog.ButtonRow(HelpDialog.Button(this, Loc.T("Mod settings: how it works", "Ustawienia moda: jak to działa"), HelpSections), cancel, ok, defaults);
         AcceptButton = ok;
         CancelButton = cancel;
 
@@ -73,22 +73,31 @@ public sealed class ModSettingsDialog : Form
     }
 
     // Explanations behind the "How does it work?" button.
-    private static readonly (string Heading, string Text)[] HelpSections =
+    private static (string Heading, string Text)[] HelpSections =>
     [
-        ("Kiedy zmiany działają",
-            "Mod wczytuje ustawienia co kilka sekund, więc zmiany działają bez restartu gry. Bez Tf3Bridge mod używa wartości domyślnych."),
-        ("Eksport danych",
+        (Loc.T("When changes take effect", "Kiedy zmiany działają"), Loc.T(
+            "The mod reads the settings every few seconds, so changes work without restarting the game. Without Tf3Bridge the mod uses the defaults.",
+            "Mod wczytuje ustawienia co kilka sekund, więc zmiany działają bez restartu gry. Bez Tf3Bridge mod używa wartości domyślnych.")),
+        (Loc.T("Data export", "Eksport danych"), Loc.T(
+            "The mod sends the game state (towns, industries, lines, vehicles) every given number of game days, but not more often than every given number of seconds. "
+            + "There is no export while paused.",
             "Mod wysyła stan gry (miasta, zakłady, linie, pojazdy) co podaną liczbę dni gry, ale nie częściej niż co podaną liczbę sekund. "
-            + "Na pauzie eksportu nie ma."),
-        ("Czas pracy na klatkę",
+            + "Na pauzie eksportu nie ma.")),
+        (Loc.T("Work time per frame", "Czas pracy na klatkę"), Loc.T(
+            "The export is spread over many frames so the game does not stutter. If the game still stutters during the export, "
+            + "lower this time or turn vehicles off.",
             "Eksport jest rozłożony na wiele klatek, żeby gra się nie zacinała. Jeśli gra mimo to przycina przy eksporcie, "
-            + "zmniejsz ten czas albo wyłącz pojazdy."),
-        ("Pojazdy i ich szczegóły",
+            + "zmniejsz ten czas albo wyłącz pojazdy.")),
+        (Loc.T("Vehicles and their details", "Pojazdy i ich szczegóły"), Loc.T(
+            "Vehicles give traffic on the map, the fleet and the vehicle count on lines. Details (model, age, condition, capacity) "
+            + "are an extra cost with many vehicles.",
             "Pojazdy dają ruch na mapie, flotę i liczbę pojazdów na liniach. Szczegóły (model, wiek, stan techniczny, pojemność) "
-            + "są dodatkowym kosztem przy dużej liczbie pojazdów."),
-        ("Teren",
+            + "są dodatkowym kosztem przy dużej liczbie pojazdów.")),
+        (Loc.T("Terrain", "Teren"), Loc.T(
+            "The terrain is the map background on the website, and Tf3Bridge uses it to check where viewers may build. A smaller gap between samples "
+            + "gives a more detailed map, but a bigger file and a longer export (done in the background).",
             "Teren to tło mapy na stronie, a Tf3Bridge sprawdza na nim, gdzie widzowie mogą budować. Mniejszy odstęp między próbkami "
-            + "daje dokładniejszą mapę, ale większy plik i dłuższy eksport (robiony w tle)."),
+            + "daje dokładniejszą mapę, ale większy plik i dłuższy eksport (robiony w tle).")),
     ];
 
     private static NumericUpDown Number((int Min, int Max) range) =>

@@ -4,7 +4,13 @@ namespace Tf3Bridge.Twitch;
 
 public enum TwitchState { NotConfigured, LoggedOut, Checking, Ok, Warning, Error }
 
-public sealed record TwitchStatus(TwitchState State, string Message);
+/// <summary>A status with its text in both languages: <see cref="Message"/> follows a language switch.</summary>
+public sealed record TwitchStatus(TwitchState State, string En, string Pl)
+{
+    public TwitchStatus(TwitchState state, string message) : this(state, message, message) { }
+
+    public string Message => Loc.T(En, Pl);
+}
 
 /// <summary>
 /// Keeps the streamer's user access token alive: validates it at start and every hour (Twitch
@@ -32,9 +38,9 @@ public sealed class TwitchSession
         _storePath = storePath;
         _log = log;
         _account = client is null ? null : TwitchAccountStore.Load(storePath);
-        _status = client is null ? new(TwitchState.NotConfigured, "brak Twitch:ClientId w appsettings.json")
-            : _account is null ? new(TwitchState.LoggedOut, "niezalogowano")
-            : new(TwitchState.Checking, $"sprawdzam konto {_account.Login}…");
+        _status = client is null ? new(TwitchState.NotConfigured, "no Twitch:ClientId in appsettings.json", "brak Twitch:ClientId w appsettings.json")
+            : _account is null ? new(TwitchState.LoggedOut, "not logged in", "niezalogowano")
+            : new(TwitchState.Checking, $"checking account {_account.Login}…", $"sprawdzam konto {_account.Login}…");
     }
 
     public TwitchStatus Status => _status;
@@ -91,7 +97,7 @@ public sealed class TwitchSession
     {
         var tokens = await Client.PollDeviceAsync(code, ct);
         var info = await Client.ValidateAsync(tokens.AccessToken, ct)
-            ?? throw new TwitchAuthException("Twitch odrzucił nowy token.", rejected: true);
+            ?? throw new TwitchAuthException(Loc.T("Twitch rejected the new token.", "Twitch odrzucił nowy token."), rejected: true);
         var type = await Client.GetBroadcasterTypeAsync(tokens.AccessToken, info.UserId, ct);
         await _lock.WaitAsync(ct);
         try
@@ -113,7 +119,7 @@ public sealed class TwitchSession
         try
         {
             old = _account;
-            Forget("wylogowano");
+            Forget("logged out", "wylogowano");
         }
         finally { _lock.Release(); }
         if (old is null || _client is null) return;
@@ -136,12 +142,12 @@ public sealed class TwitchSession
         {
             if (_account is null)
             {
-                _status = new(TwitchState.LoggedOut, "niezalogowano");
+                _status = new(TwitchState.LoggedOut, "not logged in", "niezalogowano");
                 return;
             }
             if (!_account.HasScopes(TwitchAuthClient.Scopes))
             {
-                Forget("brakuje uprawnień – zaloguj się ponownie");
+                Forget("permissions missing – log in again", "brakuje uprawnień – zaloguj się ponownie");
                 return;
             }
             var info = await Client.ValidateAsync(_account.AccessToken, ct);
@@ -157,13 +163,13 @@ public sealed class TwitchSession
         catch (TwitchAuthException ex) when (ex.Rejected)
         {
             _log.LogWarning("Twitch: account rejected: {Message}", ex.Message);
-            Forget("sesja wygasła – zaloguj się ponownie");
+            Forget("session expired – log in again", "sesja wygasła – zaloguj się ponownie");
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             // No network or an error on Twitch's side: the account stays, we'll try on the next check.
             _log.LogWarning("Twitch: validation failed: {Message}", ex.Message);
-            _status = new(TwitchState.Error, $"{_account?.Login}: nie udało się sprawdzić konta ({ex.Message})");
+            _status = new(TwitchState.Error, $"{_account?.Login}: couldn't check the account ({ex.Message})", $"{_account?.Login}: nie udało się sprawdzić konta ({ex.Message})");
         }
         finally { _lock.Release(); }
     }
@@ -188,21 +194,22 @@ public sealed class TwitchSession
         catch (TwitchAuthException ex) when (ex.Rejected)
         {
             _log.LogWarning("Twitch: refresh rejected: {Message}", ex.Message);
-            Forget("sesja wygasła – zaloguj się ponownie");
+            Forget("session expired – log in again", "sesja wygasła – zaloguj się ponownie");
             return false;
         }
     }
 
     private void SetLoggedIn() => _status = _account!.CanUseChannelPoints
         ? new(TwitchState.Ok, $"{_account.Login} ({_account.BroadcasterType})")
-        : new(TwitchState.Warning, $"{_account.Login}: kanał bez statusu Affiliate/Partner, nagrody za punkty nie będą działać");
+        : new(TwitchState.Warning, $"{_account.Login}: channel without Affiliate/Partner status, channel points rewards won't work",
+            $"{_account.Login}: kanał bez statusu Affiliate/Partner, nagrody za punkty nie będą działać");
 
-    private void Forget(string message)
+    private void Forget(string en, string pl)
     {
         _account = null;
         try { TwitchAccountStore.Delete(_storePath); }
         catch (IOException ex) { _log.LogWarning("Twitch: could not delete {Path}: {Message}", _storePath, ex.Message); }
-        _status = new(TwitchState.LoggedOut, message);
+        _status = new(TwitchState.LoggedOut, en, pl);
     }
 
     private TwitchAuthClient Client => _client ?? throw new InvalidOperationException("Twitch:ClientId is not configured.");

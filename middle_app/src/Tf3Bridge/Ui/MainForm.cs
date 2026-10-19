@@ -43,7 +43,9 @@ public sealed class MainForm : Form
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 250 };
     private readonly Icon _iconOn = MakeIcon(Color.FromArgb(46, 160, 67));
     private readonly Icon _iconOff = MakeIcon(Color.FromArgb(140, 148, 160));
+    private readonly ComboBox _language = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 90 };
     private readonly List<string> _lines = [];
+    private readonly ModInstallResult _mod;
     private bool _closing;
 
     public MainForm(BridgeRunner runner, AzureMirror mirror, TwitchSession twitch, EventSubClient eventSub, ModCommandQueue commands, RewardService rewards, BridgeOptions options, ModInstallResult mod, UiLogProvider log)
@@ -58,36 +60,10 @@ public sealed class MainForm : Form
         _log = log;
 
         Text = "Tf3Bridge";
-        ClientSize = new Size(900, 480);
+        ClientSize = new Size(940, 480);
         MinimumSize = new Size(560, 400);
         StartPosition = FormStartPosition.CenterScreen;
         Font = new Font("Segoe UI", 9f);
-
-        // Buttons in a wrapping row (narrow window = two rows), below them full-width status lines;
-        // a status that is too long ends with "…", and the full text is in the tooltip (AutoEllipsis).
-        var openOutput = ToolButton("Folder wyjściowy");
-        var openInput = ToolButton("Folder moda");
-        var modSettings = ToolButton("Ustawienia moda…");
-        var azure = ToolButton("Azure…", groupStart: true);
-        var twitchButton = ToolButton("Twitch…");
-        var rewardsButton = ToolButton("Nagrody…");
-        var commandTest = ToolButton("Test akcji…");
-        _lastUpdate.ForeColor = SystemColors.GrayText;
-        _toggle.Margin = new Padding(0, 3, 3, 3);
-        openOutput.Margin = GroupMargin;
-        var toolbar = Toolbar(_toggle, openOutput, openInput, modSettings, azure, twitchButton, rewardsButton, commandTest);
-        var statusBox = StatusPanel(_status, _lastUpdate, _azure, _twitchStatus, _eventSubStatus, _rewardStatus);
-
-        var paths = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, Margin = new Padding(0, 8, 0, 8) };
-        paths.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        paths.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        AddPathRow(paths, "Wejście (mod):", _options.InputDir.Length > 0
-            ? _options.InputDir
-            : "(nie znaleziono folderu TF3 w Steam – ustaw --Bridge:InputDir=…)");
-        AddPathRow(paths, "Wyjście (strona):", _options.OutputDir);
-        AddPathRow(paths, "Mod w grze:", ModText(mod));
-
-        Controls.Add(Root(toolbar, statusBox, paths, _logBox));
 
         _toggle.Click += async (_, _) =>
         {
@@ -96,6 +72,58 @@ public sealed class MainForm : Form
             else _runner.Start();
             _toggle.Enabled = true;
         };
+        _language.Items.AddRange(["English", "Polski"]);
+        _language.SelectedIndex = Loc.Pl ? 1 : 0;
+        _language.SelectedIndexChanged += (_, _) => ChangeLanguage(_language.SelectedIndex == 1 ? Lang.Pl : Lang.En);
+        _tray.DoubleClick += (_, _) => RestoreFromTray();
+
+        _mod = mod;
+        BuildLayout();
+
+        _runner.StateChanged += () => BeginInvoke(UpdateState);
+        _timer.Tick += (_, _) => OnTick();
+    }
+
+    /// <summary>
+    /// Builds the window contents in the current language; called again after a language change.
+    /// The long-lived controls (status lines, log, toggle, language) move into the new layout.
+    /// </summary>
+    private void BuildLayout()
+    {
+        SuspendLayout();
+        var old = Controls.Count > 0 ? Controls[0] : null;
+        foreach (var keep in new Control[] { _toggle, _language, _status, _lastUpdate, _azure, _twitchStatus, _eventSubStatus, _rewardStatus, _logBox })
+            keep.Parent?.Controls.Remove(keep);
+        Controls.Clear();
+        old?.Dispose();
+
+        // Buttons in a wrapping row (narrow window = two rows), below them full-width status lines;
+        // a status that is too long ends with "…", and the full text is in the tooltip (AutoEllipsis).
+        var openOutput = ToolButton(Loc.T("Output folder", "Folder wyjściowy"));
+        var openInput = ToolButton(Loc.T("Mod folder", "Folder moda"));
+        var modSettings = ToolButton(Loc.T("Mod settings…", "Ustawienia moda…"));
+        var azure = ToolButton("Azure…", groupStart: true);
+        var twitchButton = ToolButton("Twitch…");
+        var rewardsButton = ToolButton(Loc.T("Rewards…", "Nagrody…"));
+        var commandTest = ToolButton(Loc.T("Test actions…", "Test akcji…"));
+        _lastUpdate.ForeColor = SystemColors.GrayText;
+        _toggle.Margin = new Padding(0, 3, 3, 3);
+        _language.Margin = new Padding(12, 6, 3, 3);
+        openOutput.Margin = GroupMargin;
+        var toolbar = Toolbar(_toggle, openOutput, openInput, modSettings, azure, twitchButton, rewardsButton, commandTest, _language);
+        var statusBox = StatusPanel(_status, _lastUpdate, _azure, _twitchStatus, _eventSubStatus, _rewardStatus);
+
+        var paths = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, Margin = new Padding(0, 8, 0, 8) };
+        paths.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        paths.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        AddPathRow(paths, Loc.T("Input (mod):", "Wejście (mod):"), _options.InputDir.Length > 0
+            ? _options.InputDir
+            : Loc.T("(TF3 folder not found in Steam – set --Bridge:InputDir=…)", "(nie znaleziono folderu TF3 w Steam – ustaw --Bridge:InputDir=…)"));
+        AddPathRow(paths, Loc.T("Output (website):", "Wyjście (strona):"), _options.OutputDir);
+        AddPathRow(paths, Loc.T("Mod in game:", "Mod w grze:"), ModText(_mod));
+
+        Controls.Add(Root(toolbar, statusBox, paths, _logBox));
+
         openOutput.Click += (_, _) => OpenFolder(_options.OutputDir);
         openInput.Click += (_, _) => OpenFolder(_options.InputDir);
         azure.Click += (_, _) => EditAzure();
@@ -104,14 +132,31 @@ public sealed class MainForm : Form
         commandTest.Click += (_, _) => TestCommand();
         rewardsButton.Click += (_, _) => EditRewards();
 
+        var oldMenu = _tray.ContextMenuStrip;
         var menu = new ContextMenuStrip();
-        menu.Items.Add("Pokaż", null, (_, _) => RestoreFromTray());
-        menu.Items.Add("Zamknij", null, (_, _) => Close());
+        menu.Items.Add(Loc.T("Show", "Pokaż"), null, (_, _) => RestoreFromTray());
+        menu.Items.Add(Loc.T("Exit", "Zamknij"), null, (_, _) => Close());
         _tray.ContextMenuStrip = menu;
-        _tray.DoubleClick += (_, _) => RestoreFromTray();
+        oldMenu?.Dispose();
+        ResumeLayout(true);
+    }
 
-        _runner.StateChanged += () => BeginInvoke(UpdateState);
-        _timer.Tick += (_, _) => OnTick();
+    // One setting for everything: windows, chat answers, in-game notifications and the default reward texts.
+    private void ChangeLanguage(Lang lang)
+    {
+        if (lang == Loc.Language) return;
+        Loc.Language = lang;
+        try { Loc.Save(lang); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _log.CreateLogger(nameof(MainForm)).LogWarning(ex, "Could not save the language to {Path}", Loc.FilePath);
+        }
+        BuildLayout();
+        UpdateState();
+        OnTick();
+        // Unchanged default reward titles and descriptions switch to the new language and go to Twitch.
+        _rewards.UpdateSettings(_rewards.Settings.Normalized());
+        _log.CreateLogger(nameof(MainForm)).LogInformation("Language changed to {Language}", lang);
     }
 
     protected override void OnLoad(EventArgs e)
@@ -133,7 +178,7 @@ public sealed class MainForm : Form
         if (WindowState == FormWindowState.Minimized && !_closing)
         {
             Hide();
-            _tray.ShowBalloonTip(2000, "Tf3Bridge", "Działa w tle. Kliknij dwukrotnie ikonę, żeby otworzyć.", ToolTipIcon.None);
+            _tray.ShowBalloonTip(2000, "Tf3Bridge", Loc.T("Running in the background. Double-click the icon to open.", "Działa w tle. Kliknij dwukrotnie ikonę, żeby otworzyć."), ToolTipIcon.None);
         }
     }
 
@@ -145,7 +190,7 @@ public sealed class MainForm : Form
             e.Cancel = true;
             _closing = true;
             Enabled = false;
-            _status.Text = "Zamykanie…";
+            _status.Text = Loc.T("Closing…", "Zamykanie…");
             if (_runner.IsRunning) await _runner.StopAsync();
             _backgroundCts.Cancel();
             using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
@@ -183,12 +228,12 @@ public sealed class MainForm : Form
     {
         if (_closing) return;
         var on = _runner.IsRunning;
-        _status.Text = on ? "● Działa" : "● Zatrzymany";
+        _status.Text = on ? Loc.T("● Running", "● Działa") : Loc.T("● Stopped", "● Zatrzymany");
         _status.ForeColor = on ? Color.FromArgb(46, 160, 67) : SystemColors.GrayText;
-        _toggle.Text = on ? "Zatrzymaj" : "Uruchom";
+        _toggle.Text = on ? Loc.T("Stop", "Zatrzymaj") : Loc.T("Start", "Uruchom");
         Icon = on ? _iconOn : _iconOff;
         _tray.Icon = Icon;
-        _tray.Text = on ? "Tf3Bridge: działa" : "Tf3Bridge: zatrzymany";
+        _tray.Text = on ? Loc.T("Tf3Bridge: running", "Tf3Bridge: działa") : Loc.T("Tf3Bridge: stopped", "Tf3Bridge: zatrzymany");
     }
 
     private void OnTick()
@@ -239,8 +284,9 @@ public sealed class MainForm : Form
     {
         if (!_commands.IsAvailable)
         {
-            MessageBox.Show("Nie znaleziono folderu TF3 w Steam, więc nie ma gdzie zapisać kolejki komend.\n"
-                + "Uruchom grę raz albo ustaw --Bridge:InputDir=…", "Tf3Bridge", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(Loc.T(
+                "The TF3 folder was not found in Steam, so there is nowhere to write the command queue.\nStart the game once or set --Bridge:InputDir=…",
+                "Nie znaleziono folderu TF3 w Steam, więc nie ma gdzie zapisać kolejki komend.\nUruchom grę raz albo ustaw --Bridge:InputDir=…"), "Tf3Bridge", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         using var dialog = new CommandTestDialog(_commands, _rewards, _options.OutputDir);
@@ -254,7 +300,7 @@ public sealed class MainForm : Form
         {
             TwitchState.Ok => ($"Twitch: {s.Message}", Color.FromArgb(46, 160, 67)),
             TwitchState.Warning => ($"Twitch: {s.Message}", Color.DarkOrange),
-            TwitchState.Error => ($"Twitch: błąd: {s.Message}", Color.Firebrick),
+            TwitchState.Error => ($"Twitch: {Loc.T("error", "błąd")}: {s.Message}", Color.Firebrick),
             _ => ($"Twitch: {s.Message}", SystemColors.GrayText),
         };
 
@@ -264,19 +310,20 @@ public sealed class MainForm : Form
         (_eventSubStatus.Text, _eventSubStatus.ForeColor) = e.State switch
         {
             EventSubState.Connected => ($"{where}: {e.Message}", Color.FromArgb(46, 160, 67)),
-            EventSubState.Error => ($"{where}: błąd: {e.Message}", Color.Firebrick),
+            EventSubState.Error => ($"{where}: {Loc.T("error", "błąd")}: {e.Message}", Color.Firebrick),
             EventSubState.Connecting => ($"{where}: {e.Message}", Color.DarkOrange),
             _ => ($"{where}: {e.Message}", SystemColors.GrayText),
         };
 
         var r = _rewards.Status;
+        var rewards = Loc.T("Rewards", "Nagrody");
         _rewardStatus.Visible = _twitch.IsConfigured;
         (_rewardStatus.Text, _rewardStatus.ForeColor) = r.State switch
         {
-            RewardState.Ok => ($"Nagrody: {r.Message}", Color.FromArgb(46, 160, 67)),
-            RewardState.Error => ($"Nagrody: błąd: {r.Message}", Color.Firebrick),
-            RewardState.Inactive or RewardState.NotAffiliate or RewardState.Warning => ($"Nagrody: {r.Message}", Color.DarkOrange),
-            _ => ($"Nagrody: {r.Message}", SystemColors.GrayText),
+            RewardState.Ok => ($"{rewards}: {r.Message}", Color.FromArgb(46, 160, 67)),
+            RewardState.Error => ($"{rewards}: {Loc.T("error", "błąd")}: {r.Message}", Color.Firebrick),
+            RewardState.Inactive or RewardState.NotAffiliate or RewardState.Warning => ($"{rewards}: {r.Message}", Color.DarkOrange),
+            _ => ($"{rewards}: {r.Message}", SystemColors.GrayText),
         };
     }
 
@@ -298,8 +345,9 @@ public sealed class MainForm : Form
         var path = ModSettingsStore.PathFor(_options.InputDir);
         if (path is null)
         {
-            MessageBox.Show("Nie znaleziono folderu TF3 w Steam, więc nie ma gdzie zapisać ustawień moda.\n"
-                +"Uruchom grę raz albo ustaw --Bridge:InputDir=…", "Tf3Bridge", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(Loc.T(
+                "The TF3 folder was not found in Steam, so there is nowhere to save the mod settings.\nStart the game once or set --Bridge:InputDir=…",
+                "Nie znaleziono folderu TF3 w Steam, więc nie ma gdzie zapisać ustawień moda.\nUruchom grę raz albo ustaw --Bridge:InputDir=…"), "Tf3Bridge", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         using var dialog = new ModSettingsDialog(ModSettingsStore.Load(path));
@@ -310,7 +358,7 @@ public sealed class MainForm : Form
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            MessageBox.Show($"Nie udało się zapisać ustawień:\n{ex.Message}", "Tf3Bridge", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(Loc.T("Could not save the settings:", "Nie udało się zapisać ustawień:") + $"\n{ex.Message}", "Tf3Bridge", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
         _log.CreateLogger(nameof(MainForm)).LogInformation("Mod settings saved to {Path}: {Settings}", path, dialog.Settings);
@@ -319,13 +367,13 @@ public sealed class MainForm : Form
     private void UpdateAzure()
     {
         var s = _mirror.Status;
-        var last = s.LastUploadUtc is { } t ? $", ostatnio {t.ToLocalTime():HH:mm:ss}" : "";
+        var last = s.LastUploadUtc is { } t ? $", {Loc.T("last", "ostatnio")} {t.ToLocalTime():HH:mm:ss}" : "";
         (_azure.Text, _azure.ForeColor) = s.State switch
         {
             AzureState.Ok => ($"Azure: {s.Message}{last}", Color.FromArgb(46, 160, 67)),
-            AzureState.Error => ($"Azure: błąd: {s.Message}{last}", Color.Firebrick),
+            AzureState.Error => ($"Azure: {Loc.T("error", "błąd")}: {s.Message}{last}", Color.Firebrick),
             AzureState.Incomplete => ($"Azure: {s.Message}", Color.DarkOrange),
-            _ => ("Azure: wyłączone (tylko lokalnie)", SystemColors.GrayText),
+            _ => (Loc.T("Azure: off (local only)", "Azure: wyłączone (tylko lokalnie)"), SystemColors.GrayText),
         };
     }
 
@@ -333,13 +381,13 @@ public sealed class MainForm : Form
     private string LastUpdateText()
     {
         var meta = Path.Combine(_options.OutputDir, ExportProcessor.MetaPath.Replace('/', Path.DirectorySeparatorChar));
-        if (!File.Exists(meta)) return "Brak opublikowanych danych";
+        if (!File.Exists(meta)) return Loc.T("No published data yet", "Brak opublikowanych danych");
         var at = File.GetLastWriteTime(meta);
         var ago = DateTime.Now - at;
-        var agoText = ago.TotalSeconds < 60 ? $"{Math.Max(0, (int)ago.TotalSeconds)} s temu"
-            : ago.TotalMinutes < 60 ? $"{(int)ago.TotalMinutes} min temu"
-            : at.ToString("d MMM HH:mm");
-        return $"Ostatnia aktualizacja: {at:HH:mm:ss} ({agoText})";
+        var agoText = ago.TotalSeconds < 60 ? Loc.T($"{Math.Max(0, (int)ago.TotalSeconds)} s ago", $"{Math.Max(0, (int)ago.TotalSeconds)} s temu")
+            : ago.TotalMinutes < 60 ? Loc.T($"{(int)ago.TotalMinutes} min ago", $"{(int)ago.TotalMinutes} min temu")
+            : at.ToString("d MMM HH:mm", Loc.Culture);
+        return Loc.T("Last update", "Ostatnia aktualizacja") + $": {at:HH:mm:ss} ({agoText})";
     }
 
     // ---------------------------------------------------------------- layout (separate, so it can be tested)
@@ -402,19 +450,19 @@ public sealed class MainForm : Form
 
     private static string ModText(ModInstallResult mod) => mod.Status switch
     {
-        ModInstallStatus.Installed => $"{mod.ModDir}  (zainstalowany – włącz go przy tworzeniu/wczytywaniu gry)",
-        ModInstallStatus.Updated => $"{mod.ModDir}  (zaktualizowany)",
-        ModInstallStatus.UpToDate => $"{mod.ModDir}  (aktualny)",
-        ModInstallStatus.DevCopy => $"{mod.ModDir}  (kopia deweloperska – nie ruszam)",
-        ModInstallStatus.NoSteam => "(nie zainstalowano – brak folderu TF3 w Steam, uruchom grę raz)",
-        _ => "(błąd instalacji – szczegóły w logu)",
+        ModInstallStatus.Installed => $"{mod.ModDir}  " + Loc.T("(installed – enable it when creating/loading a game)", "(zainstalowany – włącz go przy tworzeniu/wczytywaniu gry)"),
+        ModInstallStatus.Updated => $"{mod.ModDir}  " + Loc.T("(updated)", "(zaktualizowany)"),
+        ModInstallStatus.UpToDate => $"{mod.ModDir}  " + Loc.T("(up to date)", "(aktualny)"),
+        ModInstallStatus.DevCopy => $"{mod.ModDir}  " + Loc.T("(developer copy – left as is)", "(kopia deweloperska – nie ruszam)"),
+        ModInstallStatus.NoSteam => Loc.T("(not installed – no TF3 folder in Steam, start the game once)", "(nie zainstalowano – brak folderu TF3 w Steam, uruchom grę raz)"),
+        _ => Loc.T("(installation error – details in the log)", "(błąd instalacji – szczegóły w logu)"),
     };
 
     private static void OpenFolder(string path)
     {
         if (!Directory.Exists(path))
         {
-            MessageBox.Show($"Folder jeszcze nie istnieje:\n{path}", "Tf3Bridge", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(Loc.T("The folder does not exist yet:", "Folder jeszcze nie istnieje:") + $"\n{path}", "Tf3Bridge", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = true });

@@ -19,7 +19,13 @@ public sealed record ChatMessage(
 
 public enum EventSubState { Off, WaitingForLogin, Connecting, Connected, Error }
 
-public sealed record EventSubStatus(EventSubState State, string Message);
+/// <summary>A status with its text in both languages: <see cref="Message"/> follows a language switch.</summary>
+public sealed record EventSubStatus(EventSubState State, string En, string Pl)
+{
+    public EventSubStatus(EventSubState state, string message) : this(state, message, message) { }
+
+    public string Message => Loc.T(En, Pl);
+}
 
 /// <summary>One WebSocket connection, reduced to what EventSub needs (replaced in tests).</summary>
 public interface IEventSubSocket : IAsyncDisposable
@@ -81,7 +87,7 @@ public sealed class EventSubClient
         _connect = connect;
         _delay = delay;
         _log = log;
-        _status = new(EventSubState.Off, "wyłączone");
+        _status = new(EventSubState.Off, "off", "wyłączone");
     }
 
     /// <summary>Connected to a test server (Twitch CLI) instead of Twitch.</summary>
@@ -104,7 +110,7 @@ public sealed class EventSubClient
             {
                 if (_session.UserId is not { } userId)
                 {
-                    _status = new(EventSubState.WaitingForLogin, "czeka na zalogowanie");
+                    _status = new(EventSubState.WaitingForLogin, "waiting for login", "czeka na zalogowanie");
                     await _delay(TimeSpan.FromSeconds(2), ct);
                     continue;
                 }
@@ -124,19 +130,19 @@ public sealed class EventSubClient
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
-        _status = new(EventSubState.Off, "wyłączone");
+        _status = new(EventSubState.Off, "off", "wyłączone");
     }
 
     // Returns normally only after an account change; a dropped connection is an exception.
     private async Task RunConnectionAsync(string userId, CancellationToken ct)
     {
-        _status = new(EventSubState.Connecting, $"łączę z {_url.Host}…");
+        _status = new(EventSubState.Connecting, $"connecting to {_url.Host}…", $"łączę z {_url.Host}…");
         var socket = await _connect(_url, ct);
         try
         {
             var (sessionId, keepalive) = await WaitForWelcomeAsync(socket, ct);
             var subscribed = await SubscribeAllAsync(sessionId, userId, ct);
-            _status = new(EventSubState.Connected, $"połączono ({subscribed})");
+            _status = new(EventSubState.Connected, $"connected ({subscribed})", $"połączono ({subscribed})");
             _log.LogInformation("EventSub: connected to {Host}, session {Session}, subscribed: {Subscribed}", _url.Host, sessionId, subscribed);
 
             while (_session.UserId == userId)
@@ -177,7 +183,7 @@ public sealed class EventSubClient
     {
         var root = await ReceiveAsync(socket, WelcomeTimeout, ct);
         if (Str(root.GetProperty("metadata"), "message_type") != "session_welcome")
-            throw new EventSubException("serwer nie przysłał powitania (session_welcome)");
+            throw new EventSubException(Loc.T("the server sent no welcome (session_welcome)", "serwer nie przysłał powitania (session_welcome)"));
         var session = root.GetProperty("payload").GetProperty("session");
         var keepalive = session.TryGetProperty("keepalive_timeout_seconds", out var k) && k.TryGetInt32(out var s) ? s : 10;
         return (Str(session, "id"), TimeSpan.FromSeconds(keepalive));
@@ -191,10 +197,10 @@ public sealed class EventSubClient
         try { text = await socket.ReceiveAsync(cts.Token); }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            throw new EventSubException($"brak wiadomości od serwera przez {timeout.TotalSeconds:0} s");
+            throw new EventSubException(Loc.T($"no message from the server for {timeout.TotalSeconds:0} s", $"brak wiadomości od serwera przez {timeout.TotalSeconds:0} s"));
         }
         if (text is null)
-            throw new EventSubException($"serwer zamknął połączenie{(socket.CloseDescription is { } d ? $" ({d})" : "")}");
+            throw new EventSubException(Loc.T("the server closed the connection", "serwer zamknął połączenie") + (socket.CloseDescription is { } d ? $" ({d})" : ""));
         using var doc = JsonDocument.Parse(text);
         return doc.RootElement.Clone();
     }
@@ -203,8 +209,8 @@ public sealed class EventSubClient
     {
         (string Type, string Label, Dictionary<string, string> Condition)[] subscriptions =
         [
-            (ChatMessageType, "czat", new() { ["broadcaster_user_id"] = userId, ["user_id"] = userId }),
-            (RedemptionType, "punkty kanału", new() { ["broadcaster_user_id"] = userId }),
+            (ChatMessageType, Loc.T("chat", "czat"), new() { ["broadcaster_user_id"] = userId, ["user_id"] = userId }),
+            (RedemptionType, Loc.T("channel points", "punkty kanału"), new() { ["broadcaster_user_id"] = userId }),
         ];
         var ok = new List<string>();
         var errors = new List<string>();
@@ -219,8 +225,8 @@ public sealed class EventSubClient
             }
         }
         // The Twitch CLI test server (without -S) forwards events even without subscriptions.
-        if (ok.Count == 0 && !IsMock) throw new EventSubException($"Twitch nie przyjął subskrypcji ({string.Join("; ", errors)})");
-        return ok.Count > 0 ? string.Join(", ", ok) : "bez subskrypcji";
+        if (ok.Count == 0 && !IsMock) throw new EventSubException(Loc.T("Twitch didn't accept the subscriptions", "Twitch nie przyjął subskrypcji") + $" ({string.Join("; ", errors)})");
+        return ok.Count > 0 ? string.Join(", ", ok) : Loc.T("no subscriptions", "bez subskrypcji");
     }
 
     private async Task<string?> SubscribeAsync(string sessionId, string type, Dictionary<string, string> condition, CancellationToken ct)
@@ -228,7 +234,7 @@ public sealed class EventSubClient
         for (var attempt = 0; ; attempt++)
         {
             var token = await _session.GetAccessTokenAsync(ct, forceRefresh: attempt > 0)
-                ?? throw new EventSubException("niezalogowano");
+                ?? throw new EventSubException(Loc.T("not logged in", "niezalogowano"));
             using var request = new HttpRequestMessage(HttpMethod.Post, _subscriptionsUrl)
             {
                 Content = JsonContent.Create(new
@@ -321,7 +327,7 @@ internal sealed class WebSocketConnection : IEventSubSocket
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             connection._ws.Dispose();
-            throw new EventSubException($"nie udało się połączyć z {url.Host} w 15 s");
+            throw new EventSubException(Loc.T($"couldn't connect to {url.Host} within 15 s", $"nie udało się połączyć z {url.Host} w 15 s"));
         }
         catch
         {
@@ -342,7 +348,7 @@ internal sealed class WebSocketConnection : IEventSubSocket
             var r = await _ws.ReceiveAsync(buffer, ct);
             if (r.MessageType == WebSocketMessageType.Close) return null;
             message.Write(buffer, 0, r.Count);
-            if (message.Length > MaxMessageBytes) throw new EventSubException("za duża wiadomość od serwera");
+            if (message.Length > MaxMessageBytes) throw new EventSubException(Loc.T("the server message is too large", "za duża wiadomość od serwera"));
             if (r.EndOfMessage) return Encoding.UTF8.GetString(message.GetBuffer(), 0, (int)message.Length);
         }
     }

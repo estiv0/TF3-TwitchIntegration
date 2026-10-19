@@ -9,7 +9,13 @@ namespace Tf3Bridge.Cloud;
 
 public enum AzureState { Off, Incomplete, Ok, Error }
 
-public readonly record struct AzureStatus(AzureState State, string Message, DateTime? LastUploadUtc);
+/// <summary>A status with its text in both languages: <see cref="Message"/> follows a language switch.</summary>
+public readonly record struct AzureStatus(AzureState State, string En, string Pl, DateTime? LastUploadUtc)
+{
+    public AzureStatus(AzureState state, string message, DateTime? lastUploadUtc) : this(state, message, message, lastUploadUtc) { }
+
+    public string Message => Loc.T(En, Pl);
+}
 
 /// <summary>
 /// Copies the local output folder (latest/*) to an Azure Blob container.
@@ -30,7 +36,7 @@ public sealed class AzureMirror(IOptions<BridgeOptions> options, ILogger<AzureMi
     private DateTime _retryAfterUtc;
     private string? _lastError;
 
-    public AzureStatus Status { get; private set; } = new(AzureState.Off, "wyłączone", null);
+    public AzureStatus Status { get; private set; } = new(AzureState.Off, "off", "wyłączone", null);
 
     public void Configure(AzureSettings settings)
     {
@@ -41,17 +47,17 @@ public sealed class AzureMirror(IOptions<BridgeOptions> options, ILogger<AzureMi
             if (!settings.Enabled)
             {
                 _container = null;
-                Status = new AzureStatus(AzureState.Off, "wyłączone", Status.LastUploadUtc);
+                Status = new AzureStatus(AzureState.Off, "off", "wyłączone", Status.LastUploadUtc);
                 return;
             }
             if (!settings.TryGetContainerUri(out var uri))
             {
                 _container = null;
-                Status = new AzureStatus(AzureState.Incomplete, "brak adresu kontenera albo tokenu SAS", Status.LastUploadUtc);
+                Status = new AzureStatus(AzureState.Incomplete, "no container address or SAS token", "brak adresu kontenera albo tokenu SAS", Status.LastUploadUtc);
                 return;
             }
             _container = new BlobContainerClient(uri);
-            Status = new AzureStatus(AzureState.Ok, "łączenie…", Status.LastUploadUtc);
+            Status = new AzureStatus(AzureState.Ok, "connecting…", "łączenie…", Status.LastUploadUtc);
             MarkAllDirtyLocked(); // new target: send everything that is already local
         }
         logger.LogInformation("Azure upload enabled: {Url}", settings.PublicLatestUrl);
@@ -107,7 +113,7 @@ public sealed class AzureMirror(IOptions<BridgeOptions> options, ILogger<AzureMi
     public static async Task<string?> TestAsync(AzureSettings settings, CancellationToken ct)
     {
         if (!settings.TryGetContainerUri(out var uri))
-            return "Podaj adres kontenera (https://…) i token SAS.";
+            return Loc.T("Enter the container address (https://…) and the SAS token.", "Podaj adres kontenera (https://…) i token SAS.");
         try
         {
             var blob = new BlobContainerClient(uri).GetBlobClient("bridge-test.txt");
@@ -173,10 +179,11 @@ public sealed class AzureMirror(IOptions<BridgeOptions> options, ILogger<AzureMi
 
     private static string Describe(Exception ex) => ex switch
     {
-        RequestFailedException { Status: 403 } => "403: odmowa dostępu (token SAS nieprawidłowy, wygasł albo bez prawa zapisu)",
-        RequestFailedException { Status: 404 } => "404: nie ma takiego kontenera (sprawdź adres)",
+        RequestFailedException { Status: 403 } => Loc.T("403: access denied (the SAS token is invalid, expired or can't write)",
+            "403: odmowa dostępu (token SAS nieprawidłowy, wygasł albo bez prawa zapisu)"),
+        RequestFailedException { Status: 404 } => Loc.T("404: no such container (check the address)", "404: nie ma takiego kontenera (sprawdź adres)"),
         RequestFailedException r => $"{r.Status}: {r.ErrorCode ?? FirstLine(r.Message)}",
-        HttpRequestException or AggregateException => $"brak połączenia ({FirstLine(ex.Message)})",
+        HttpRequestException or AggregateException => Loc.T($"no connection ({FirstLine(ex.Message)})", $"brak połączenia ({FirstLine(ex.Message)})"),
         _ => FirstLine(ex.Message),
     };
 

@@ -32,7 +32,7 @@ public sealed class HelpDialog : Form
         }
         body.Select(0, 0);
 
-        var close = new Button { Text = "Zamknij", DialogResult = DialogResult.Cancel, AutoSize = true, MinimumSize = new Size(90, 28) };
+        var close = new Button { Text = Loc.T("Close", "Zamknij"), DialogResult = DialogResult.Cancel, AutoSize = true, MinimumSize = new Size(90, 28) };
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0, 8, 0, 0) };
         buttons.Controls.Add(close);
         CancelButton = close;
@@ -46,7 +46,7 @@ public sealed class HelpDialog : Form
     /// <summary>A button that opens the help window over <paramref name="owner"/>.</summary>
     public static Button Button(Form owner, string title, IReadOnlyList<(string Heading, string Text)> sections)
     {
-        var button = new Button { Text = "Jak to działa?", AutoSize = true, MinimumSize = new Size(90, 28) };
+        var button = new Button { Text = Loc.T("How does it work?", "Jak to działa?"), AutoSize = true, MinimumSize = new Size(90, 28) };
         button.Click += (_, _) =>
         {
             using var help = new HelpDialog(title, sections);

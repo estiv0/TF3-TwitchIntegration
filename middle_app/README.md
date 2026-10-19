@@ -18,7 +18,7 @@ Output always goes to a local folder (`LocalFolderPublisher`), and optionally al
 Tf3Bridge is a small desktop app (WinForms). The window shows the state (running / stopped), the time of the last publish, the input and output folders, and a log. The bridge starts right away.
 
 - **Stop / Start** pauses and resumes processing without closing the app.
-- **Minimizing** hides the window to the tray (green dot = running). Double-clicking the icon restores the window; the icon menu has "Close".
+- **Minimizing** hides the window to the tray (green dot = running). Double-clicking the icon restores the window; the icon menu has "Exit".
 - **Closing the window** finishes the current pass and exits the app.
 - Only one instance can run; a second one shows a message and exits.
 
@@ -42,6 +42,14 @@ Tests:
 cd middle_app
 dotnet test
 ```
+
+## Language
+
+The app speaks English or Polish. One setting, the **English / Polski** list at the end of the button row, covers everything: the windows, the chat replies, the in-game notifications and the default reward texts. The first start follows the Windows display language (Polish Windows = Polish, anything else = English); the choice is saved in `%LOCALAPPDATA%\Tf3Bridge\language.txt` (`Loc`). The log stays in English.
+
+The default titles and descriptions of the channel points rewards exist in both languages (`RewardKinds.DefaultsFor`). After a language switch, the rewards whose title or description is still the default of the other language get the default of the new one and go to Twitch right away; texts the streamer changed stay as they are. Chat commands answer to both their English and Polish names regardless of the setting (see "Chat commands").
+
+In the code a text sits next to its translation: `Loc.T("English", "polski")`. Tests run in Polish by default (a `[ModuleInitializer]` in the test project); English tests use `using var _ = Loc.Use(Lang.En);`.
 
 ## Configuration (`src/Tf3Bridge/appsettings.json`, `Bridge` section)
 
@@ -126,24 +134,24 @@ How it works:
 
 ## Chat commands
 
-Our commands start with `!` (no prefix). They only read the last `dynamic.json` and reply in chat as the streamer; they never send anything to the game (`Chat/ChatCommandService.cs`: list of commands and cooldowns, `Chat/ChatAnswers.cs`: the reply texts). Links only when `Twitch:SiteUrl` is set. Object names are matched the same way as in rewards (`TargetResolver`): case- and diacritics-insensitive, first exactly, then by prefix, then by substring; when several match, the reply lists them. The command names and replies are currently Polish.
+Our commands start with `!` (no prefix). They only read the last `dynamic.json` and reply in chat as the streamer; they never send anything to the game (`Chat/ChatCommandService.cs`: list of commands and cooldowns, `Chat/ChatAnswers.cs`: the reply texts). Links only when `Twitch:SiteUrl` is set. Object names are matched the same way as in rewards (`TargetResolver`): case- and diacritics-insensitive, first exactly, then by prefix, then by substring; when several match, the reply lists them. Every command answers to its English and its Polish name (and the arguments too: `!free towns` = `!wolne miasta`); the reply is in the app language (see "Language"), with numbers formatted for it ("$833,881" / "$ 833 881").
 
-| Command | Aliases | Reply | Cooldown (whole chat) |
+| Command | Polish name (and other aliases) | Reply | Cooldown (whole chat) |
 |---|---|---|---|
-| `!pomoc` | `!komendy`, `!help` | list of commands | 30 s |
-| `!mapa` | | link to the website | 30 s |
-| `!majatek [viewer]` | `!majątek` | a viewer's estate (without an argument: the asker's), e.g. "@ala estiv0: 2 towns (Szczecin – main, Barcin), 1 industry (Brewery), 2 lines, 16 vehicles, line profit (12 mo.) $ 833 881. Map: https://…/#owner=estiv0". Grouping like the "Owners" tab (`Commands/OwnerAssets.cs`): case-insensitive, main town = the largest, stations named after a bought town don't belong to the viewer | 30 s |
-| `!miasto <name>` | | owner, capacity, growth since game start, needs satisfaction, active reward effects (with end date and buyer), link | 30 s |
-| `!zaklad <name>` | `!zakład` | owner, level, productivity, production in the last year, effects, link | 30 s |
-| `!linia <name>` | | owner, vehicles (and how many stopped), 12-month profit, load factor, transported this year, effects, link | 30 s |
+| `!help` | `!commands`, `!pomoc`, `!komendy` | list of commands (in the app language) | 30 s |
+| `!map` | `!mapa` | link to the website | 30 s |
+| `!assets [viewer]` | `!majatek`, `!majątek` | a viewer's estate (without an argument: the asker's), e.g. "@ala estiv0: 2 towns (Szczecin – main, Barcin), 1 industry (Brewery), 2 lines, 16 vehicles, line profit (12 mo.) $833,881. Map: https://…/#owner=estiv0". Grouping like the "Owners" tab (`Commands/OwnerAssets.cs`): case-insensitive, main town = the largest, stations named after a bought town don't belong to the viewer | 30 s |
+| `!town <name>` | `!miasto` | owner, capacity, growth since game start, needs satisfaction, active reward effects (with end date and buyer), link | 30 s |
+| `!industry <name>` | `!zaklad`, `!zakład` | owner, level, productivity, production in the last year, effects, link | 30 s |
+| `!line <name>` | `!linia` | owner, vehicles (and how many stopped), 12-month profit, load factor, transported this year, effects, link | 30 s |
 | `!ranking` | `!top` | the 5 viewers with the largest estate, as on the website: town 100 pts + size/25 + growth since game start ×100, industry 50, station and line 1, vehicle on lines: train/plane 10, ship 2, road 1; ties broken by line profit | 60 s |
-| `!wolne [miasta\|zaklady]` | | unowned objects to buy with points: the 5 largest towns and the highest-level industries, with the total count | 60 s |
-| `!data` | | the in-game date; when the export is older than 2 min, a note "paused or game off" | 30 s |
-| `!firma` | | the streamer's company: balance, company value, profit this year and last year (Finances table), lines, vehicles | 60 s |
-| `!najlepsza [linia\|firma]` | `!najlepszy` | the line with the highest 12-month profit or (`firma`) the viewer with the highest total profit of their lines | 60 s |
-| `!najgorsza [linia\|firma]` | `!najgorszy` | as above, lowest profit | 60 s |
+| `!free [towns\|industries]` | `!wolne [miasta\|zaklady]` | unowned objects to buy with points: the 5 largest towns and the highest-level industries, with the total count | 60 s |
+| `!date` | `!data` | the in-game date; when the export is older than 2 min, a note "paused or game off" | 30 s |
+| `!company` | `!firma` | the streamer's company: balance, company value, profit this year and last year (Finances table), lines, vehicles | 60 s |
+| `!best [line\|company]` | `!najlepsza`, `!najlepszy` (`[linia\|firma]`) | the line with the highest 12-month profit or (`company`) the viewer with the highest total profit of their lines | 60 s |
+| `!worst [line\|company]` | `!najgorsza`, `!najgorszy` | as above, lowest profit | 60 s |
 
-- There are two cooldowns, both silent (no reply): one viewer gets at most one reply per 10 s (any command), and the same command with the same argument is repeated in chat at most once per the time in the table. Arguments are compared case- and diacritics-insensitively, so `!miasto Łódź` and `!miasto lodz` are the same reply. `!majatek` without an argument counts separately for each viewer.
+- There are two cooldowns, both silent (no reply): one viewer gets at most one reply per 10 s (any command), and the same command with the same argument is repeated in chat at most once per the time in the table. Arguments are compared case- and diacritics-insensitively, so `!town Łódź` and `!town lodz` are the same reply. English and Polish names of a command share it. `!assets` without an argument counts separately for each viewer.
 - With the Twitch CLI test server the reply only goes to the log (the server has no chat).
 
 **Testing without Twitch (Twitch CLI):**
@@ -189,12 +197,12 @@ The only way for viewers to change the game (`RewardService`). Fifteen rewards; 
 - **New town and industry:** Twitch has no link that opens a reward with the text filled in, so the viewer takes the code from the website: the 🏗 button on the map, click a spot, kind and name, "Copy code" ([../web/README.md](../web/README.md#building-for-channel-points)). `BuildCode` checks the code again against the last export: name 2–40 characters and not taken, the point at least 300 m from the map edge (`terrain.json`), a town ≥ 1500 m from towns and ≥ 600 m from industries, an industry ≥ 800 m from towns and ≥ 600 m from industries, the industry kind only among those on the map (the `.con` file is taken from the export). A town can't stand on water or in the mountains: `TownSites` (computed on every new terrain export, also published as `latest/terrain-site.png` for the website) says what share of the ±250 m area around the point is water and slopes > 15%; above 30% water or 50% slopes the code is rejected (the game would found a town there without a single street). Industries have regions (`TerrainZones`, `latest/terrain-zone.png`, a ±1 km window): **mountains** = average slope ≥ 8% and also at most the 15% most rugged land on the map, **by the water** = water in the window, **lowland** = average slope ≤ 3%, **away from water** = no water in the window. By default coal and ore mines and the quarry only in the mountains, the sand pit, sand dredger and clay pit by the water, farms in the lowland, the logging camp away from water; the streamer changes this in the "Rewards" window (stored in `rewards.json`, the `Zones` field), and Tf3Bridge publishes it to the website as `latest/build-rules.json`. A region the map doesn't have restricts nothing. Tf3Bridge logs how much land each region covers after a terrain export. The mod only sends the terrain after a save is loaded or after terraforming, so Tf3Bridge keeps a copy of the last export (`%LOCALAPPDATA%\Tf3Bridge\terrain-cache.json`, `Bridge:TerrainCacheFile`) and after a restart takes the terrain from there if it's the same game session. Without any terrain export these checks don't happen. Collisions with tracks, streets and buildings are only checked by the game; then the points are refunded. In the reward description `{site}` is replaced with the map address (`Twitch:SiteUrl`), and the chat reply links to the new object by the id the mod returns in the command result (`#town=<id>`, `#industry=<id>`); the website waits a moment for the object to appear in the export. When the game runs an older mod version without the id, the link points to a pin at the building spot (`#pin=x_y&note=Name`).
 
 - **On Twitch:** Tf3Bridge creates the rewards itself (only those can it later change and settle), remembers their IDs in `%LOCALAPPDATA%\Tf3Bridge\rewards.json` and updates them after the settings are saved. The rewards are enabled only while the bridge runs and has received game data since starting (a save is loaded); on "Stop", without a new export for 2 minutes (e.g. the game is paused) and when Tf3Bridge closes they are disabled (viewers don't see them). Redemptions that still arrive while the game isn't running are refunded right away. Needs an Affiliate/Partner channel; without that nothing reaches Twitch.
-- **Rewards carried out by the streamer** (`RewardKinds.Manual`): "TF3: bomb", "TF3: line", "TF3: nature", "TF3: road vehicle", "TF3: special vehicle" (the titles are currently Polish). They have no effect in the mod. Tf3Bridge creates them like the others so it can enable and disable them together with the game (it couldn't change a reward added by hand in the Twitch dashboard). Their redemptions stay in the Twitch queue, and the streamer carries them out and accepts them or refunds the points. Tf3Bridge doesn't settle them, not even when the game isn't running, and doesn't refund old ones at startup. The streamer sets the description, cost and limits in the **Rewards…** window; there they also choose whether the viewer types text (the "Tekst od widza" column, off by default). They aren't in "Simulate reward".
+- **Rewards carried out by the streamer** (`RewardKinds.Manual`): "TF3: bomb", "TF3: line", "TF3: nature", "TF3: road vehicle", "TF3: special vehicle". They have no effect in the mod. Tf3Bridge creates them like the others so it can enable and disable them together with the game (it couldn't change a reward added by hand in the Twitch dashboard). Their redemptions stay in the Twitch queue, and the streamer carries them out and accepts them or refunds the points. Tf3Bridge doesn't settle them, not even when the game isn't running, and doesn't refund old ones at startup. The streamer sets the description, cost and limits in the **Rewards…** window; there they also choose whether the viewer types text (the "Viewer text" column, off by default). They aren't in "Simulate reward".
 - **Your own rewards prefixed TF3** (`ExtraReward`): the streamer's rewards whose title starts with "TF3" and which aren't any of our actions (e.g. "TF3: choose the next line"). Tf3Bridge does nothing with them in the game, and their redemptions stay in the Twitch queue for the streamer. It enables and disables them (`is_enabled`, without deleting) exactly when it does our actions. It reads the list once, when connecting to Twitch (Tf3Bridge start, login), and after the **Rewards…** window is saved; there each can be unchecked, and then it stays disabled for good. Note: Twitch only lets the application (Client ID) that created a reward change it. For a reward added by hand in the dashboard it answers 403. Tf3Bridge then shows it in the status ("Twitch won't let Tf3Bridge enable and disable: …") and doesn't touch it until the next start. A manual reward with the title of one of our actions blocks creating ours (Twitch rejects a repeated title) and also shows up in the status.
 - **Redemption:** the viewer's text is matched to the names from the last `dynamic.json` (`TargetResolver`). Case, diacritics, spaces and "\| owner" don't matter. An exact match wins, then an unambiguous name prefix, then an unambiguous substring.
 - **Settlement:** when the game confirms, the redemption gets FULFILLED. When the target is missing or ambiguous, the reward is disabled, or the game refuses or runs out of time, the redemption gets CANCELED and Twitch refunds the points.
 - **Redemptions from while Tf3Bridge was off:** those fresher than 5 minutes are carried out, older ones are refunded.
-- **Chat reply** (`RewardMessages`, `ChatApi`, Helix `POST /chat/messages` as the streamer). The switch is in **Rewards…**. Examples (the texts are currently Polish):
+- **Chat reply** (`RewardMessages`, `ChatApi`, Helix `POST /chat/messages` as the streamer). The switch is in **Rewards…**. Examples (in English; in Polish the same in Polish):
   - "@viewer town boost Szczecin (+50%) runs until 12 May 1922 (in-game date). https://tf3.example.com/#town=225799" The mod gives the end date in the game calendar in the command result (`until`).
   - "@viewer the town Kraków is now yours! https://tf3.example.com/#town=…"
   - The link points to the object on the website (`#town=`, `#industry=`, `#line=`). Website address: `Twitch:SiteUrl` (in `appsettings.Local.json`); empty = no links.

@@ -9,7 +9,8 @@ namespace Tf3Bridge.Chat;
 /// <summary>
 /// Informational chat commands (e.g. "!majatek"). They only read the latest dynamic.json and answer in chat;
 /// they never queue game commands (the game changes only through channel points, see CommandSource).
-/// Texts: <see cref="ChatAnswers"/>; list for viewers: <c>!pomoc</c>.
+/// Texts: <see cref="ChatAnswers"/>; list for viewers: <c>!help</c>. Every command answers to its English and Polish name;
+/// the answer is in the app language (<see cref="Loc"/>).
 /// Two cooldowns, both silent (no answer): one viewer gets at most one answer per <see cref="Cooldown"/>,
 /// and the same command with the same argument is answered at most once per its own cooldown for the whole chat.
 /// </summary>
@@ -21,18 +22,18 @@ public sealed class ChatCommandService
     private sealed record Command(string Name, TimeSpan Cooldown, bool NeedsData, Func<ChatRequest, string> Run);
 
     private static readonly Dictionary<string, Command> Commands = Build(
-        (new("pomoc", TimeSpan.FromSeconds(30), false, ChatAnswers.Help), ["!pomoc", "!komendy", "!help"]),
-        (new("mapa", TimeSpan.FromSeconds(30), false, ChatAnswers.Map), ["!mapa"]),
-        (new("majatek", TimeSpan.FromSeconds(30), true, ChatAnswers.Assets), ["!majatek", "!majątek"]),
-        (new("miasto", TimeSpan.FromSeconds(30), true, ChatAnswers.Town), ["!miasto"]),
-        (new("zaklad", TimeSpan.FromSeconds(30), true, ChatAnswers.Industry), ["!zaklad", "!zakład"]),
-        (new("linia", TimeSpan.FromSeconds(30), true, ChatAnswers.Line), ["!linia"]),
+        (new("help", TimeSpan.FromSeconds(30), false, ChatAnswers.Help), ["!help", "!commands", "!pomoc", "!komendy"]),
+        (new("map", TimeSpan.FromSeconds(30), false, ChatAnswers.Map), ["!map", "!mapa"]),
+        (new("assets", TimeSpan.FromSeconds(30), true, ChatAnswers.Assets), ["!assets", "!majatek", "!majątek"]),
+        (new("town", TimeSpan.FromSeconds(30), true, ChatAnswers.Town), ["!town", "!miasto"]),
+        (new("industry", TimeSpan.FromSeconds(30), true, ChatAnswers.Industry), ["!industry", "!zaklad", "!zakład"]),
+        (new("line", TimeSpan.FromSeconds(30), true, ChatAnswers.Line), ["!line", "!linia"]),
         (new("ranking", TimeSpan.FromSeconds(60), true, ChatAnswers.Ranking), ["!ranking", "!top"]),
-        (new("wolne", TimeSpan.FromSeconds(60), true, ChatAnswers.Free), ["!wolne"]),
-        (new("data", TimeSpan.FromSeconds(30), true, ChatAnswers.Date), ["!data"]),
-        (new("firma", TimeSpan.FromSeconds(60), true, ChatAnswers.Company), ["!firma"]),
-        (new("najlepsza", TimeSpan.FromSeconds(60), true, r => ChatAnswers.Extreme(r, best: true)), ["!najlepsza", "!najlepszy"]),
-        (new("najgorsza", TimeSpan.FromSeconds(60), true, r => ChatAnswers.Extreme(r, best: false)), ["!najgorsza", "!najgorszy"]));
+        (new("free", TimeSpan.FromSeconds(60), true, ChatAnswers.Free), ["!free", "!wolne"]),
+        (new("date", TimeSpan.FromSeconds(30), true, ChatAnswers.Date), ["!date", "!data"]),
+        (new("company", TimeSpan.FromSeconds(60), true, ChatAnswers.Company), ["!company", "!firma"]),
+        (new("best", TimeSpan.FromSeconds(60), true, r => ChatAnswers.Extreme(r, best: true)), ["!best", "!najlepsza", "!najlepszy"]),
+        (new("worst", TimeSpan.FromSeconds(60), true, r => ChatAnswers.Extreme(r, best: false)), ["!worst", "!najgorsza", "!najgorszy"]));
 
     private static Dictionary<string, Command> Build(params (Command Command, string[] Aliases)[] list) =>
         list.SelectMany(x => x.Aliases.Select(a => (Alias: a, x.Command))).ToDictionary(x => x.Alias, x => x.Command);
@@ -96,8 +97,8 @@ public sealed class ChatCommandService
         var arg = space < 0 ? "" : text[(space + 1)..].Trim().TrimStart('@').Trim();
         if (!Commands.TryGetValue(name, out var command)) return null;
 
-        // "!majatek" without an argument is the asker's estate: a different answer for each viewer.
-        var key = command.Name + "|" + (arg.Length == 0 && command.Name == "majatek" ? "@" + m.ChatterLogin : TargetResolver.Normalize(arg));
+        // "!assets" without an argument is the asker's estate: a different answer for each viewer.
+        var key = command.Name + "|" + (arg.Length == 0 && command.Name == "assets" ? "@" + m.ChatterLogin : TargetResolver.Normalize(arg));
         lock (_gate)
         {
             var now = _time.GetUtcNow();
@@ -110,7 +111,7 @@ public sealed class ChatCommandService
         var asker = new ChatAsker(m.ChatterName.Length > 0 ? m.ChatterName : m.ChatterLogin, m.ChatterLogin);
         if (!command.NeedsData) return command.Run(new ChatRequest(asker, arg, _siteUrl));
         using var doc = LoadDynamic();
-        if (doc is null) return $"@{asker.Name} nie mam jeszcze danych z gry.";
+        if (doc is null) return Loc.T($"@{asker.Name} I have no game data yet.", $"@{asker.Name} nie mam jeszcze danych z gry.");
         var age = _time.GetUtcNow() - new DateTimeOffset(File.GetLastWriteTimeUtc(_dynamicPath), TimeSpan.Zero);
         return command.Run(new ChatRequest(asker, arg, _siteUrl, doc.RootElement, age));
     }

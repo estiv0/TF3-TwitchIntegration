@@ -122,7 +122,7 @@ public static class RewardKinds
     /// the interest as set for the loan ("2", "1,5").
     /// </summary>
     public static string Percent(RewardKind kind, double factor) => kind == RewardKind.Loan
-        ? Math.Round(factor, 2).ToString("0.##", RewardMessages.Polish)
+        ? Math.Round(factor, 2).ToString("0.##", Loc.Culture)
         : Math.Round(Math.Abs(kind == RewardKind.BrakeSabotage ? factor : factor - 1) * 100).ToString(CultureInfo.InvariantCulture);
 
     /// <summary>
@@ -159,8 +159,67 @@ public static class RewardKinds
     /// </summary>
     public static bool Manual(RewardKind kind) => kind >= RewardKind.Bomb;
 
-    /// <summary>Starting values; costs and durations are guesses to be balanced on stream.</summary>
-    public static IReadOnlyList<RewardConfig> Defaults { get; } =
+    /// <summary>Starting values in the current language (<see cref="Loc"/>); costs and durations are guesses to be balanced on stream.</summary>
+    public static IReadOnlyList<RewardConfig> Defaults => DefaultsFor(Loc.Language);
+
+    public static IReadOnlyList<RewardConfig> DefaultsFor(Lang lang) => lang == Lang.Pl ? PolishDefaults : EnglishDefaults;
+
+    private static readonly IReadOnlyList<RewardConfig> EnglishDefaults =
+    [
+        new(RewardKind.AdoptTown, true, "TF3: buy a town",
+            "Type the name of a town without an owner. You buy it: you become its owner (shown in the game and on the map).",
+            5000, 60, 0, 1, 0, 1),
+        new(RewardKind.BuyIndustry, true, "TF3: buy an industry",
+            "Type the name of an industry without an owner (from the map {site}). You buy it: you become its owner (shown in the game and on the map).",
+            5000, 60, 0, 1, 0, 1),
+        new(RewardKind.BoostTown, true, "TF3: town boost",
+            "Type a town name. For {months} game months its target size grows by {percent}% (the town expands).",
+            3000, 120, 0, 0, 12, 1.5),
+        new(RewardKind.BoostIndustry, true, "TF3: industry boost",
+            "Type an industry name. It produces {percent}% more for {months} game months.",
+            3000, 120, 0, 0, 6, 1.5),
+        new(RewardKind.StopLine, true, "TF3: stop a line",
+            "Type a line name. Its vehicles stop where they are for {months} game months.",
+            10000, 600, 0, 1, 1, 1),
+        new(RewardKind.HoldLine, true, "TF3: line waits at stations",
+            "Type a line name. Its vehicles wait at the stops for {months} game months.",
+            8000, 600, 0, 1, 1, 1),
+        new(RewardKind.CreateTown, true, "TF3: found a town",
+            "On the map {site} click 🏗, pick a spot, give it a name and paste the code here. A new town appears and you'll own it.",
+            20000, 900, 0, 1, 0, 1),
+        new(RewardKind.CreateIndustry, true, "TF3: build an industry",
+            "On the map {site} click 🏗, pick a spot, choose an industry, give it a name and paste the code here. It gets built and it's yours.",
+            15000, 600, 0, 1, 0, 1),
+        new(RewardKind.StrikeIndustry, true, "TF3: industry strike",
+            "Type the name of another viewer's industry. The workers strike: production drops by {percent}% for {months} game months.",
+            8000, 600, 0, 1, 3, 0.01),
+        new(RewardKind.TaxRaid, true, "TF3: tax raid",
+            "Type the nick of a viewer who owns industries. The tax office blocks all of them: production drops by {percent}% for {months} game months.",
+            15000, 900, 0, 1, 3, 0.5),
+        new(RewardKind.PremiumFuel, true, "TF3: premium fuel",
+            "Type a line name. Its vehicles run {percent}% faster for {months} game months.",
+            4000, 300, 0, 0, 6, 1.2),
+        new(RewardKind.BadFuel, true, "TF3: watered-down fuel",
+            "Type the name of another viewer's line. Its vehicles run {percent}% slower for {months} game months.",
+            6000, 600, 0, 1, 3, 0.8),
+        new(RewardKind.BrakeSabotage, true, "TF3: brake sabotage",
+            "Type the name of another viewer's line. Between 1 and {percent}% of its vehicles crash and disappear (can't be undone).",
+            25000, 1800, 0, 1, 0, 0.5),
+        new(RewardKind.Subsidy, true, "TF3: subsidy",
+            "You give the streamer's company a subsidy of {amount} (non-refundable).",
+            30000, 1800, 0, 1, 0, 1) { Amount = 10_000_000 },
+        new(RewardKind.Loan, true, "TF3: loan",
+            "You lend the streamer's company {amount} at {percent}% for {months} game months. The game collects the installments monthly (Loans tab).",
+            5000, 900, 0, 1, 60, 2) { Amount = 10_000_000 },
+        // Carried out by the streamer: they set the description and limits themselves in the rewards window.
+        new(RewardKind.Bomb, true, "TF3: bomb", "", 5000, 0, 0, 0, 0, 1) { UserInput = false },
+        new(RewardKind.Line, true, "TF3: line", "", 5000, 0, 0, 0, 0, 1) { UserInput = false },
+        new(RewardKind.Nature, true, "TF3: nature", "", 5000, 0, 0, 0, 0, 1) { UserInput = false },
+        new(RewardKind.RoadVehicle, true, "TF3: road vehicle", "", 5000, 0, 0, 0, 0, 1) { UserInput = false },
+        new(RewardKind.SpecialVehicle, true, "TF3: special vehicle", "", 5000, 0, 0, 0, 0, 1) { UserInput = false },
+    ];
+
+    private static readonly IReadOnlyList<RewardConfig> PolishDefaults =
     [
         new(RewardKind.AdoptTown, true, "TF3: kup miasto",
             "Wpisz nazwę miasta bez właściciela. Kupujesz je: zostaniesz jego właścicielem (widać to w grze i na mapie).",
@@ -253,7 +312,8 @@ public sealed record RewardSettings(IReadOnlyList<RewardConfig> Rewards, string 
     /// <summary>The streamer's own rewards with the TF3 prefix on <see cref="ChannelUserId"/>'s channel (<see cref="ExtraReward"/>).</summary>
     public IReadOnlyList<ExtraReward> Extras { get; init; } = [];
 
-    public static RewardSettings Default { get; } = new(RewardKinds.Defaults, "", new Dictionary<RewardKind, string>());
+    /// <summary>Defaults in the current language.</summary>
+    public static RewardSettings Default => new(RewardKinds.Defaults, "", new Dictionary<RewardKind, string>());
 
     public RewardConfig Get(RewardKind kind) => Rewards.First(r => r.Kind == kind);
 
@@ -275,12 +335,18 @@ public sealed record RewardSettings(IReadOnlyList<RewardConfig> Rewards, string 
             : Math.Clamp(NotificationSeconds, NotificationSecondsRange.Min, NotificationSecondsRange.Max),
     };
 
-    private static RewardConfig Migrate(RewardConfig r, RewardConfig d) => r with
+    private static RewardConfig Migrate(RewardConfig r, RewardConfig d)
     {
-        Amount = r.Amount > 0 ? r.Amount : d.Amount,
-        Title = r.Title == OldAdoptTitle ? d.Title : r.Title,
-        Prompt = r.Prompt == OldAdoptPrompt ? d.Prompt : MigrateDays(r.Prompt),
-    };
+        // A default text of the other language follows a language switch; the streamer's own texts stay.
+        var other = RewardKinds.DefaultsFor(Loc.Other(Loc.Language)).First(o => o.Kind == r.Kind);
+        var prompt = MigrateDays(r.Prompt);
+        return r with
+        {
+            Amount = r.Amount > 0 ? r.Amount : d.Amount,
+            Title = r.Title == OldAdoptTitle || r.Title == other.Title ? d.Title : r.Title,
+            Prompt = r.Prompt == OldAdoptPrompt || prompt == other.Prompt ? d.Prompt : prompt,
+        };
+    }
 
     // Prompts saved before days -> months still say {days}, which nothing replaces any more.
     private static string MigrateDays(string prompt) =>

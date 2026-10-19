@@ -260,11 +260,20 @@ public sealed class ChatCommandTests : IDisposable
     [InlineData(12, "12 miast")]
     [InlineData(22, "22 miasta")]
     public void Polish_plurals(int n, string expected) =>
-        Assert.Equal(expected, ChatAnswers.Count(n, "miasto", "miasta", "miast"));
+        Assert.Equal(expected, ChatAnswers.Count(n, "town", "towns", "miasto", "miasta", "miast"));
 
-    private sealed class ManualTime : TimeProvider
+    [Theory]
+    [InlineData(1, "1 town")]
+    [InlineData(3, "3 towns")]
+    public void English_plurals(int n, string expected)
     {
-        public DateTimeOffset Now { get; set; } = new(2026, 10, 5, 18, 0, 0, TimeSpan.Zero);
-        public override DateTimeOffset GetUtcNow() => Now;
+        using var _ = Loc.Use(Lang.En);
+        Assert.Equal(expected, ChatAnswers.Count(n, "town", "towns", "miasto", "miasta", "miast"));
     }
+}
+
+internal sealed class ManualTime : TimeProvider
+{
+    public DateTimeOffset Now { get; set; } = new(2026, 10, 5, 18, 0, 0, TimeSpan.Zero);
+    public override DateTimeOffset GetUtcNow() => Now;
 }

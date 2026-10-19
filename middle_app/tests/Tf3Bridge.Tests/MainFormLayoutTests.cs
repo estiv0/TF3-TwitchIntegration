@@ -21,7 +21,7 @@ public sealed class MainFormLayoutTests
         if (error is not null) throw new Xunit.Sdk.XunitException(error.ToString());
     }
 
-    private static (Form Form, Button[] Buttons, Label[] Lines) Build(int width)
+    private static (Form Form, Control[] Buttons, Label[] Lines) Build(int width)
     {
         var form = new Form { Font = new Font("Segoe UI", 9f), ClientSize = new Size(width, 480) };
         var buttons = Buttons.Select((t, i) => MainForm.ToolButton(t, groupStart: i == 4)).ToArray();
@@ -29,17 +29,21 @@ public sealed class MainFormLayoutTests
         foreach (var l in lines) l.Text = LongStatus;
         var title = new Label { AutoSize = true, Text = "● Działa", Font = new Font("Segoe UI", 11f, FontStyle.Bold) };
         var log = new TextBox { Multiline = true, Dock = DockStyle.Fill };
-        form.Controls.Add(MainForm.Root(MainForm.Toolbar(buttons), MainForm.StatusPanel(title, lines), new Panel { Height = 60, Dock = DockStyle.Fill }, log));
+        var language = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 90, Margin = new Padding(16, 6, 3, 3) }; // last in the row
+        form.Controls.Add(MainForm.Root(MainForm.Toolbar([.. buttons, language]), MainForm.StatusPanel(title, lines), new Panel { Height = 60, Dock = DockStyle.Fill }, log));
         form.PerformLayout();
-        return (form, buttons, lines);
+        return (form, [.. buttons, language], lines);
     }
+
+    // Top of the flow row a control sits in (the language list has a bigger top margin than the buttons).
+    private static int Row(Control c) => c.Top - c.Margin.Top;
 
     private static Rectangle InForm(Control c, Form f) => f.RectangleToClient(c.RectangleToScreen(c.ClientRectangle));
 
     [Theory]
     [InlineData(560)]  // minimum window width (MinimumSize 560 minus the frame is narrower anyway)
     [InlineData(700)]
-    [InlineData(900)]  // default
+    [InlineData(940)]  // default
     [InlineData(1400)]
     public void Buttons_and_status_lines_stay_inside_the_window(int width) => Sta(() =>
     {
@@ -70,8 +74,8 @@ public sealed class MainFormLayoutTests
         {
             narrow.CreateControl(); narrow.PerformLayout();
             wide.CreateControl(); wide.PerformLayout();
-            Assert.True(nb.Select(b => b.Top).Distinct().Count() > 1, "expected wrapped rows at 560 px");
-            Assert.Single(wb.Select(b => b.Top).Distinct());
+            Assert.True(nb.Select(Row).Distinct().Count() > 1, "expected wrapped rows at 560 px");
+            Assert.Single(wb.Select(Row).Distinct());
         }
     });
 }

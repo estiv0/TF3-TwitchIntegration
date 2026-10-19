@@ -87,10 +87,14 @@ public sealed class TownSites
         return new TownSite(_water[k] / 255.0, _steep[k] / 255.0, onWater);
     }
 
-    /// <summary>Why a town cannot be founded here (Polish, for the chat); null = the ground is fine.</summary>
+    /// <summary>Why a town cannot be founded here (for the chat, in the app language); null = the ground is fine.</summary>
     public static string? TownProblem(TownSite s) =>
-        s.OnWater || s.Water > MaxWater ? $"to miejsce jest na wodzie albo tuż przy niej ({Percent(s.Water)} wody wokół), miasto się tu nie zbuduje"
-        : s.Steep > MaxSteep ? $"teren jest tu za stromy ({Percent(s.Steep)} zboczy wokół), miasto się tu nie zbuduje"
+        s.OnWater || s.Water > MaxWater
+            ? Loc.T($"that spot is on or right next to water ({Percent(s.Water)} water around), a town won't get built there",
+                $"to miejsce jest na wodzie albo tuż przy niej ({Percent(s.Water)} wody wokół), miasto się tu nie zbuduje")
+        : s.Steep > MaxSteep
+            ? Loc.T($"the ground is too steep here ({Percent(s.Steep)} slopes around), a town won't get built there",
+                $"teren jest tu za stromy ({Percent(s.Steep)} zboczy wokół), miasto się tu nie zbuduje")
         : null;
 
     private static string Percent(double share) => ((int)Math.Round(share * 100)).ToString(CultureInfo.InvariantCulture) + "%";
