@@ -44,21 +44,21 @@ public sealed class RewardService
     private readonly bool _mock;
     private readonly string _dynamicPath;
     private readonly string _terrainPath;
-    private readonly Func<string?> _whyInactive; // null = gra działa i wysyła dane
+    private readonly Func<string?> _whyInactive; // null = the game runs and sends data
     private readonly Func<BuildTerrain?> _terrain;
     private readonly IndustryZoneRules? _zoneRules;
     private readonly string _settingsPath;
     private readonly string _siteUrl;
     private readonly ILogger _log;
     private readonly Lock _gate = new();
-    private readonly Dictionary<string, Pending> _pending = []; // id komendy -> wykupienie
+    private readonly Dictionary<string, Pending> _pending = []; // command id -> redemption
     private RewardSettings _settings;
     private volatile RewardStatus _status = new(RewardState.Off, "wyłączone");
-    private string? _syncedFor;      // konto, dla którego nagrody są zsynchronizowane
-    private bool? _active;           // ostatnio ustawione włączenie na Twitchu
-    private IReadOnlyList<string> _locked = []; // nagrody TF3, których Twitch nie pozwala Tf3Bridge zmieniać
+    private string? _syncedFor;      // the account the rewards are synced for
+    private bool? _active;           // the enabled state last set on Twitch
+    private IReadOnlyList<string> _locked = []; // TF3 rewards Twitch won't let Tf3Bridge change
     private readonly SemaphoreSlim _wake = new(0);
-    private readonly SemaphoreSlim _tick = new(1, 1); // pętla i wyłączanie przy zamykaniu
+    private readonly SemaphoreSlim _tick = new(1, 1); // the loop and disabling on close
 
     public event Action<RewardOutcome>? Finished;
 
@@ -68,10 +68,10 @@ public sealed class RewardService
             () => WhyInactive(runner.IsRunning, processor.LastDynamicUtc, DateTime.UtcNow), () => processor.BuildTerrain, zoneRules, log)
     {
         eventSub.RedemptionReceived += r => _ = HandleRedemptionAsync(r);
-        runner.StateChanged += () => _wake.Release(); // Zatrzymaj / Uruchom: nagrody od razu, nie po 15 s
+        runner.StateChanged += () => _wake.Release(); // Stop / Start: rewards right away, not after 15 s
     }
 
-    // Jeden HttpClient dla API nagród i czatu.
+    // One HttpClient for the rewards and chat APIs.
     private RewardService(TwitchSession session, HttpClient http, bool mock, ModCommandQueue queue, string outputDir, string siteUrl,
         Func<string?> whyInactive, Func<BuildTerrain?> terrain, IndustryZoneRules zoneRules, ILogger log)
         : this(session, new ChannelPointsApi(session, http), new ChatApi(session, http), queue, mock, outputDir, RewardSettingsStore.FilePath,
@@ -111,7 +111,7 @@ public sealed class RewardService
             _settings = (settings with
             {
                 ChannelUserId = _settings.ChannelUserId, TwitchIds = _settings.TwitchIds,
-                Extras = KeepEnabled(_settings.Extras, settings.Extras), // okno zmienia tylko włączenie
+                Extras = KeepEnabled(_settings.Extras, settings.Extras), // the window only changes the enabled flag
             }).Normalized();
             _zoneRules?.Set(_settings.Zones);
             SaveLocked();
@@ -248,9 +248,9 @@ public sealed class RewardService
     private Task HandleRedemptionAsync(ChannelPointsRedemption r)
     {
         var kind = KindOf(r.RewardId);
-        if (kind is null) return Task.CompletedTask; // nie nasza nagroda
-        if (RewardKinds.Manual(kind.Value)) return Task.CompletedTask; // zostaje w kolejce Twitcha dla streamera
-        // Kupione tuż przed wyłączeniem nagród albo czekające od poprzedniego uruchomienia: gra i tak by tego nie wykonała.
+        if (kind is null) return Task.CompletedTask; // not our reward
+        if (RewardKinds.Manual(kind.Value)) return Task.CompletedTask; // stays in the Twitch queue for the streamer
+        // Bought just before the rewards were disabled or waiting since the previous run: the game wouldn't carry it out anyway.
         if (!_mock && _whyInactive() is { } why)
         {
             Refuse(r, kind.Value, "gra nie działa: " + why);
@@ -267,7 +267,7 @@ public sealed class RewardService
     {
         var s = Settings;
         foreach (var (kind, id) in s.TwitchIds) if (id == rewardId) return kind;
-        // Twitch CLI: "twitch event trigger ... -i AdoptTown" wskazuje nagrodę po nazwie rodzaju
+        // Twitch CLI: "twitch event trigger ... -i AdoptTown" picks the reward by kind name
         return _mock && Enum.TryParse<RewardKind>(rewardId, ignoreCase: true, out var k) ? k : null;
     }
 
@@ -348,7 +348,7 @@ public sealed class RewardService
     private sealed record VictimResult(string Key, string Name, IReadOnlyList<long> Industries, string? Error);
 
     /// <summary>
-    /// The viewer whose nick another viewer typed (nalot skarbówki): all industries with that owner.
+    /// The viewer whose nick another viewer typed (tax raid): all industries with that owner.
     /// Nick compared like object names (case, Polish letters, a leading @ do not matter).
     /// </summary>
     private static VictimResult Victim(List<GameObject> objects, string input, string buyer)
@@ -380,7 +380,7 @@ public sealed class RewardService
         var message = result.Ok
             ? $"wykonano: {p.Target}{(result.Until is { } u ? $", do {RewardMessages.Date(u)}" : "")}"
             : reason!;
-        // Nowe miasto / zakład: link do obiektu po id z gry; pinezka w miejscu budowy tylko gdy mod go nie podał.
+        // New town / industry: a link to the object by its game id; a pin at the building spot only when the mod didn't give it.
         var link = result.Entity is { } built && RewardKinds.Creates(p.Kind) ? RewardMessages.Link(_siteUrl, p.Kind, built) : p.Link;
         var chat = RewardMessages.Text(Settings.Get(p.Kind), p.Origin.Login, p.Target, result.Ok, result.Until, reason, link, result.Count, result.Total);
         var outcome = new RewardOutcome(p.Token, p.Kind, p.User, p.Input, result.Ok, message, p.Target, result.Until, chat, result.Count, result.Total);
@@ -389,8 +389,8 @@ public sealed class RewardService
         Complete(p.Origin, outcome, result.Entity ?? p.Entity);
     }
 
-    // Koniec wykupienia: zdarzenie dla okna, rozliczenie na Twitchu, odpowiedź na czacie i powiadomienie w grze
-    // (tylko po sukcesie; przy prawdziwym wykupieniu dopiero, gdy Twitch przyjął FULFILLED, czyli punkty są pobrane).
+    // End of a redemption: an event for the window, settling on Twitch, a chat answer and an in-game notification
+    // (only on success; for a real redemption only once Twitch accepted FULFILLED, i.e. the points are taken).
     private void Complete(Origin origin, RewardOutcome outcome, long? entity = null)
     {
         Finished?.Invoke(outcome);
@@ -421,7 +421,7 @@ public sealed class RewardService
 
     private async Task SayAsync(string text)
     {
-        if (_mock || text.Length == 0) return; // serwer testowy nie ma czatu
+        if (_mock || text.Length == 0) return; // the test server has no chat
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -437,7 +437,7 @@ public sealed class RewardService
     private static string Explain(ModCommandResult r) => r.Status switch
     {
         "expired" => "gra nie wykonała komendy na czas",
-        // Gra trzyma skrypty wczytane przy starcie: nowy plik moda działa dopiero po restarcie TF3.
+        // The game keeps the scripts loaded at startup: a new mod file only works after restarting TF3.
         _ when r.Error?.StartsWith("unknown kind ", StringComparison.Ordinal) == true => "gra ma starszą wersję moda (uruchom TF3 ponownie)",
         _ when r.Error?.StartsWith("already adopted by ", StringComparison.Ordinal) == true => "ma już właściciela (" + r.Error["already adopted by ".Length..] + ")",
         "invalid" when r.Error == "line has no vehicles" => "linia nie ma pojazdów",
@@ -457,7 +457,7 @@ public sealed class RewardService
     /// <returns>True when Twitch took the new status (for FULFILLED: the points are taken).</returns>
     private async Task<bool> CloseAsync(Redemption r, RewardOutcome outcome)
     {
-        if (_mock) return true; // serwer testowy nie ma prawdziwych wykupień
+        if (_mock) return true; // the test server has no real redemptions
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -466,13 +466,13 @@ public sealed class RewardService
         }
         catch (Exception ex) when (ex is TwitchAuthException or HttpRequestException or OperationCanceledException)
         {
-            // Zostaje w kolejce wykupień na Twitchu; streamer może je rozliczyć ręcznie w panelu.
+            // It stays in the Twitch redemption queue; the streamer can settle it by hand in the dashboard.
             _log.LogWarning("Could not mark redemption {Id} as {Status}: {Message}", r.Id, outcome.Ok ? "fulfilled" : "canceled", ex.Message);
             return false;
         }
     }
 
-    // Wykupienia sprzed startu Tf3Bridge: świeże wykonujemy, stare zwracamy (poza nagrodami, które wykonuje streamer).
+    // Redemptions from before Tf3Bridge started: fresh ones are carried out, old ones refunded (except rewards the streamer carries out).
     private async Task ProcessBacklogAsync(CancellationToken ct)
     {
         foreach (var (kind, rewardId) in Settings.TwitchIds)
@@ -492,7 +492,7 @@ public sealed class RewardService
         }
     }
 
-    // Zwrot punktów bez wysyłania do gry.
+    // Refund without sending anything to the game.
     private void Refuse(ChannelPointsRedemption r, RewardKind kind, string why)
     {
         var login = r.UserLogin.Length > 0 ? r.UserLogin : r.UserName;
@@ -502,7 +502,7 @@ public sealed class RewardService
                 ChatText: RewardMessages.Text(Settings.Get(kind), login, null, ok: false, until: null, reason: why)));
     }
 
-    // ------------------------------------------------------------------ nagrody na Twitchu
+    // ------------------------------------------------------------------ rewards on Twitch
 
     /// <summary>All rewards on the channel and the IDs of those this client ID created (only those it may change).</summary>
     private sealed record ChannelRewards(List<TwitchReward> All, HashSet<string> Mine);
@@ -527,13 +527,13 @@ public sealed class RewardService
         {
             var id = ids.TryGetValue(config.Kind, out var known) && existing.Any(e => e.Id == known)
                 ? known
-                : existing.FirstOrDefault(e => e.Title == config.Title)?.Id; // np. po utracie rewards.json
+                : existing.FirstOrDefault(e => e.Title == config.Title)?.Id; // e.g. after rewards.json was lost
             var body = Body(config, active, RewardMessages.SiteHost(_siteUrl));
             if (id is null)
             {
                 ids.Remove(config.Kind);
                 if (!config.Enabled) continue;
-                // Twitch nie przyjmie drugiej nagrody o tym samym tytule: ręczną trzeba najpierw usunąć.
+                // Twitch won't accept a second reward with the same title: the manual one has to be removed first.
                 if (channel.All.Any(r => SameTitle(r.Title, config.Title)))
                 {
                     _log.LogWarning("Reward \"{Title}\" was added by hand on Twitch: delete it there and Tf3Bridge will create its own", config.Title);
@@ -569,7 +569,7 @@ public sealed class RewardService
             if (kindIds.Contains(r.Id)) continue;
             if (s.Rewards.FirstOrDefault(c => SameTitle(c.Title, r.Title)) is { } kind)
             {
-                if (kind.Enabled && !channel.Mine.Contains(r.Id)) locked.Add(r.Title); // blokuje założenie naszej (SyncAsync)
+                if (kind.Enabled && !channel.Mine.Contains(r.Id)) locked.Add(r.Title); // blocks creating ours (SyncAsync)
                 continue;
             }
             if (!ExtraReward.HasPrefix(r.Title)) continue;
@@ -581,7 +581,7 @@ public sealed class RewardService
         _locked = locked;
         lock (_gate)
         {
-            var merged = KeepEnabled(extras, _settings.Extras); // okno mogło zapisać coś w międzyczasie
+            var merged = KeepEnabled(extras, _settings.Extras); // the window may have saved something in the meantime
             if (merged.SequenceEqual(_settings.Extras)) return;
             _settings = _settings with { Extras = merged };
             SaveLocked();
@@ -629,7 +629,7 @@ public sealed class RewardService
             ["prompt"] = prompt.Length <= RewardConfig.MaxPrompt ? prompt : prompt[..RewardConfig.MaxPrompt],
             ["cost"] = c.Cost,
             ["is_enabled"] = c.Enabled && active,
-            ["is_paused"] = false, // starsze wersje pauzowały zamiast wyłączać
+            ["is_paused"] = false, // older versions paused instead of disabling
             ["is_user_input_required"] = c.RequiresInput,
             ["should_redemptions_skip_request_queue"] = false,
             ["is_global_cooldown_enabled"] = c.CooldownSec > 0,

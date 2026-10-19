@@ -9,7 +9,7 @@ public sealed class ModInstallerTests : IDisposable
 
     public void Dispose()
     {
-        // junction najpierw osobno: rekurencyjne Delete nie usuwa samego linku
+        // the junction separately first: a recursive Delete doesn't remove the link itself
         if (Directory.Exists(Target) && new DirectoryInfo(Target).Attributes.HasFlag(FileAttributes.ReparsePoint))
             Directory.Delete(Target);
         var root = Path.GetDirectoryName(_local)!;
@@ -73,7 +73,7 @@ public sealed class ModInstallerTests : IDisposable
         var repo = Path.Combine(Path.GetDirectoryName(_local)!, "repo");
         Directory.CreateDirectory(repo);
         Directory.CreateDirectory(Path.GetDirectoryName(Target)!);
-        // junction (jak w lua_mod/README.md); symlink wymagałby uprawnień
+        // a junction (as in lua_mod/README.md); a symlink would need extra rights
         using (var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
                    "cmd.exe", $"/c mklink /J \"{Target}\" \"{repo}\"") { CreateNoWindow = true, UseShellExecute = false })!)
             p.WaitForExit();
@@ -84,7 +84,7 @@ public sealed class ModInstallerTests : IDisposable
         Assert.Empty(Directory.EnumerateFileSystemEntries(repo));
     }
 
-    // _content.json musi wymieniać dokładnie wbudowane pliki .lua (pack.ps1 -ContentOnly je odświeża).
+    // _content.json must list exactly the embedded .lua files (pack.ps1 -ContentOnly refreshes it).
     [Fact]
     public void Embedded_mod_is_complete()
     {

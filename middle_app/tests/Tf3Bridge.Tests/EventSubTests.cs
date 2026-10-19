@@ -70,7 +70,7 @@ public sealed class EventSubTests : IDisposable
         server.Send(Welcome("S1"));
         await Until(() => client.Status.State == EventSubState.Connected);
         server.Send(Chat("n1", "!adoptuj Kraków"));
-        server.Send(Chat("n1", "!adoptuj Kraków")); // ta sama wiadomość drugi raz
+        server.Send(Chat("n1", "!adoptuj Kraków")); // the same message a second time
         server.Send("""{"metadata":{"message_id":"n2","message_type":"notification","subscription_type":"channel.channel_points_custom_reward_redemption.add"},"payload":{"event":{"id":"r1","user_id":"7","user_login":"widz","user_name":"Widz","user_input":"Kraków","status":"unfulfilled","reward":{"id":"rw","title":"Adoptuj miasto","cost":500},"redeemed_at":"2026-10-04T12:00:00Z"}}}""");
         await Until(() => !redemptions.IsEmpty);
 
@@ -111,7 +111,7 @@ public sealed class EventSubTests : IDisposable
         second.Send(Chat("n1", "!test"));
         await Until(() => !chat.IsEmpty);
 
-        Assert.Equal(2, _helix.Requests.Count); // tylko z pierwszego połączenia
+        Assert.Equal(2, _helix.Requests.Count); // only from the first connection
         Assert.Equal("wss://eventsub.wss.twitch.tv/ws?reconnect=1", _connected.Last().ToString());
     }
 

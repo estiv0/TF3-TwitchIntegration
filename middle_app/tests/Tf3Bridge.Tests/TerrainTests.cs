@@ -182,7 +182,7 @@ public sealed class TerrainTests : IDisposable
         Assert.False(zones.Allows(IndustryZone.Mountains, X(80), Y(30)));
         Assert.InRange(zones.Coverage(IndustryZone.Mountains), 0.01, TerrainZones.MaxMountainShare + 0.01);
         Assert.True(zones.Allows(IndustryZone.NearWater, X(30), Y(30)));
-        Assert.False(zones.Allows(IndustryZone.NearWater, X(80), Y(30))); // morze kończy się ponad 1 km dalej
+        Assert.False(zones.Allows(IndustryZone.NearWater, X(80), Y(30))); // the sea ends more than 1 km away
         Assert.True(zones.Allows(IndustryZone.Inland, X(80), Y(30)));
         Assert.True(zones.Allows(IndustryZone.Lowland, X(80), Y(30)));
         Assert.False(zones.Allows(IndustryZone.Lowland, X(190), Y(30)));
@@ -192,7 +192,7 @@ public sealed class TerrainTests : IDisposable
     [Fact]
     public void ZoneMissingOnTheMapDoesNotRestrict()
     {
-        var zones = TerrainZones.Compute(Grid(100, 60, (_, _) => 10)); // płasko, bez wody
+        var zones = TerrainZones.Compute(Grid(100, 60, (_, _) => 10)); // flat, no water
 
         Assert.False(zones.Exists(IndustryZone.Mountains));
         Assert.True(zones.Allows(IndustryZone.Mountains, X(50), Y(30)));
@@ -212,7 +212,7 @@ public sealed class TerrainTests : IDisposable
         Assert.Contains("Kopalnia węgla: ten rodzaj zakładu można budować tylko w górach",
             BuildCode.Parse($"[{X(80)}, {Y(30)}, coal_mine] Kopalnia Jasia", true, objects, null, terrain).Error);
         Assert.NotNull(BuildCode.Parse($"[{X(80)}, {Y(30)}, brewery] Browar Jasia", true, objects, null, terrain).Place);
-        // Streamer zdjął ograniczenie, a bez danych o terenie nic nie sprawdzamy.
+        // The streamer removed the restriction, and without terrain data nothing is checked.
         Assert.NotNull(BuildCode.Parse($"[{X(80)}, {Y(30)}, coal_mine] Kopalnia Jasia", true, objects, null, terrain,
             new Dictionary<string, IndustryZone>()).Place);
         Assert.NotNull(BuildCode.Parse($"[{X(80)}, {Y(30)}, coal_mine] Kopalnia Jasia", true, objects, null).Place);
@@ -238,13 +238,13 @@ public sealed class TerrainTests : IDisposable
     {
         Directory.CreateDirectory(_root);
         var path = Path.Combine(_root, "rewards.json");
-        Assert.Equal(IndustryZone.Mountains, RewardSettingsStore.Load(path).Normalized().Zones!["quarry"]); // brak pliku = domyślne
+        Assert.Equal(IndustryZone.Mountains, RewardSettingsStore.Load(path).Normalized().Zones!["quarry"]); // no file = defaults
 
         RewardSettingsStore.Save(RewardSettings.Default with { Zones = new Dictionary<string, IndustryZone> { ["quarry"] = IndustryZone.Lowland } }, path);
         Assert.Contains("\"Lowland\"", File.ReadAllText(path));
         Assert.Equal(new Dictionary<string, IndustryZone> { ["quarry"] = IndustryZone.Lowland }, RewardSettingsStore.Load(path).Zones);
 
-        File.WriteAllText(path, File.ReadAllText(path).Replace("\"Zones\"", "\"Old\"")); // plik sprzed stref
+        File.WriteAllText(path, File.ReadAllText(path).Replace("\"Zones\"", "\"Old\"")); // a file from before the zones
         Assert.Equal(IndustryZone.Mountains, RewardSettingsStore.Load(path).Zones!["coal_mine"]);
     }
 

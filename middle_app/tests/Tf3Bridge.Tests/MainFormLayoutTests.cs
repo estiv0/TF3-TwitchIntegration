@@ -10,7 +10,7 @@ public sealed class MainFormLayoutTests
 
     private const string LongStatus = "Nagrody: kanał bez Affiliate/Partner: nagrody wyłączone (zostaje „Symuluj nagrodę”) i jeszcze dużo dłuższy tekst, który na pewno się nie mieści";
 
-    // WinForms wymaga wątku STA.
+    // WinForms needs an STA thread.
     private static void Sta(Action action)
     {
         Exception? error = null;
@@ -37,9 +37,9 @@ public sealed class MainFormLayoutTests
     private static Rectangle InForm(Control c, Form f) => f.RectangleToClient(c.RectangleToScreen(c.ClientRectangle));
 
     [Theory]
-    [InlineData(560)]  // minimalna szerokość okna (MinimumSize 560 minus ramka i tak jest węższa)
+    [InlineData(560)]  // minimum window width (MinimumSize 560 minus the frame is narrower anyway)
     [InlineData(700)]
-    [InlineData(900)]  // domyślna
+    [InlineData(900)]  // default
     [InlineData(1400)]
     public void Buttons_and_status_lines_stay_inside_the_window(int width) => Sta(() =>
     {

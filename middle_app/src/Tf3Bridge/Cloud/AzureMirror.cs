@@ -52,7 +52,7 @@ public sealed class AzureMirror(IOptions<BridgeOptions> options, ILogger<AzureMi
             }
             _container = new BlobContainerClient(uri);
             Status = new AzureStatus(AzureState.Ok, "łączenie…", Status.LastUploadUtc);
-            MarkAllDirtyLocked(); // nowy cel: wyślij wszystko, co już jest lokalnie
+            MarkAllDirtyLocked(); // new target: send everything that is already local
         }
         logger.LogInformation("Azure upload enabled: {Url}", settings.PublicLatestUrl);
     }
@@ -80,7 +80,7 @@ public sealed class AzureMirror(IOptions<BridgeOptions> options, ILogger<AzureMi
                 var uploaded = await UploadAsync(container, path, ct);
                 lock (_lock)
                 {
-                    if (!ReferenceEquals(container, _container)) return; // w międzyczasie zmieniono ustawienia
+                    if (!ReferenceEquals(container, _container)) return; // the settings changed in the meantime
                     _dirty.Remove(path);
                     if (uploaded) Status = new AzureStatus(AzureState.Ok, "OK", DateTime.UtcNow);
                     _lastError = null;
@@ -94,11 +94,11 @@ public sealed class AzureMirror(IOptions<BridgeOptions> options, ILogger<AzureMi
                     if (!ReferenceEquals(container, _container)) return;
                     _retryAfterUtc = DateTime.UtcNow + RetryDelay;
                     Status = new AzureStatus(AzureState.Error, message, Status.LastUploadUtc);
-                    if (message == _lastError) return; // ten sam błąd co ostatnio - nie zaśmiecaj logu
+                    if (message == _lastError) return; // the same error as last time - don't clutter the log
                     _lastError = message;
                 }
                 logger.LogWarning("Azure upload of {Path} failed: {Message}. Retrying in {Delay} s", path, message, RetryDelay.TotalSeconds);
-                return; // reszta (w tym meta.json) poczeka na kolejną próbę
+                return; // the rest (including meta.json) waits for the next attempt
             }
         }
     }
@@ -121,7 +121,7 @@ public sealed class AzureMirror(IOptions<BridgeOptions> options, ILogger<AzureMi
         }
     }
 
-    // false = pliku już nie ma lokalnie (nic do wysłania)
+    // false = the file is no longer there locally (nothing to send)
     private async Task<bool> UploadAsync(BlobContainerClient container, string path, CancellationToken ct)
     {
         var local = Path.Combine(_root, path.Replace('/', Path.DirectorySeparatorChar));
@@ -137,7 +137,7 @@ public sealed class AzureMirror(IOptions<BridgeOptions> options, ILogger<AzureMi
         var headers = new BlobHttpHeaders { ContentType = ContentType(path), CacheControl = "no-cache" };
         if (path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
         {
-            data = Gzip(data); // przeglądarka rozpakuje sama dzięki Content-Encoding
+            data = Gzip(data); // the browser unpacks it itself thanks to Content-Encoding
             headers.ContentEncoding = "gzip";
         }
 

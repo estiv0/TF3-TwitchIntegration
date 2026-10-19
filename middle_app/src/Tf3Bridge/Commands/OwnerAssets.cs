@@ -18,20 +18,20 @@ public static class OwnerIndex
     public static string Key(string owner) => owner.Trim().ToLowerInvariant();
 
     /// <summary>
-    /// Majątek do rankingu, jak score w owners.js: miasto <see cref="TownWorth"/>, zakład 50, stacja i linia po 1.
-    /// <paramref name="vehiclePoints"/>: pojazdy na liniach widza według nośnika (<see cref="VehicleWorth"/>).
+    /// Estate for the ranking, like score in owners.js: town <see cref="TownWorth"/>, industry 50, station and line 1 each.
+    /// <paramref name="vehiclePoints"/>: vehicles on the viewer's lines by carrier (<see cref="VehicleWorth"/>).
     /// </summary>
     public static double Score(IEnumerable<double> townPoints, int industries, int stations, int lines, double vehiclePoints = 0) =>
         townPoints.Sum() + 50 * industries + stations + lines + vehiclePoints;
 
     /// <summary>
-    /// Miasto: 100 pkt plus wielkość / 25 plus wzrost od startu gry × 100 (podwojone miasto +100, zmalałe bez kary,
-    /// bez <paramref name="startSize"/> bez premii). Każde miasto dużo daje, duże i rozwinięte waży znacznie więcej.
+    /// Town: 100 pts plus size / 25 plus growth since game start × 100 (a doubled town +100, a shrunk one no penalty,
+    /// without <paramref name="startSize"/> no bonus). Every town is worth a lot, a big and developed one much more.
     /// </summary>
     public static double TownWorth(double size, double startSize) =>
         100 + size / 25 + (startSize > 0 ? 100 * Math.Max(0, size / startSize - 1) : 0);
 
-    /// <summary>Pojazd: pociąg i samolot 10 pkt, statek 2, drogowy (też tramwaj i nieznany nośnik) 1.</summary>
+    /// <summary>Vehicle: train and plane 10 pts, ship 2, road (also tram and an unknown carrier) 1.</summary>
     public static int VehicleWorth(string? carrier) => carrier switch { "RAIL" or "AIR" => 10, "WATER" => 2, _ => 1 };
 
     /// <summary>Owners from the latest published dynamic.json; null when it is missing or unreadable.</summary>
@@ -53,8 +53,8 @@ public static class OwnerIndex
         var stations = Items(root, "stations");
         var lines = Items(root, "lines");
 
-        // Gra nazywa stacje od miasta, także kupionego: "Dworzec Szczecin | estiv0 Zachód" to nie stacja
-        // widza "estiv0 Zachód". Pełne nazwy miast i zakładów z właścicielem zamieniamy na same nazwy (jak format.js).
+        // The game names stations after the town, including a bought one: "Dworzec Szczecin | estiv0 Zachód" is not
+        // the station of viewer "estiv0 Zachód". Full town and industry names with an owner become bare names (like format.js).
         var owned = towns.Concat(industries).Select(x => Str(x, "name")).OfType<string>().Where(n => n.Contains('|'))
             .Distinct().OrderByDescending(n => n.Length)
             .Select(full => (Re: new Regex(Regex.Escape(full) + @"(?![\p{L}\p{N}_])"), Plain: OwnerName.Split(full).Name))
@@ -86,7 +86,7 @@ public static class OwnerIndex
         {
             if (Str(s, "name") is not { } name) continue;
             var full = StationName(name);
-            // Stacja zakładu tego samego widza jest już przy zakładzie.
+            // A station of the same viewer's industry is already counted with the industry.
             if (OwnerName.Split(full).Owner is { } o && Long(s, "industry") is { } ind
                 && industryOwner.GetValueOrDefault(ind) == Key(o)) continue;
             if (Add(full) is { } g) g.Stations++;
@@ -138,7 +138,7 @@ public static class OwnerIndex
     private static long? Long(JsonElement x, string key) =>
         x.TryGetProperty(key, out var v) && v.TryGetInt64(out var id) ? id : null;
 
-    // Wielkość miasta jak na stronie (townSize): suma pojemności stref; "initialCapacities" = na starcie gry.
+    // Town size as on the website (townSize): sum of zone capacities; "initialCapacities" = at game start.
     private static double TownSize(JsonElement t, string key) =>
         t.TryGetProperty(key, out var c) && c.ValueKind == JsonValueKind.Array
             ? c.EnumerateArray().Where(v => v.ValueKind == JsonValueKind.Number).Sum(v => v.GetDouble()) : 0;

@@ -52,13 +52,13 @@ public sealed record ModCommand(
         new(NewId(), "wreck", created ?? DateTimeOffset.UtcNow,
             new Dictionary<string, object> { ["entity"] = line, ["share"] = share }, source, user);
 
-    /// <summary>Dotacja (commands.lua: subsidy): <paramref name="amount"/> booked for the company as a subsidy.</summary>
+    /// <summary>Subsidy (commands.lua: subsidy): <paramref name="amount"/> booked for the company as a subsidy.</summary>
     public static ModCommand Subsidy(long amount, CommandSource source, string user, DateTimeOffset? created = null) =>
         new(NewId(), "subsidy", created ?? DateTimeOffset.UtcNow,
             new Dictionary<string, object> { ["amount"] = amount, ["user"] = user }, source, user);
 
     /// <summary>
-    /// Kredyt (commands.lua: loan): a loan in the game's own loan system (Finanse → Kredyty), repaid by the game every
+    /// Loan (commands.lua: loan): a loan in the game's own loan system (Finances → Loans), repaid by the game every
     /// month for <paramref name="months"/> game months with <paramref name="percent"/>% interest (simple: amount × %).
     /// The mod refuses when the company has the game's limit of loans or plays with unlimited money.
     /// </summary>
@@ -96,20 +96,20 @@ public sealed record ModCommand(
         return new(NewId(), "notify", DateTimeOffset.UtcNow, args, source, user);
     }
 
-    internal const int MaxNotifyTitle = 100, MaxNotifyText = 300; // jak MAX_TITLE / MAX_TEXT w commands.lua
+    internal const int MaxNotifyTitle = 100, MaxNotifyText = 300; // like MAX_TITLE / MAX_TEXT in commands.lua
 
     private static string OneLine(string s, int max)
     {
         var line = string.Join(' ', s.Split(['\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries)).Trim();
         if (line.Length <= max) return line;
         var cut = max - 1;
-        if (char.IsHighSurrogate(line[cut - 1])) cut--; // nie rozcinamy emoji
+        if (char.IsHighSurrogate(line[cut - 1])) cut--; // don't split an emoji
         return line[..cut] + "…";
     }
 
     private static string NewId() => Guid.NewGuid().ToString("N")[..12];
 
-    // Liczby w logu jak w pliku dla gry (1.5, nie 1,5).
+    // Numbers in the log as in the file for the game (1.5, not 1,5).
     public override string ToString() => string.Create(CultureInfo.InvariantCulture,
         $"{Kind} {string.Join(", ", Args.Select(a => string.Create(CultureInfo.InvariantCulture, $"{a.Key}={a.Value}")))} ({Source}, {User}, #{Id})");
 }

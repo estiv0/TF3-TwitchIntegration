@@ -14,7 +14,7 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
-        // Jedna instancja: dwa mosty czytające ten sam folder kasowałyby sobie pliki.
+        // Single instance: two bridges reading the same folder would delete each other's files.
         using var mutex = new Mutex(true, @"Local\Tf3Bridge", out var firstInstance);
         if (!firstInstance)
         {
@@ -25,13 +25,13 @@ internal static class Program
 
         ApplicationConfiguration.Initialize();
 
-        // ContentRoot = folder exe, żeby appsettings.json się znalazł niezależnie od katalogu startowego.
+        // ContentRoot = the exe folder, so appsettings.json is found regardless of the working directory.
         var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
         {
             Args = args,
             ContentRootPath = AppContext.BaseDirectory,
         });
-        // Ustawienia konkretnego streamera (np. Twitch:SiteUrl) poza repozytorium; argumenty dalej wygrywają.
+        // Settings of a specific streamer (e.g. Twitch:SiteUrl) outside the repository; arguments still win.
         builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true);
         builder.Configuration.AddCommandLine(args);
 
@@ -68,7 +68,7 @@ internal static class Program
         mirror.Configure(AzureSettingsStore.Load());
         var mod = ModInstaller.Sync(options.InputDir, host.Services.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(ModInstaller)));
         ModSettingsStore.EnsureExists(options.InputDir);
-        host.Services.GetRequiredService<ChatCommandService>(); // komendy z czatu (!...): nasłuchuje EventSub od utworzenia
+        host.Services.GetRequiredService<ChatCommandService>(); // chat commands (!...): listens to EventSub from creation
 
         Application.Run(new MainForm(runner, mirror, host.Services.GetRequiredService<TwitchSession>(), host.Services.GetRequiredService<EventSubClient>(),
             host.Services.GetRequiredService<ModCommandQueue>(), host.Services.GetRequiredService<RewardService>(), options, mod, uiLog));

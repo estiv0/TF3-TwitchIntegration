@@ -19,14 +19,14 @@ public sealed class ModCommandTests : IDisposable
 
     private string QueueText => File.ReadAllText(Path.Combine(_dir, "tf3export_queue.lua"));
 
-    // Tak jak zapisuje app.saveUserdata: JSON jako escapowany literał Lua.
+    // The way app.saveUserdata writes it: JSON as an escaped Lua literal.
     private void WriteResults(string json)
     {
         Directory.CreateDirectory(_dir);
         var escaped = json.Replace("\\", "\\\\").Replace("\"", "\\\"");
         var path = Path.Combine(_dir, "tf3export_results.lua");
         File.WriteAllText(path, $"function data()\r\nreturn {{ \r\n\t\tdone = \"x\",\r\n\t\tjson = \"{escaped}\",\r\n\t}}\r\nend");
-        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddSeconds(Random.Shared.Next(1, 1000))); // nowy znacznik czasu
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddSeconds(Random.Shared.Next(1, 1000))); // a new timestamp
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public sealed class ModCommandTests : IDisposable
         Assert.Contains("function data()\r\nreturn {\r\n\tcommands = {\r\n", lua);
         Assert.Contains("{ id = \"abc\", kind = \"setName\", created = 1759590000, entity = 1234, name = \"Kraków | widz\" },", lua);
         Assert.EndsWith("}\r\nend\r\n", lua);
-        Assert.DoesNotContain("widz\", ", lua.Replace("| widz\"", "")); // źródło i użytkownik nie idą do gry
+        Assert.DoesNotContain("widz\", ", lua.Replace("| widz\"", "")); // source and user don't go to the game
     }
 
     [Fact]
@@ -188,7 +188,7 @@ public sealed class ModCommandTests : IDisposable
 
         Assert.Equal(["Bytom", "Zabrze", "Kopalnia", "Dworzec", "Przystanek", "Linia 1"], list.Select(o => o.Name));
         Assert.Equal("ala", list[1].Owner);
-        Assert.Equal(31, list.Single(o => o.Name == "Dworzec").Entity); // nazwa stacji siedzi w grupie
+        Assert.Equal(31, list.Single(o => o.Name == "Dworzec").Entity); // the station name sits in the group
         Assert.Equal(40, list.Single(o => o.Name == "Przystanek").Entity);
     }
 

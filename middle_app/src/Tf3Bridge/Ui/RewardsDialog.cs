@@ -126,7 +126,7 @@ public sealed class RewardsDialog : Form
             if (!RewardKinds.HasMonths(r.Kind)) Lock(row.Cells["months"]);
             if (!RewardKinds.HasFactor(r.Kind)) Lock(row.Cells["factor"]);
             if (!RewardKinds.HasAmount(r.Kind)) Lock(row.Cells["amount"]);
-            if (!RewardKinds.Manual(r.Kind)) Lock(row.Cells["input"]); // gra potrzebuje nazwy celu (dotacja i kredyt: żadnego)
+            if (!RewardKinds.Manual(r.Kind)) Lock(row.Cells["input"]); // the game needs a target name (subsidy and loan: none)
         }
 
         _zonesGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "industry", HeaderText = "Zakład", Width = 170, ReadOnly = true });
@@ -288,7 +288,7 @@ public sealed class RewardsDialog : Form
     /// <summary>"10 000 000", "10.000.000" or "10000000": separators of thousands do not matter.</summary>
     internal static bool TryParseAmount(string text, out long amount)
     {
-        var digits = new string([.. text.Where(c => !char.IsWhiteSpace(c) && c is not ('.' or ',' or '\''))]); // IsWhiteSpace łapie też twarde spacje
+        var digits = new string([.. text.Where(c => !char.IsWhiteSpace(c) && c is not ('.' or ',' or '\''))]); // IsWhiteSpace also catches non-breaking spaces
         return long.TryParse(digits, NumberStyles.None, CultureInfo.InvariantCulture, out amount);
     }
 

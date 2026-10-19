@@ -145,7 +145,7 @@ public sealed class TwitchAuthClient
     private static HttpRequestMessage Form(string endpoint, Dictionary<string, string> values) =>
         new(HttpMethod.Post, IdBase + endpoint) { Content = new FormUrlEncodedContent(values) };
 
-    // Błędy Twitcha mają postać {"status":400,"message":"authorization_pending"}; message trafia do wyjątku.
+    // Twitch errors look like {"status":400,"message":"authorization_pending"}; message goes into the exception.
     private async Task<JsonDocument> SendAsync(HttpRequestMessage request, CancellationToken ct, bool expectJson = true)
     {
         using (request)

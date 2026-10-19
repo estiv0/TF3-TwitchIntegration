@@ -56,10 +56,10 @@ public sealed class ChatCommandTests : IDisposable
         using var doc = JsonDocument.Parse(Dynamic);
         var o = OwnerIndex.Parse(doc.RootElement)["estiv0"];
 
-        Assert.Equal("estiv0", o.Name); // najczęstszy zapis
+        Assert.Equal("estiv0", o.Name); // the most common spelling
         Assert.Equal(["Szczecin", "Barcin"], o.Towns);
         Assert.Equal(["Browar"], o.Industries);
-        Assert.Equal(0, o.Stations); // stacje nazwane od miasta i stacja własnego zakładu się nie liczą
+        Assert.Equal(0, o.Stations); // stations named after the town and the station of one's own industry don't count
         Assert.Equal(2, o.Lines);
         Assert.Equal(16, o.Vehicles);
         Assert.Equal(833881.4, o.Profit12m!.Value, 1);
@@ -70,7 +70,7 @@ public sealed class ChatCommandTests : IDisposable
     [Fact]
     public void Score_weighs_towns_by_size()
     {
-        // Jak w zapisie gry: Szczecin (5172) i 2 linie wyżej niż dwa małe miasteczka (246, 286).
+        // As in the game save: Szczecin (5172) and 2 lines rank higher than two small towns (246, 286).
         Assert.True(OwnerIndex.Score([OwnerIndex.TownWorth(5172, 0)], 0, 0, 2)
             > OwnerIndex.Score([OwnerIndex.TownWorth(246, 0), OwnerIndex.TownWorth(286, 0)], 0, 0, 0));
         Assert.Equal(100 + 10 + 50 + 1 + 1, OwnerIndex.Score([OwnerIndex.TownWorth(250, 0)], 1, 1, 1));
@@ -80,12 +80,12 @@ public sealed class ChatCommandTests : IDisposable
     public void Town_growth_since_start_adds_points_but_shrinking_does_not_cost()
     {
         Assert.Equal(100 + 20 + 100, OwnerIndex.TownWorth(500, 250)); // podwojone
-        Assert.Equal(100 + 10, OwnerIndex.TownWorth(250, 300)); // zmalało
+        Assert.Equal(100 + 10, OwnerIndex.TownWorth(250, 300)); // shrunk
         Assert.Equal(100 + 10, OwnerIndex.TownWorth(250, 0)); // brak danych o starcie
-        // Szczecin w danych testowych: 900 przy starcie 800.
+        // Szczecin in the test data: 900, 800 at the start.
         using var doc = JsonDocument.Parse(Dynamic);
         var o = OwnerIndex.Parse(doc.RootElement)["estiv0"];
-        Assert.Equal(OwnerIndex.TownWorth(900, 800) + OwnerIndex.TownWorth(160, 0) + 50 + 2 + 16, o.Score, 6); // zakład, 2 linie, 16 pojazdów bez nośnika
+        Assert.Equal(OwnerIndex.TownWorth(900, 800) + OwnerIndex.TownWorth(160, 0) + 50 + 2 + 16, o.Score, 6); // industry, 2 lines, 16 vehicles without a carrier
     }
 
     [Fact]
@@ -128,7 +128,7 @@ public sealed class ChatCommandTests : IDisposable
         Assert.Null(service.Answer(Msg("hej !majatek")));
         Assert.Null(service.Answer(Msg("!nieznana")));
         Assert.NotNull(service.Answer(Msg("!majatek estiv0")));
-        Assert.Null(service.Answer(Msg("!miasto Łódź"))); // ten sam widz, inna komenda
+        Assert.Null(service.Answer(Msg("!miasto Łódź"))); // the same viewer, a different command
         Assert.NotNull(service.Answer(Msg("!majatek ala", id: "other")));
         _time.Now += ChatCommandService.Cooldown;
         Assert.NotNull(service.Answer(Msg("!miasto Łódź")));
@@ -140,11 +140,11 @@ public sealed class ChatCommandTests : IDisposable
         var service = Service();
 
         Assert.NotNull(service.Answer(Msg("!miasto Łódź", id: "1")));
-        Assert.Null(service.Answer(Msg("!miasto lodz", id: "2"))); // ta sama odpowiedź: bez powtórki na czacie
+        Assert.Null(service.Answer(Msg("!miasto lodz", id: "2"))); // the same answer: not repeated in chat
         Assert.NotNull(service.Answer(Msg("!miasto Kraków", id: "3")));
         Assert.NotNull(service.Answer(Msg("!ranking", id: "4")));
-        Assert.Null(service.Answer(Msg("!top", id: "5"))); // alias tej samej komendy
-        Assert.NotNull(service.Answer(Msg("!majatek", "a", "a", id: "6"))); // majątek pytającego: osobno dla każdego
+        Assert.Null(service.Answer(Msg("!top", id: "5"))); // an alias of the same command
+        Assert.NotNull(service.Answer(Msg("!majatek", "a", "a", id: "6"))); // the asker's estate: separate for each viewer
         Assert.NotNull(service.Answer(Msg("!majatek", "b", "b", id: "7")));
 
         _time.Now += TimeSpan.FromSeconds(30);

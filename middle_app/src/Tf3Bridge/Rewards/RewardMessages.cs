@@ -105,7 +105,7 @@ public static class RewardMessages
 
     /// <summary>"https://site/#town=123": the site opens the object from the address (web/js/hash.js).</summary>
     public static string? Link(string siteUrl, RewardKind kind, long entity) =>
-        RewardKinds.TargetsOwner(kind) ? null // wiele zakładów: link do widza daje OwnerLink
+        RewardKinds.TargetsOwner(kind) ? null // many industries: OwnerLink gives the link to the viewer
             : Link(siteUrl, RewardKinds.Target(kind), entity);
 
     /// <summary>"https://site/#industry=123" for any object kind (stations: the station construction id).</summary>

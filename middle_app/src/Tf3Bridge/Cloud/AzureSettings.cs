@@ -72,7 +72,7 @@ public static class AzureSettingsStore
         }
         catch (Exception ex) when (ex is JsonException or CryptographicException or FormatException)
         {
-            return AzureSettings.Empty; // uszkodzony albo z innego konta - trzeba wpisać od nowa
+            return AzureSettings.Empty; // corrupted or from another account - has to be entered again
         }
     }
 

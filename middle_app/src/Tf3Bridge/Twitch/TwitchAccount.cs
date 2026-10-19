@@ -31,7 +31,7 @@ public sealed record TwitchAccount(
 
     public bool HasScopes(IEnumerable<string> required) => required.All(Scopes.Contains);
 
-    // Domyślny ToString rekordu wypisałby tokeny (np. do logu).
+    // The record's default ToString would print the tokens (e.g. to the log).
     public override string ToString() => $"{Login} ({UserId}, {BroadcasterType})";
 }
 
@@ -61,7 +61,7 @@ public static class TwitchAccountStore
         }
         catch (Exception ex) when (ex is JsonException or CryptographicException or FormatException or IOException)
         {
-            return null; // uszkodzony albo z innego konta - trzeba zalogować się od nowa
+            return null; // corrupted or from another account - you have to log in again
         }
     }
 
@@ -72,7 +72,7 @@ public static class TwitchAccountStore
         var tokens = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new StoredTokens(account.AccessToken, account.RefreshToken)));
         var file = new StoredFile(account.UserId, account.Login, account.BroadcasterType, account.Scopes, account.ExpiresAt,
             Convert.ToBase64String(ProtectedData.Protect(tokens, Entropy, DataProtectionScope.CurrentUser)));
-        // Najpierw plik tymczasowy: refresh token jest jednorazowy, więc urwany zapis = ponowne logowanie.
+        // A temporary file first: the refresh token is single-use, so a cut-off write = logging in again.
         var tmp = path + ".tmp";
         File.WriteAllText(tmp, JsonSerializer.Serialize(file, new JsonSerializerOptions { WriteIndented = true }));
         File.Move(tmp, path, overwrite: true);

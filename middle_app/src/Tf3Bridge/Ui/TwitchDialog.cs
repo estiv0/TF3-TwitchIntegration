@@ -120,6 +120,6 @@ public sealed class TwitchDialog : Form
     private static void OpenBrowser(string url)
     {
         try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
-        catch (System.ComponentModel.Win32Exception) { } // brak przeglądarki: zostaje link w oknie
+        catch (System.ComponentModel.Win32Exception) { } // no browser: the link stays in the window
     }
 }

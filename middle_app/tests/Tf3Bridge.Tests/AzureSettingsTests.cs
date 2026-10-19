@@ -14,7 +14,7 @@ public sealed class AzureSettingsTests : IDisposable
     [Theory]
     [InlineData("https://acc.blob.core.windows.net/live", "sv=1&sig=x")]
     [InlineData("https://acc.blob.core.windows.net/live/", "?sv=1&sig=x")]
-    [InlineData("https://acc.blob.core.windows.net/live?sv=1&sig=x", "")] // cały "SAS URL" w polu adresu
+    [InlineData("https://acc.blob.core.windows.net/live?sv=1&sig=x", "")] // the whole "SAS URL" in the address field
     public void Builds_container_uri_from_url_and_sas(string url, string sas)
     {
         var s = new AzureSettings(true, url, sas);
@@ -27,7 +27,7 @@ public sealed class AzureSettingsTests : IDisposable
     [Theory]
     [InlineData("", "sv=1")]
     [InlineData("https://acc.blob.core.windows.net/live", "")]
-    [InlineData("http://acc.blob.core.windows.net/live", "sv=1")] // SAS tylko po HTTPS
+    [InlineData("http://acc.blob.core.windows.net/live", "sv=1")] // SAS over HTTPS only
     [InlineData("nie-adres", "sv=1")]
     public void Rejects_incomplete_settings(string url, string sas) =>
         Assert.False(new AzureSettings(true, url, sas).IsComplete);

@@ -19,7 +19,7 @@ public sealed class TwitchSession
     private readonly TwitchAuthClient? _client;
     private readonly string _storePath;
     private readonly ILogger _log;
-    private readonly SemaphoreSlim _lock = new(1, 1); // refresh token jest jednorazowy: jedno odświeżanie naraz
+    private readonly SemaphoreSlim _lock = new(1, 1); // the refresh token is single-use: one refresh at a time
     private TwitchAccount? _account;
     private volatile TwitchStatus _status;
 
@@ -161,14 +161,14 @@ public sealed class TwitchSession
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
-            // Brak sieci albo błąd po stronie Twitcha: konto zostaje, spróbujemy przy następnym sprawdzeniu.
+            // No network or an error on Twitch's side: the account stays, we'll try on the next check.
             _log.LogWarning("Twitch: validation failed: {Message}", ex.Message);
             _status = new(TwitchState.Error, $"{_account?.Login}: nie udało się sprawdzić konta ({ex.Message})");
         }
         finally { _lock.Release(); }
     }
 
-    // Wywoływać pod _lock.
+    // Call under _lock.
     private async Task<bool> RefreshLockedAsync(CancellationToken ct)
     {
         try

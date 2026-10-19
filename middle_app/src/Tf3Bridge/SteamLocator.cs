@@ -73,7 +73,7 @@ public static class SteamLocator
         return paths;
     }
 
-    // Zalogowane konto Steam (account id = nazwa folderu w userdata); 0, gdy Steam nie działa.
+    // The logged-in Steam account (account id = folder name in userdata); 0 when Steam isn't running.
     private static uint? ReadActiveUser() =>
         Registry.GetValue(@"HKEY_CURRENT_USER\Software\Valve\Steam\ActiveProcess", "ActiveUser", null) is int id
             ? unchecked((uint)id)

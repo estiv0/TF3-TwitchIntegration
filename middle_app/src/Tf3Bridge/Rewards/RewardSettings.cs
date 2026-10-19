@@ -91,7 +91,7 @@ public static class RewardKinds
         kind is RewardKind.StrikeIndustry or RewardKind.TaxRaid or RewardKind.BadFuel or RewardKind.BrakeSabotage;
 
     /// <summary>
-    /// Money for the streamer's company, no target: dotacja (booked as a subsidy) and kredyt (a loan in the game's own
+    /// Money for the streamer's company, no target: subsidy (booked as a subsidy) and loan (a loan in the game's own
     /// loan system, repaid by the game every month with interest).
     /// </summary>
     public static bool HasAmount(RewardKind kind) => kind is RewardKind.Subsidy or RewardKind.Loan;
@@ -207,7 +207,7 @@ public static class RewardKinds
         new(RewardKind.Loan, true, "TF3: kredyt",
             "Udzielasz firmie streamera kredytu {amount} na {percent}% na {months} mies. gry. Gra sama pobiera raty co miesiąc (zakładka Kredyty).",
             5000, 900, 0, 1, 60, 2) { Amount = 10_000_000 },
-        // Wykonuje streamer: opis i limity ustawia sam w oknie nagród.
+        // Carried out by the streamer: they set the description and limits themselves in the rewards window.
         new(RewardKind.Bomb, true, "TF3: bomba", "", 5000, 0, 0, 0, 0, 1) { UserInput = false },
         new(RewardKind.Line, true, "TF3: linia", "", 5000, 0, 0, 0, 0, 1) { UserInput = false },
         new(RewardKind.Nature, true, "TF3: natura", "", 5000, 0, 0, 0, 0, 1) { UserInput = false },
@@ -257,7 +257,7 @@ public sealed record RewardSettings(IReadOnlyList<RewardConfig> Rewards, string 
 
     public RewardConfig Get(RewardKind kind) => Rewards.First(r => r.Kind == kind);
 
-    // Dawne domyślne teksty "adopcji" (przed zmianą na kupno miasta); zmienione przez streamera zostają.
+    // Old default "adoption" texts (before the switch to buying a town); ones changed by the streamer stay.
     private const string OldAdoptTitle = "TF3: adoptuj miasto";
     private const string OldAdoptPrompt = "Wpisz nazwę miasta bez właściciela. Zostaniesz jego właścicielem (pokaże się w grze i na mapie).";
 
@@ -267,11 +267,11 @@ public sealed record RewardSettings(IReadOnlyList<RewardConfig> Rewards, string 
         Rewards = [.. RewardKinds.Defaults.Select(d => Rewards.FirstOrDefault(r => r.Kind == d.Kind) switch
         {
             null => d,
-            { Months: <= 0 } r => Migrate(r with { Months = d.Months }, d), // plik sprzed zmiany dni -> miesiące
+            { Months: <= 0 } r => Migrate(r with { Months = d.Months }, d), // a file from before days -> months
             var r => Migrate(r, d),
         }).Select(r => r.Normalized())],
         Zones = IndustryZones.Normalize(Zones),
-        NotificationSeconds = NotificationSeconds <= 0 ? DefaultNotificationSeconds // plik sprzed tego ustawienia
+        NotificationSeconds = NotificationSeconds <= 0 ? DefaultNotificationSeconds // a file from before this setting
             : Math.Clamp(NotificationSeconds, NotificationSecondsRange.Min, NotificationSecondsRange.Max),
     };
 

@@ -63,8 +63,8 @@ public sealed class MainForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         Font = new Font("Segoe UI", 9f);
 
-        // Przyciski w rzędzie, który się zawija (wąskie okno = dwa rzędy), pod nimi linie stanu na całą
-        // szerokość; za długi stan kończy się "…", a pełny tekst jest w podpowiedzi (AutoEllipsis).
+        // Buttons in a wrapping row (narrow window = two rows), below them full-width status lines;
+        // a status that is too long ends with "…", and the full text is in the tooltip (AutoEllipsis).
         var openOutput = ToolButton("Folder wyjściowy");
         var openInput = ToolButton("Folder moda");
         var modSettings = ToolButton("Ustawienia moda…");
@@ -119,11 +119,11 @@ public sealed class MainForm : Form
         base.OnLoad(e);
         _tray.Visible = true;
         _timer.Start();
-        _runner.Start(); // most ma działać od razu po uruchomieniu
-        _ = _twitch.RunAsync(_backgroundCts.Token); // walidacja tokenu przy starcie i co godzinę
-        _ = _commands.RunAsync(_backgroundCts.Token); // wyniki komend z gry
-        _ = _eventSub.RunAsync(_backgroundCts.Token); // czat i punkty kanału
-        _ = _rewards.RunAsync(_backgroundCts.Token); // nagrody na Twitchu
+        _runner.Start(); // the bridge should run right after startup
+        _ = _twitch.RunAsync(_backgroundCts.Token); // token validation at startup and every hour
+        _ = _commands.RunAsync(_backgroundCts.Token); // command results from the game
+        _ = _eventSub.RunAsync(_backgroundCts.Token); // chat and channel points
+        _ = _rewards.RunAsync(_backgroundCts.Token); // rewards on Twitch
         UpdateState();
     }
 
@@ -137,7 +137,7 @@ public sealed class MainForm : Form
         }
     }
 
-    // Zamknięcie: najpierw zatrzymaj pętlę (dokończy bieżący przebieg) i wyłącz nagrody na Twitchu, potem zamknij okno.
+    // Closing: first stop the loop (it finishes the current pass) and disable the rewards on Twitch, then close the window.
     protected override async void OnFormClosing(FormClosingEventArgs e)
     {
         if (!_closing)
@@ -149,7 +149,7 @@ public sealed class MainForm : Form
             if (_runner.IsRunning) await _runner.StopAsync();
             _backgroundCts.Cancel();
             using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
-                await _rewards.DisableAsync(cts.Token); // bez działającego mostu nikt nie obsłuży wykupień
+                await _rewards.DisableAsync(cts.Token); // without a running bridge nobody handles redemptions
             Close();
             return;
         }
@@ -211,7 +211,7 @@ public sealed class MainForm : Form
         }
         else if (Visible && _logBox.Lines.Length != _lines.Count)
         {
-            _logBox.Lines = [.. _lines]; // nadrabianie po powrocie z zasobnika
+            _logBox.Lines = [.. _lines]; // catching up after coming back from the tray
         }
 
         _lastUpdate.Text = LastUpdateText();
@@ -329,7 +329,7 @@ public sealed class MainForm : Form
         };
     }
 
-    // Czas ostatniej publikacji = data zapisu meta.json (publikowany przy każdej zmianie).
+    // Time of the last publish = write time of meta.json (published on every change).
     private string LastUpdateText()
     {
         var meta = Path.Combine(_options.OutputDir, ExportProcessor.MetaPath.Replace('/', Path.DirectorySeparatorChar));
@@ -342,9 +342,9 @@ public sealed class MainForm : Form
         return $"Ostatnia aktualizacja: {at:HH:mm:ss} ({agoText})";
     }
 
-    // ---------------------------------------------------------------- układ (osobno, żeby dało się go przetestować)
+    // ---------------------------------------------------------------- layout (separate, so it can be tested)
 
-    private static readonly Padding GroupMargin = new(16, 3, 3, 3); // odstęp przed grupą przycisków
+    private static readonly Padding GroupMargin = new(16, 3, 3, 3); // gap before a group of buttons
 
     internal static Button ToolButton(string text, bool groupStart = false) =>
         new() { Text = text, AutoSize = true, MinimumSize = new Size(0, 30), Margin = groupStart ? GroupMargin : new Padding(3) };
@@ -420,7 +420,7 @@ public sealed class MainForm : Form
         Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = true });
     }
 
-    // Ikona okna/zasobnika: kółko w kolorze stanu (bez pliku .ico w repo).
+    // Window/tray icon: a circle in the state color (no .ico file in the repo).
     private static Icon MakeIcon(Color color)
     {
         using var bmp = new Bitmap(32, 32);

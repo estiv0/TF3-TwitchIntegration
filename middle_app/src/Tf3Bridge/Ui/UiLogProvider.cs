@@ -17,7 +17,7 @@ public sealed class UiLogProvider : ILoggerProvider
     private void Add(LogLine line)
     {
         _queue.Enqueue(line);
-        while (_queue.Count > MaxQueued) _queue.TryDequeue(out _); // okno zminimalizowane długo - nie rośnij w nieskończoność
+        while (_queue.Count > MaxQueued) _queue.TryDequeue(out _); // window minimized for a long time - don't grow forever
     }
 
     private sealed class UiLogger(UiLogProvider provider) : ILogger

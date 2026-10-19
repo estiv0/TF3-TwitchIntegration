@@ -96,7 +96,7 @@ internal static class ChatAnswers
         if (Num(st, "transported12m") is { } t) parts.Add($"przewiezione (rok) {Int(t)}");
     });
 
-    // Wspólne dla miasta, zakładu i linii: dopasowanie nazwy jak w nagrodach, właściciel, efekty, link.
+    // Shared by town, industry and line: name matching as in rewards, owner, effects, link.
     private static string Describe(ChatRequest r, GameObjectKind kind, string example, Action<JsonElement, List<string>> details)
     {
         if (r.Arg.Length == 0) return $"{r.Mention} podaj nazwę, np. {example}";
@@ -232,7 +232,7 @@ internal static class ChatAnswers
         return $"{r.Mention} użyj: !{word} [linia|firma]";
     }
 
-    // Aktywne efekty z nagród na obiekcie: "boost miasta +50% do 12 maja 1922 (od ola)".
+    // Active reward effects on the object: "boost miasta +50% do 12 maja 1922 (od ola)".
     private static List<string> Effects(JsonElement root, long entity) =>
         [.. Items(root, "effects").Where(e => Long(e, "entity") == entity).Select(e =>
         {
@@ -254,7 +254,7 @@ internal static class ChatAnswers
             return text;
         })];
 
-    // Zaspokojenie potrzeb miasta jak na stronie (townSupply w web/js/sidebar.js).
+    // Town needs satisfaction as on the website (townSupply in web/js/sidebar.js).
     private static double? Supply(JsonElement town)
     {
         double supplied = 0, demand = 0;
@@ -267,7 +267,7 @@ internal static class ChatAnswers
         return demand > 0 ? supplied / demand : null;
     }
 
-    // Pierwsze `max` nazw, reszta jako "i 4 inne".
+    // The first `max` names, the rest as "i 4 inne" ("and 4 others").
     internal static string Names(IReadOnlyList<string> names, int max) =>
         names.Count <= max ? string.Join(", ", names) : $"{string.Join(", ", names.Take(max))} i {names.Count - max} inne";
 
@@ -280,10 +280,10 @@ internal static class ChatAnswers
 
     private static readonly CultureInfo Pl = CultureInfo.GetCultureInfo("pl-PL");
 
-    // Jak na stronie: "1 234 567" ze zwykłą spacją (pl-PL daje twardą), połówki w górę jak Math.round w JS.
+    // As on the website: "1 234 567" with a plain space (pl-PL gives a non-breaking one), halves rounded up like Math.round in JS.
     private static string Int(double v) => Math.Round(v, MidpointRounding.AwayFromZero).ToString("#,0", Pl).Replace(' ', ' ');
 
-    // Jak na stronie: "$ 833 881", "$ -457 279".
+    // As on the website: "$ 833 881", "$ -457 279".
     internal static string Money(double v) => "$ " + Int(v);
 
     private static string Percent(double v) => $"{Int(v * 100)}%";

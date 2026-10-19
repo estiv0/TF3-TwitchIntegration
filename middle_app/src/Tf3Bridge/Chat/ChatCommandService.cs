@@ -44,8 +44,8 @@ public sealed class ChatCommandService
     private readonly TimeProvider _time;
     private readonly ILogger _log;
     private readonly Lock _gate = new();
-    private readonly Dictionary<string, DateTimeOffset> _lastAnswer = []; // id widza -> czas ostatniej odpowiedzi
-    private readonly Dictionary<string, DateTimeOffset> _lastCommand = []; // komenda + argument -> czas ostatniej odpowiedzi
+    private readonly Dictionary<string, DateTimeOffset> _lastAnswer = []; // viewer id -> time of the last answer
+    private readonly Dictionary<string, DateTimeOffset> _lastCommand = []; // command + argument -> time of the last answer
 
     public ChatCommandService(TwitchSession session, EventSubClient eventSub, IOptions<BridgeOptions> options,
         IOptions<TwitchOptions> twitch, ILogger<ChatCommandService> log)
@@ -72,7 +72,7 @@ public sealed class ChatCommandService
         if (answer is null) return null;
         if (_mock)
         {
-            _log.LogInformation("Chat (test server, not sent): {Text}", answer); // serwer testowy nie ma czatu
+            _log.LogInformation("Chat (test server, not sent): {Text}", answer); // the test server has no chat
             return answer;
         }
         try
@@ -96,7 +96,7 @@ public sealed class ChatCommandService
         var arg = space < 0 ? "" : text[(space + 1)..].Trim().TrimStart('@').Trim();
         if (!Commands.TryGetValue(name, out var command)) return null;
 
-        // "!majatek" bez argumentu to majątek pytającego: inna odpowiedź dla każdego widza.
+        // "!majatek" without an argument is the asker's estate: a different answer for each viewer.
         var key = command.Name + "|" + (arg.Length == 0 && command.Name == "majatek" ? "@" + m.ChatterLogin : TargetResolver.Normalize(arg));
         lock (_gate)
         {
@@ -115,7 +115,7 @@ public sealed class ChatCommandService
         return command.Run(new ChatRequest(asker, arg, _siteUrl, doc.RootElement, age));
     }
 
-    // Ostatni opublikowany dynamic.json; null, gdy go nie ma albo jest nieczytelny.
+    // The last published dynamic.json; null when it's missing or unreadable.
     private JsonDocument? LoadDynamic()
     {
         if (!File.Exists(_dynamicPath)) return null;

@@ -112,7 +112,7 @@ public sealed class EventSubClient
                 try
                 {
                     await RunConnectionAsync(userId, ct);
-                    failures = 0; // zmiana konta: od razu połącz od nowa
+                    failures = 0; // account change: reconnect right away
                 }
                 catch (Exception ex) when (!ct.IsCancellationRequested)
                 {
@@ -127,7 +127,7 @@ public sealed class EventSubClient
         _status = new(EventSubState.Off, "wyłączone");
     }
 
-    // Wraca normalnie tylko po zmianie konta; zerwanie połączenia to wyjątek.
+    // Returns normally only after an account change; a dropped connection is an exception.
     private async Task RunConnectionAsync(string userId, CancellationToken ct)
     {
         _status = new(EventSubState.Connecting, $"łączę z {_url.Host}…");
@@ -149,7 +149,7 @@ public sealed class EventSubClient
                         Dispatch(meta, root.GetProperty("payload"));
                         break;
                     case "session_reconnect":
-                        // Twitch przenosi subskrypcje na nowe połączenie; stare zamykamy dopiero po powitaniu.
+                        // Twitch moves the subscriptions to the new connection; the old one is closed only after the welcome.
                         var url = new Uri(Str(root.GetProperty("payload").GetProperty("session"), "reconnect_url"));
                         _log.LogInformation("EventSub: reconnect requested");
                         var next = await _connect(url, ct);
@@ -162,7 +162,7 @@ public sealed class EventSubClient
                         var sub = root.GetProperty("payload").GetProperty("subscription");
                         _log.LogWarning("EventSub: subscription {Type} revoked ({Status})", Str(sub, "type"), Str(sub, "status"));
                         break;
-                    // session_keepalive: samo odebranie wiadomości przedłuża czas połączenia
+                    // session_keepalive: receiving any message extends the connection time
                 }
             }
             _log.LogInformation("EventSub: account changed, reconnecting");
@@ -218,7 +218,7 @@ public sealed class EventSubClient
                 _log.LogWarning("EventSub: subscription {Type} failed: {Error}", type, error);
             }
         }
-        // Serwer testowy Twitch CLI (bez -S) przekazuje zdarzenia także bez subskrypcji.
+        // The Twitch CLI test server (without -S) forwards events even without subscriptions.
         if (ok.Count == 0 && !IsMock) throw new EventSubException($"Twitch nie przyjął subskrypcji ({string.Join("; ", errors)})");
         return ok.Count > 0 ? string.Join(", ", ok) : "bez subskrypcji";
     }
@@ -243,7 +243,7 @@ public sealed class EventSubClient
             request.Headers.Add("Client-Id", _session.ClientId);
             using var response = await _http.SendAsync(request, ct);
             if (response.IsSuccessStatusCode) return null;
-            if (response.StatusCode == HttpStatusCode.Unauthorized && attempt == 0) continue; // token odwołany: odśwież i spróbuj raz jeszcze
+            if (response.StatusCode == HttpStatusCode.Unauthorized && attempt == 0) continue; // token revoked: refresh and try once more
             var body = await response.Content.ReadAsStringAsync(ct);
             var message = body;
             try
@@ -258,7 +258,7 @@ public sealed class EventSubClient
 
     private void Dispatch(JsonElement meta, JsonElement payload)
     {
-        if (!Remember(Str(meta, "message_id"))) return; // Twitch może przysłać to samo zdarzenie drugi raz
+        if (!Remember(Str(meta, "message_id"))) return; // Twitch may send the same event twice
         var ev = payload.GetProperty("event");
         try
         {
@@ -288,7 +288,7 @@ public sealed class EventSubClient
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Błąd w obsłudze jednego zdarzenia nie może zerwać połączenia.
+            // An error while handling one event must not drop the connection.
             _log.LogWarning("EventSub: handling {Type} failed: {Message}", Str(meta, "subscription_type"), ex.Message);
         }
     }

@@ -35,7 +35,7 @@ public sealed class ChatApi(TwitchSession session, HttpClient http)
             try { json = JsonNode.Parse(text); } catch (JsonException) { }
             if (!response.IsSuccessStatusCode)
                 throw new TwitchAuthException($"HTTP {(int)response.StatusCode}: {(string?)json?["message"] ?? text}", rejected: false);
-            // Twitch przyjmuje żądanie, ale może odrzucić samą wiadomość (np. AutoMod).
+            // Twitch accepts the request but may still reject the message itself (e.g. AutoMod).
             var sent = json?["data"]?[0];
             if (sent is not null && (bool?)sent["is_sent"] == false)
                 throw new TwitchAuthException($"wiadomość odrzucona: {(string?)sent["drop_reason"]?["message"] ?? "bez powodu"}", rejected: false);

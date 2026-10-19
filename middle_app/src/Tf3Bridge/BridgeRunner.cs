@@ -41,7 +41,7 @@ public sealed class BridgeRunner(ExportProcessor processor, AzureMirror mirror, 
 
     private async Task RunAsync(CancellationToken ct)
     {
-        await Task.Yield(); // pętla poza wątkiem UI
+        await Task.Yield(); // loop off the UI thread
         var o = options.Value;
         logger.LogInformation("Watching {Input}, publishing to {Output}", o.InputDir, o.OutputDir);
         if (o.InputDir.Length == 0)
@@ -61,7 +61,7 @@ public sealed class BridgeRunner(ExportProcessor processor, AzureMirror mirror, 
             {
                 logger.LogError(ex, "Processing pass failed");
             }
-            // osobno: błąd przetwarzania nie wstrzymuje dosyłania tego, co już jest lokalnie
+            // separately: a processing error doesn't hold up uploading what is already local
             try
             {
                 await mirror.FlushAsync(ct);

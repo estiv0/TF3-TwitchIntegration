@@ -16,7 +16,7 @@ public sealed class CommandTestDialog : Form
         (GameObjectKind.Station, "Stacje"), (GameObjectKind.Line, "Linie"),
     ];
 
-    // Nagrody wykonywane przez streamera nie mają czego symulować w grze.
+    // Rewards carried out by the streamer have nothing to simulate in the game.
     private static readonly RewardKind[] Simulated = [.. Enum.GetValues<RewardKind>().Where(k => !RewardKinds.Manual(k))];
 
     private readonly ModCommandQueue _queue;
@@ -185,7 +185,7 @@ public sealed class CommandTestDialog : Form
         _notify.Enabled = _queue.IsAvailable;
     }
 
-    // Wygląd powiadomienia w grze bez nagrody; kliknięcie w nie pokazuje wybrany obiekt.
+    // What the in-game notification looks like without a reward; clicking it shows the selected object.
     private void SendNotification()
     {
         var viewer = OwnerName.Clean(_viewer.Text);
@@ -233,7 +233,7 @@ public sealed class CommandTestDialog : Form
         if (rejected is not null) ShowOutcome(rejected);
     }
 
-    // Finished przychodzi z wątku w tle.
+    // Finished comes from a background thread.
     private void OnRewardFinished(RewardOutcome o)
     {
         if (IsDisposed || !IsHandleCreated) return;

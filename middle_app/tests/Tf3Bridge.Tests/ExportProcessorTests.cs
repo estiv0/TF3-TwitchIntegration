@@ -96,7 +96,7 @@ public sealed class ExportProcessorTests : IDisposable
     {
         WriteGameFile("bench_A", """{"x":1}""");
         WriteGameFile("queue", """{"x":1}""");
-        // eksport miast i przemysłu z edytora map leży w tym samym folderze (towns_industries)
+        // the town and industry export from the map editor lives in the same folder (towns_industries)
         File.WriteAllText(Path.Combine(_input, "dynamic_aa_000001.lua"), "function data() return {} end");
 
         await _processor.ProcessOnceAsync(CancellationToken.None);

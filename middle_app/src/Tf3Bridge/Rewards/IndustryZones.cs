@@ -43,7 +43,7 @@ public static class IndustryZones
     public static string Name(string type) =>
         Known.FirstOrDefault(k => k.Type == type).Name ?? type.Replace('_', ' ');
 
-    /// <summary>"w górach" etc., after "można budować tylko".</summary>
+    /// <summary>"w górach" ("in the mountains") etc., after "można budować tylko" ("can only be built").</summary>
     public static string Label(IndustryZone zone) => zone switch
     {
         IndustryZone.Mountains => "w górach",

@@ -70,8 +70,8 @@ public sealed class ModCommandQueue
     public async Task RunAsync(CancellationToken ct)
     {
         if (_dir is null) return;
-        // Kolejka sprzed restartu Tf3Bridge nie ma już odbiorcy wyników: zaczynamy od pustej
-        // (plik musi istnieć, bo brak pliku w app.loadUserdata kończy się oknem błędu w grze).
+        // A queue from before the Tf3Bridge restart has nobody to receive its results: start from an empty one
+        // (the file has to exist, because a missing file in app.loadUserdata ends with an error window in the game).
         lock (_gate) WriteQueue();
         try
         {
@@ -114,7 +114,7 @@ public sealed class ModCommandQueue
         }
     }
 
-    // Wyniki tylko po zmianie pliku; null = brak zmian albo plik niekompletny (mod właśnie pisze).
+    // Results only after the file changes; null = no change or an incomplete file (the mod is writing it).
     private Dictionary<string, ModCommandResult>? ReadResults()
     {
         var path = Path.Combine(_dir!, ResultsName + ".lua");
@@ -123,7 +123,7 @@ public sealed class ModCommandQueue
             var stamp = File.GetLastWriteTimeUtc(path);
             if (!File.Exists(path) || stamp == _resultsWrite) return null;
             var json = LuaUserdataReader.TryExtractJson(File.ReadAllBytes(path));
-            if (json is null) return null; // spróbujemy przy następnym odczycie
+            if (json is null) return null; // we'll try on the next read
             _resultsWrite = stamp;
             var map = new Dictionary<string, ModCommandResult>();
             using var doc = JsonDocument.Parse(json);
@@ -156,7 +156,7 @@ public sealed class ModCommandQueue
         return Int("year") is { } y && Int("month") is { } m && Int("day") is { } d ? new GameDate(y, m, d) : null;
     }
 
-    // Pod _gate. Najpierw plik tymczasowy, żeby gra nie przeczytała połowy.
+    // Under _gate. A temporary file first, so the game never reads half of it.
     private void WriteQueue()
     {
         var path = Path.Combine(_dir!, QueueName + ".lua");

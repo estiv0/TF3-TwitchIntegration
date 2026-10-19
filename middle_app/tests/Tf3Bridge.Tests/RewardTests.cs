@@ -33,7 +33,7 @@ public sealed class RewardTests : IDisposable
         if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true);
     }
 
-    private string? _whyInactive; // null = gra działa
+    private string? _whyInactive; // null = the game runs
 
     private RewardService Service(string broadcasterType = "affiliate", bool mock = false)
     {
@@ -66,7 +66,7 @@ public sealed class RewardTests : IDisposable
     [Theory]
     [InlineData("lodz", 10)]
     [InlineData("  ŁÓDŹ ", 10)]
-    [InlineData("krakow", 11)]          // właściciel w nazwie nie przeszkadza
+    [InlineData("krakow", 11)]          // the owner in the name doesn't get in the way
     [InlineData("nowy s", 12)]          // jednoznaczny prefiks
     public void Finds_towns_by_forgiving_name(string input, long entity)
     {
@@ -79,7 +79,7 @@ public sealed class RewardTests : IDisposable
     [InlineData("nowy", "pasuje do kilku: Nowy Sącz, Nowy Targ")]
     [InlineData("gdańsk", "nie znaleziono „gdańsk”")]
     [InlineData("  ", "nie podano nazwy")]
-    [InlineData("bytom", "nie znaleziono „bytom”")] // zakład nie jest miastem
+    [InlineData("bytom", "nie znaleziono „bytom”")] // an industry isn't a town
     public void Rejects_unclear_targets(string input, string error)
     {
         var objects = GameObjects.Load(Path.Combine(_dir, "out", "latest", "dynamic.json"));
@@ -108,7 +108,7 @@ public sealed class RewardTests : IDisposable
 
         Assert.Equal(Enum.GetValues<RewardKind>(), loaded.Rewards.Select(r => r.Kind));
         var boost = loaded.Get(RewardKind.BoostTown);
-        Assert.Equal((1234, 60, 5.0), (boost.Cost, boost.Months, boost.Factor)); // przycięte do zakresów
+        Assert.Equal((1234, 60, 5.0), (boost.Cost, boost.Months, boost.Factor)); // clamped to the ranges
         Assert.Equal("rw1", loaded.TwitchIds[RewardKind.BoostTown]);
     }
 
@@ -141,7 +141,7 @@ public sealed class RewardTests : IDisposable
 
         Assert.Equal(("TF3: kup miasto", 4321), (s.Get(RewardKind.AdoptTown).Title, s.Get(RewardKind.AdoptTown).Cost));
         Assert.StartsWith("Wpisz nazwę miasta bez właściciela. Kupujesz je", s.Get(RewardKind.AdoptTown).Prompt);
-        Assert.Equal(("Mój boost", "mój opis"), (s.Get(RewardKind.BoostTown).Title, s.Get(RewardKind.BoostTown).Prompt)); // własne teksty zostają
+        Assert.Equal(("Mój boost", "mój opis"), (s.Get(RewardKind.BoostTown).Title, s.Get(RewardKind.BoostTown).Prompt)); // custom texts stay
     }
 
     [Theory]
@@ -177,7 +177,7 @@ public sealed class RewardTests : IDisposable
         var body = RewardService.Body(RewardKinds.Defaults[0] with { CooldownSec = 0, MaxPerUserPerStream = 2 }, active: false);
 
         Assert.True((bool)body["is_user_input_required"]!);
-        Assert.False((bool)body["should_redemptions_skip_request_queue"]!); // inaczej nie da się zwrócić punktów
+        Assert.False((bool)body["should_redemptions_skip_request_queue"]!); // otherwise points can't be refunded
         Assert.False((bool)body["is_enabled"]!);
         Assert.False((bool)body["is_paused"]!);
         Assert.False((bool)body["is_global_cooldown_enabled"]!);
@@ -228,7 +228,7 @@ public sealed class RewardTests : IDisposable
         var service = Service();
         service.Simulate(RewardKind.CreateTown, "[3000, -2000] Nowa Wieś", "widz", true, out _);
 
-        ModReports("ok"); // starsza wersja moda: bez entity
+        ModReports("ok"); // an older mod version: no entity
 
         Assert.EndsWith("https://tf3.example.com/#pin=3000_-2000&note=Nowa%20Wie%C5%9B", Assert.Single(_outcomes).ChatText);
     }
@@ -320,7 +320,7 @@ public sealed class RewardTests : IDisposable
         Assert.Contains(expected, QueueText);
     }
 
-    // ------------------------------------------------------------------ sabotaże
+    // ------------------------------------------------------------------ sabotage
 
     [Theory]
     [InlineData(RewardKind.StrikeIndustry, "huta", "effect = \"industryStrike\", entity = 21, months = 3, user = \"widz\", factor = 0.01 }")]
@@ -347,11 +347,11 @@ public sealed class RewardTests : IDisposable
     }
 
     [Theory]
-    [InlineData(RewardKind.StrikeIndustry, "kopalnia", "nie ma właściciela")]  // obiekty bez właściciela nie podlegają
+    [InlineData(RewardKind.StrikeIndustry, "kopalnia", "nie ma właściciela")]  // unowned objects are exempt
     [InlineData(RewardKind.BadFuel, "linia 1", "nie ma właściciela")]
-    [InlineData(RewardKind.BrakeSabotage, "autobus", "należy do Ciebie")]       // własnych nie sabotujemy
+    [InlineData(RewardKind.BrakeSabotage, "autobus", "należy do Ciebie")]       // we don't sabotage one's own
     [InlineData(RewardKind.TaxRaid, "widz", "nie możesz nasłać skarbówki na siebie")]
-    [InlineData(RewardKind.TaxRaid, "ala", "ala nie ma zakładów")]              // ma tylko miasto
+    [InlineData(RewardKind.TaxRaid, "ala", "ala nie ma zakładów")]              // only has a town
     [InlineData(RewardKind.TaxRaid, "nikt", "widz „nikt” nie ma nic w grze")]
     public void Sabotage_only_hits_other_viewers(RewardKind kind, string input, string error)
     {
@@ -392,7 +392,7 @@ public sealed class RewardTests : IDisposable
         Assert.Equal("@widz sabotaż hamulców na linii Tramwaj: zniszczone pojazdy: 2 z 5. https://tf3.example.com/#line=31", o.ChatText);
         var queue = await WaitForNotify();
         Assert.Contains("text = \"Problemy techniczne na linii Tramwaj: zniszczone pojazdy: 2 z 5 (sabotaż: widz).\"", queue);
-        Assert.Contains("entity = 31", queue); // kliknięcie w powiadomienie pokazuje linię
+        Assert.Contains("entity = 31", queue); // clicking the notification shows the line
     }
 
     [Fact]
@@ -406,7 +406,7 @@ public sealed class RewardTests : IDisposable
         Assert.Contains("do 50%", RewardKinds.Defaults.Single(d => d.Kind == RewardKind.BrakeSabotage).TwitchPrompt);
     }
 
-    // ------------------------------------------------------------------ dotacja i kredyt
+    // ------------------------------------------------------------------ subsidy and loan
 
     [Fact]
     public async Task Subsidy_sends_the_amount_without_viewer_text()
@@ -527,7 +527,7 @@ public sealed class RewardTests : IDisposable
         var o = Assert.Single(_outcomes);
         Assert.Equal(token, o.Token);
         Assert.True(o.Ok);
-        Assert.Empty(_helix.Requests); // symulacja nie dotyka Twitcha
+        Assert.Empty(_helix.Requests); // the simulation doesn't touch Twitch
     }
 
     [Fact]
@@ -631,7 +631,7 @@ public sealed class RewardTests : IDisposable
         var service = await SyncedService();
 
         await service.DisableAsync(default);
-        await service.DisableAsync(default); // drugi raz nic nie wysyła
+        await service.DisableAsync(default); // the second time sends nothing
 
         var patches = _helix.Requests.Where(r => r.Method == "PATCH").ToList();
         Assert.Equal(RewardKinds.Defaults.Count, patches.Count);
@@ -691,9 +691,9 @@ public sealed class RewardTests : IDisposable
         Assert.Contains("\"status\":\"FULFILLED\"", patch.Body);
     }
 
-    // ------------------------------------------------------------------ powiadomienie w grze
+    // ------------------------------------------------------------------ in-game notification
 
-    // Powiadomienie idzie do kolejki w tle (po odpowiedzi Twitcha), więc czekamy na plik.
+    // The notification goes to the queue in the background (after Twitch answers), so we wait for the file.
     private async Task<string?> WaitForNotify(int ms = 3000)
     {
         for (var waited = 0; waited < ms; waited += 20)
@@ -717,7 +717,7 @@ public sealed class RewardTests : IDisposable
         var queue = await WaitForNotify();
         Assert.NotNull(queue);
         Assert.Contains("title = \"Twitch: Widz\", text = \"Widz kupił(a) miasto Łódź.\"", queue);
-        Assert.Contains("entity = 10", queue); // kliknięcie w powiadomienie pokazuje miasto
+        Assert.Contains("entity = 10", queue); // clicking the notification shows the town
     }
 
     [Fact]
@@ -777,12 +777,12 @@ public sealed class RewardTests : IDisposable
     public void Notification_seconds_round_trip_and_are_clamped()
     {
         var path = Path.Combine(_dir, "notify.json");
-        Assert.Equal(30, RewardSettingsStore.Load(path).NotificationSeconds); // brak pliku = domyślne
+        Assert.Equal(30, RewardSettingsStore.Load(path).NotificationSeconds); // no file = defaults
 
         RewardSettingsStore.Save(RewardSettings.Default with { NotificationSeconds = 45 }, path);
         Assert.Equal(45, RewardSettingsStore.Load(path).NotificationSeconds);
 
-        File.WriteAllText(path, File.ReadAllText(path).Replace("\"NotificationSeconds\": 45,", "")); // plik sprzed ustawienia
+        File.WriteAllText(path, File.ReadAllText(path).Replace("\"NotificationSeconds\": 45,", "")); // a file from before this setting
         Assert.Equal(30, RewardSettingsStore.Load(path).NotificationSeconds);
         Assert.Equal(300, (RewardSettings.Default with { NotificationSeconds = 9999 }).Normalized().NotificationSeconds);
         Assert.Equal(3, (RewardSettings.Default with { NotificationSeconds = 1 }).Normalized().NotificationSeconds);
@@ -823,7 +823,7 @@ public sealed class RewardTests : IDisposable
             Assert.Contains("Cel", RewardMessages.Notification(config, "widz", "Cel", null));
     }
 
-    // ------------------------------------------------------------------ nagrody wykonywane przez streamera
+    // ------------------------------------------------------------------ rewards carried out by the streamer
 
     [Fact]
     public async Task Manual_rewards_are_created_and_switched_with_the_game()
@@ -844,7 +844,7 @@ public sealed class RewardTests : IDisposable
         var rewardId = service.Settings.TwitchIds[RewardKind.RoadVehicle];
 
         await service.HandleRedemptionForTestAsync(new ChannelPointsRedemption("red9", rewardId, "", 0, "7", "widz", "Widz", "", DateTimeOffset.UtcNow));
-        _whyInactive = "most jest zatrzymany"; // nawet gdy gra nie działa, punktów nie zwracamy
+        _whyInactive = "most jest zatrzymany"; // even when the game isn't running, no points are refunded
         await service.HandleRedemptionForTestAsync(new ChannelPointsRedemption("red10", rewardId, "", 0, "7", "widz", "Widz", "", DateTimeOffset.UtcNow));
         await Task.Delay(100);
 
@@ -1000,7 +1000,7 @@ public sealed class RewardTests : IDisposable
         Assert.Contains("@widz", chat.Body);
     }
 
-    // ------------------------------------------------------------------ własne nagrody TF3
+    // ------------------------------------------------------------------ own TF3 rewards
 
     [Fact]
     public async Task Switches_own_TF3_rewards_with_the_game()
@@ -1053,7 +1053,7 @@ public sealed class RewardTests : IDisposable
         Assert.Equal(RewardState.Inactive, service.Status.State);
         Assert.Contains("Twitch nie pozwala Tf3Bridge włączać i wyłączać: TF3: pogoda", service.Status.Message);
         Assert.False(service.Settings.Extras.Single(e => e.TwitchId == "hand").Switchable);
-        Assert.DoesNotContain(_helix.Requests, r => r.Url.Contains("id=hand")); // nie próbuje co chwilę
+        Assert.DoesNotContain(_helix.Requests, r => r.Url.Contains("id=hand")); // doesn't keep retrying
         Assert.Contains(_helix.Requests, r => r.Url.Contains("id=own") && r.Body == """{"is_enabled":false}""");
     }
 

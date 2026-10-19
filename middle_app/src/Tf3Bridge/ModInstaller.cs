@@ -64,7 +64,7 @@ public static class ModInstaller
     /// <summary>Core of <see cref="Sync(string, ILogger)"/>: <paramref name="local"/> = ...\3493540\local.</summary>
     public static ModInstallResult Sync(string local, IReadOnlyDictionary<string, byte[]> files)
     {
-        // staging_area, nie mods: gra pokazuje z mods\ tylko mody z Workshopu/zweryfikowane
+        // staging_area, not mods: from mods\ the game only shows Workshop/verified mods
         var target = Path.Combine(local, "staging_area", ReadModId(files));
         var existed = Directory.Exists(target);
         if (existed && new DirectoryInfo(target).Attributes.HasFlag(FileAttributes.ReparsePoint))
@@ -76,14 +76,14 @@ public static class ModInstaller
             var dest = Path.Combine(target, rel.Replace('/', Path.DirectorySeparatorChar));
             if (File.Exists(dest) && File.ReadAllBytes(dest).AsSpan().SequenceEqual(bytes)) continue;
             Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-            // przez plik tymczasowy: przerwany zapis nie zostawi uciętego skryptu
+            // through a temporary file: an interrupted write won't leave a truncated script
             var tmp = dest + ".tmp";
             File.WriteAllBytes(tmp, bytes);
             File.Move(tmp, dest, overwrite: true);
             changed++;
         }
 
-        // Usunięte moduły: tylko .lua w content\, reszty folderu nie ruszamy.
+        // Removed modules: only .lua in content\, the rest of the folder is left alone.
         var content = Path.Combine(target, "content");
         if (Directory.Exists(content))
         {
@@ -127,7 +127,7 @@ public static class ModInstaller
             using var s = asm.GetManifestResourceStream(name)!;
             using var ms = new MemoryStream();
             s.CopyTo(ms);
-            // %(RecursiveDir) z MSBuild ma "\"
+            // %(RecursiveDir) from MSBuild has "\"
             files[name[ResourcePrefix.Length..].Replace('\\', '/')] = ms.ToArray();
         }
         return files;
