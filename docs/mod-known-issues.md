@@ -1,41 +1,41 @@
-# Znane błędy i ryzyka w `lua_mod`
+# Known bugs and risks in `lua_mod`
 
-Stan na 2026-10-02, po przebudowie na strukturę TF3. Szczegóły API opisuje [tf3-api-findings.md](tf3-api-findings.md).
+Status as of 2026-10-02, after the rebuild to the TF3 structure. API details are in [tf3-api-findings.md](tf3-api-findings.md).
 
-Legenda: ✅ naprawione · ⚠️ częściowo lub do potwierdzenia w grze · ⏳ otwarte
+Legend: ✅ fixed · ⚠️ partly, or to be confirmed in the game · ⏳ open
 
-## Blokery ładowania
-
-| # | Problem | Status |
-|---|---|---|
-| B1 | Struktura TF2 (`mod.lua`, `res/`) | ✅ `mod.json`, `_metadata/modinfo.json`, `_content.json`, `content/tf3export/*.gs.lua` + `*.script.lua` |
-| B2 | `data()` z `save` / `load` / `update` | ✅ moduł zwraca `{ update, handleEvent }` jak `reforestation.script.tl` |
-| B3 | `require` | ✅ `ug_require "x.lua"` (względnie, jeden folder) |
-| B4 | Dostępność `io` / `os` | ✅ sprawdzone sondą: brak `io` i `os.rename`, za to `app.saveUserdata` działa w wątku GUI (patrz #13) |
-| B5 | Format `.script.lua` | ✅ Gra rozpoznaje plik, ale wymaga globalnego `function data() return { update = ..., ... } end` (wzór: `base/base_mod.script.lua`). Styl `return {...}` działa tylko w `.tl`. Biblioteki ładowane przez `ug_require` mogą zwracać moduł przez `return`. |
-
-## Błędy logiczne
+## Loading blockers
 
 | # | Problem | Status |
 |---|---|---|
-| 1 | Wspólny licznik `seq` dla dynamic i network | ✅ osobne `seqDynamic` i `seqNetwork` |
-| 2 | Wczytanie starszego save'a cofa `seq` i nadpisuje pliki | ✅ `session` to ID wątku GUI, nowe przy starcie gry i po cofnięciu czasu gry. `seq` nigdy się nie powtarza w obrębie sesji. |
-| 3 | Snapshot sieci nieatomowy | ⏳ zaakceptowane i opisane. Strona musi tolerować brakujące węzły. |
-| 4 | Puste mapy kodowane jako `[]` | ✅ `output` i `cargoNeeds` używają `json.EMPTY_OBJECT` |
-| 5 | Brak kontroli błędów zapisu | ✅ `app.saveUserdata` jest wołane w `pcall`, a przy błędzie mod pisze do logu |
-| 6 | Budżet czasu na tick | ✅ sieć jest budowana w `guiUpdate` porcjami po 2 ms na klatkę (wątek GUI jest jeden, więc stan modułu przetrwa między klatkami) |
-| 10 | `getEntitiesWithComponent` nie działa dla LINE i BASE_EDGE | ✅ linie z `lineSystem.getLinesForPlayer` i z pojazdów, krawędzie z `streetSystem.getNode2SegmentMap` |
-| 11 | Korutyny psują wywołania C gry (`log.message`) | ✅ korutyny usunięte |
-| 12 | update() wołane z wielu wątków (`Sim Pool 1..N`), każdy z osobnym stanem Lua | ✅ cały eksport przeniesiony do `guiUpdate` (jeden wątek GUI), a `update` jest pusty |
-| 13 | Brak zapisu plików (`io`, `os.rename`) | ✅ `app.saveUserdata` w wątku GUI zapisuje do `local\tf3export\*.lua`, a log zostaje jako zapas |
-| 7 | Zmiany sieci wykrywane po liczbie krawędzi | ⚠️ zdarzenie `onPostBuildProposal` (w `handleEvent`) podbija `netVersion` we wspólnym stanie, a GUI przebudowuje sieć i zapisuje `networkDelta`. Do tego pełne porównanie co 5 min. Rewizje okazały się bezużyteczne, bo zmieniają się ciągle. Potwierdzone w grze: `networkDelta` działa (260–600 B po budowie lub wyburzeniu). Zdarzenie przychodzi jednak co ~3 s także bez zmian w sieci, więc dodałem filtr `touchesNetwork()`, jeszcze nie testowany w grze. |
-| 8 | Stała długość dnia | ✅ `GAME_SPEED.millisPerDay` z zapasem `api.util.getDefaultDayDuration()`. Do sprawdzenia, czy komponent wisi na encji świata. |
-| 9 | Typ krawędzi, ciche `{0,0,0}` | ✅ `road` = `STREET`/`TRACK` (z `roadType`), `type` = `NORMAL`/`BRIDGE`/`TUNNEL`. Krawędzie bez pozycji są pomijane i liczone w logu. |
+| B1 | TF2 structure (`mod.lua`, `res/`) | ✅ `mod.json`, `_metadata/modinfo.json`, `_content.json`, `content/tf3export/*.gs.lua` + `*.script.lua` |
+| B2 | `data()` with `save` / `load` / `update` | ✅ the module returns `{ update, handleEvent }` like `reforestation.script.tl` |
+| B3 | `require` | ✅ `ug_require "x.lua"` (relative, one folder) |
+| B4 | Availability of `io` / `os` | ✅ checked with a probe: no `io` and no `os.rename`, but `app.saveUserdata` works on the GUI thread (see #13) |
+| B5 | `.script.lua` format | ✅ The game recognizes the file but requires a global `function data() return { update = ..., ... } end` (pattern: `base/base_mod.script.lua`). The `return {...}` style only works in `.tl`. Libraries loaded with `ug_require` may return a module with `return`. |
 
-## Drobne i otwarte
+## Logic bugs
 
-- ✅ Eksport dynamiczny działa w grze: ok. 120 KB, zbieranie ok. 5 ms, kodowanie ok. 6 ms. Nazwy enumów, data, saldo i ładunki są poprawne.
-- ✅ Sieć: 8698 krawędzi, ok. 1 MB, kodowanie 150–200 ms w sumie. Teraz rozłożone na klatki GUI. Pomiar w nowym układzie jeszcze czeka.
-- ⚠️ Ładunki są eksportowane jako nazwy zasobów (`cargoTypeRep.getName`). Nazwy wyświetlane (`cargoTypeRep.get(id).name`, lokalizowane) można dodać później.
-- ⏳ `rules[].input` to surowe indeksy stocków.
-- ⏳ `sessionId` opiera się na `os.time()` i `math.random`. Jeśli `os` nie jest dostępne, a `random` nie jest seedowany, ID może się powtarzać między uruchomieniami.
+| # | Problem | Status |
+|---|---|---|
+| 1 | A shared `seq` counter for dynamic and network | ✅ separate `seqDynamic` and `seqNetwork` |
+| 2 | Loading an older save rolls `seq` back and overwrites files | ✅ `session` is the GUI thread ID, new at game start and after game time is rolled back. `seq` never repeats within a session. |
+| 3 | Network snapshot is not atomic | ⏳ accepted and documented. The website has to tolerate missing nodes. |
+| 4 | Empty maps encoded as `[]` | ✅ `output` and `cargoNeeds` use `json.EMPTY_OBJECT` |
+| 5 | No error checking on writes | ✅ `app.saveUserdata` is called in `pcall`, and on error the mod writes to the log |
+| 6 | Time budget per tick | ✅ the network is built in `guiUpdate` in 2 ms chunks per frame (there is one GUI thread, so the module state survives between frames) |
+| 10 | `getEntitiesWithComponent` doesn't work for LINE and BASE_EDGE | ✅ lines from `lineSystem.getLinesForPlayer` and from vehicles, edges from `streetSystem.getNode2SegmentMap` |
+| 11 | Coroutines break the game's C calls (`log.message`) | ✅ coroutines removed |
+| 12 | update() called from many threads (`Sim Pool 1..N`), each with its own Lua state | ✅ the whole export moved to `guiUpdate` (one GUI thread), and `update` is empty |
+| 13 | No file writing (`io`, `os.rename`) | ✅ `app.saveUserdata` on the GUI thread writes to `local\tf3export\*.lua`, and the log stays as a fallback |
+| 7 | Network changes detected by edge count | ⚠️ the `onPostBuildProposal` event (in `handleEvent`) bumps `netVersion` in the shared state, and the GUI rebuilds the network and writes a `networkDelta`. Plus a full comparison every 5 min. Revisions turned out useless, because they change all the time. Confirmed in the game: `networkDelta` works (260–600 B after building or demolishing). But the event also arrives every ~3 s without network changes, so I added a `touchesNetwork()` filter, not yet tested in the game. |
+| 8 | Fixed day length | ✅ `GAME_SPEED.millisPerDay` with `api.util.getDefaultDayDuration()` as a fallback. To check whether the component sits on the world entity. |
+| 9 | Edge type, silent `{0,0,0}` | ✅ `road` = `STREET`/`TRACK` (from `roadType`), `type` = `NORMAL`/`BRIDGE`/`TUNNEL`. Edges without a position are skipped and counted in the log. |
+
+## Minor and open
+
+- ✅ The dynamic export works in the game: about 120 KB, about 5 ms to collect, about 6 ms to encode. Enum names, date, balance and cargo are correct.
+- ✅ Network: 8698 edges, about 1 MB, 150–200 ms of encoding in total. Now spread over GUI frames. A measurement with the new layout is still pending.
+- ⚠️ Cargo is exported as resource names (`cargoTypeRep.getName`). Display names (`cargoTypeRep.get(id).name`, localized) can be added later.
+- ⏳ `rules[].input` are raw stock indices.
+- ⏳ `sessionId` relies on `os.time()` and `math.random`. If `os` is not available and `random` is not seeded, the ID may repeat between runs.

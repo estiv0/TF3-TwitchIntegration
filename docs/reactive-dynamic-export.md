@@ -1,56 +1,56 @@
-# Propozycja: reaktywny eksport danych dynamicznych
+# Proposal: reactive export of dynamic data
 
-**Status:** pomysł odłożony na później (2026-10-02). Na razie zostaje obecny eksport: pełny snapshot `dynamic` co 2 dni gry, nie częściej niż co 10 s.
+**Status:** idea postponed (2026-10-02). For now the current export stays: a full `dynamic` snapshot every 2 game days, no more often than every 10 s.
 
-Cel: tak jak przy sieci (pełny zrzut raz, potem `networkDelta` po zdarzeniach budowy), ograniczyć wysyłane dane do tego, co się faktycznie zmieniło, i szybciej reagować na ważne zmiany.
+Goal: like with the network (a full dump once, then `networkDelta` after build events), limit the data sent to what actually changed, and react faster to important changes.
 
-## Jakie zdarzenia daje gra
+## What events the game provides
 
-Lista pochodzi z `state:subscribeToEvent(...)` w skryptach gry (`base/content`). Zdarzenia trafiają do `handleEvent` w wątkach symulacji, więc zapis do pliku musi i tak iść przez wspólny stan i `guiUpdate`, tak samo jak `netVersion` przy sieci.
+The list comes from `state:subscribeToEvent(...)` in the game scripts (`base/content`). Events reach `handleEvent` on simulation threads, so writing to a file still has to go through the shared state and `guiUpdate`, just like `netVersion` for the network.
 
-| Zdarzenie | Co mówi | Zastosowanie |
+| Event | What it says | Use |
 |---|---|---|
-| `onPostBuildProposal` | zastosowano budowę lub wyburzenie (gracz albo miasto, param `[4] = playerInitiated`) | sieć (już używane), nowe stacje i zajezdnie |
-| `ConstructionCompleted` | konstrukcja ukończona | natychmiastowe odświeżenie stacji i przemysłu |
-| `OnArriveAtStop` | pojazd dojechał na przystanek (`vehicleEntity`, `lineEntity`, `stopIndex`, `lastStopIndex`) | strumień zdarzeń, ruch na żywo |
-| `OnCargoLoaded` / `OnCargoUnloaded` | załadunek i rozładunek | strumień zdarzeń („pociąg X przywiózł 120 t węgla”) |
-| `OnLevelUp` | awans miasta (`townEntity`, `newLevel`) | odświeżenie miasta |
-| `DeliveryRatingChanged`, `NewCargoTypeDemand`, `OnHappyChange` | zmiany ocen i popytu miast | odświeżenie miasta |
+| `onPostBuildProposal` | a build or demolition was applied (by the player or a town, param `[4] = playerInitiated`) | network (already used), new stations and depots |
+| `ConstructionCompleted` | a construction finished | immediate refresh of stations and industry |
+| `OnArriveAtStop` | a vehicle arrived at a stop (`vehicleEntity`, `lineEntity`, `stopIndex`, `lastStopIndex`) | event stream, live traffic |
+| `OnCargoLoaded` / `OnCargoUnloaded` | loading and unloading | event stream ("train X brought 120 t of coal") |
+| `OnLevelUp` | a town levels up (`townEntity`, `newLevel`) | town refresh |
+| `DeliveryRatingChanged`, `NewCargoTypeDemand`, `OnHappyChange` | changes in town ratings and demand | town refresh |
 
-**Zdarzeń nie znaleziono** dla tworzenia i edycji linii, kupna i sprzedaży pojazdów, produkcji fabryk, stanu magazynów, salda ani zanieczyszczenia. Część z tych wartości zmienia się ciągle, więc zdarzenie i tak niewiele by dało.
+**No events were found** for creating and editing lines, buying and selling vehicles, factory production, stock levels, balance or pollution. Some of these values change all the time, so an event wouldn't help much anyway.
 
-## Proponowane podejście: hybryda
+## Proposed approach: a hybrid
 
-### 1. Odpytywanie z różnicami (`dynamicDelta`)
-- Mod nadal zbiera dane co ~10 s, bo to tanie: zbieranie ok. 5 ms, kodowanie ok. 6 ms.
-- Każda encja (miasto, przemysł, linia, pojazd) jest kodowana osobno do mapy `id → JSON`, jak wiersze krawędzi w sieci.
-- Pełny `dynamic` powstaje raz na sesję. Kolejne pliki to `dynamicDelta`, a wspólny licznik `seq` daje `base = seq - 1`:
+### 1. Polling with diffs (`dynamicDelta`)
+- The mod still collects data every ~10 s, because it's cheap: about 5 ms to collect, about 6 ms to encode.
+- Each entity (town, industry, line, vehicle) is encoded separately into an `id → JSON` map, like the edge rows in the network.
+- A full `dynamic` is produced once per session. The following files are `dynamicDelta`, and the shared `seq` counter gives `base = seq - 1`:
   ```
   { v, kind:"dynamicDelta", session, seq, base, gameTime, date, player,
     changed: { towns:[...], industries:[...], lines:[...], vehicles:[...] },
     removed: { towns:[ids], industries:[ids], lines:[ids], vehicles:[ids] } }
   ```
-- Działa dla wszystkiego, także dla linii i pojazdów, które nie mają zdarzeń.
-- Pliki zrobią się małe, bo większość encji między odczytami się nie zmienia. Żeby różnice nie powstawały przez szum, wartości ciągłe (np. `pollution`, `noise`, `upgrade`) warto mocniej zaokrąglać.
+- Works for everything, including lines and vehicles, which have no events.
+- The files get small, because most entities don't change between reads. So that diffs don't come from noise, continuous values (e.g. `pollution`, `noise`, `upgrade`) should be rounded more coarsely.
 
-### 2. Zdarzenia przyspieszają odświeżenie
-- `handleEvent` podbija we wspólnym stanie licznik, np. `dynVersion`, po `ConstructionCompleted`, `OnLevelUp`, `DeliveryRatingChanged` i `onPostBuildProposal`.
-- `guiUpdate` po zmianie licznika robi odczyt od razu (z krótkim odczekaniem), zamiast czekać do następnego cyklu 10 s.
+### 2. Events speed up refreshing
+- `handleEvent` bumps a counter in the shared state, e.g. `dynVersion`, after `ConstructionCompleted`, `OnLevelUp`, `DeliveryRatingChanged` and `onPostBuildProposal`.
+- After the counter changes, `guiUpdate` reads right away (after a short wait) instead of waiting for the next 10 s cycle.
 
-### 3. Strumień zdarzeń (osobna funkcja, później)
-- `OnArriveAtStop` i `OnCargoLoaded`/`OnCargoUnloaded` trafiałyby do bufora we wspólnym stanie. `guiUpdate` co kilka sekund opróżniałby bufor do pliku `events_<session>_<seq>`.
-- Uwaga na wydajność: przyjazdów jest dużo, więc bufor we wspólnym stanie musi być ograniczony (np. ostatnie N zdarzeń), a `state:set` w każdym zdarzeniu może być kosztowne. Trzeba to zmierzyć.
+### 3. Event stream (a separate feature, later)
+- `OnArriveAtStop` and `OnCargoLoaded`/`OnCargoUnloaded` would go into a buffer in the shared state. Every few seconds `guiUpdate` would flush the buffer to an `events_<session>_<seq>` file.
+- Mind the performance: there are many arrivals, so the buffer in the shared state must be bounded (e.g. the last N events), and `state:set` on every event may be costly. This needs measuring.
 
-### Przy okazji: stacje
-Stacje nie są jeszcze eksportowane. Do dodania:
-- nazwa i pozycja grupy stacji;
-- obsługiwane linie, z `api.engine.system.lineSystem.getLineStops(stationGroup)` / `getLinesForStationGroup`;
-- miasto, z `stationSystem.getTown`.
+### While at it: stations
+Stations are not exported yet. To add:
+- the station group's name and position;
+- the lines served, from `api.engine.system.lineSystem.getLineStops(stationGroup)` / `getLinesForStationGroup`;
+- the town, from `stationSystem.getTown`.
 
-## Kolejność wdrożenia (gdy wrócimy do tematu)
-1. Potwierdzić w grze, że `onPostBuildProposal` i `networkDelta` działają, bo to ten sam mechanizm.
-2. Dodać stacje do snapshotu `dynamic`.
-3. Wdrożyć `dynamicDelta` (punkt 1), a potem przyspieszanie zdarzeniami (punkt 2).
-4. Strumień zdarzeń (punkt 3), jeśli będzie potrzebny na stronie lub streamie.
+## Rollout order (when we come back to this)
+1. Confirm in the game that `onPostBuildProposal` and `networkDelta` work, because it's the same mechanism.
+2. Add stations to the `dynamic` snapshot.
+3. Implement `dynamicDelta` (point 1), then the event speed-up (point 2).
+4. The event stream (point 3), if it's needed on the website or the stream.
 
-Po stronie odbiorcy (middle app lub serwer) trzeba dodać składanie stanu z pełnego zrzutu i różnic. Przy brakującym `seq` odbiorca czeka na kolejny pełny zrzut.
+On the receiving side (middle app or server) we have to add assembling the state from a full dump and diffs. When a `seq` is missing, the receiver waits for the next full dump.

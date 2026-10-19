@@ -1,67 +1,67 @@
 # TF3 Data Export (`estiv0_tf3export`)
 
-Mod do Transport Fever 3, który eksportuje dane gry jako JSON:
-- **dane dynamiczne** (miasta, przemysł, linie, pojazdy z pozycjami, gracz, data): co 2 dni gry, ale najwyżej raz na 10 s czasu rzeczywistego. Zbieranie i kodowanie są rozłożone na klatki, najwyżej `cfg.dynamicBudgetMs` (3 ms) pracy na klatkę;
-- **sieć dróg i torów**: pełny zrzut raz na sesję, a potem tylko **różnice** (`networkDelta`) po każdej budowie lub wyburzeniu, zarówno gracza, jak i miasta. Mod nasłuchuje zdarzeń `onPreBuildProposal`/`onPostBuildProposal`, ale reaguje tylko na te, które dotykają dróg, torów albo stacji z krawędziami. Czeka 2 s na koniec serii klików i przebudowuje sieć porcjami po 2 ms na klatkę. Dodatkowo co 5 min robi pełne porównanie na wypadek zmian bez zdarzenia.
+A Transport Fever 3 mod that exports game data as JSON:
+- **dynamic data** (towns, industry, lines, vehicles with positions, player, date): every 2 game days, but at most once per 10 s of real time. Collecting and encoding are spread over frames, at most `cfg.dynamicBudgetMs` (3 ms) of work per frame;
+- **the street and track network**: a full dump once per session, then only **diffs** (`networkDelta`) after every build or demolition, by both the player and towns. The mod listens to the `onPreBuildProposal`/`onPostBuildProposal` events, but only reacts to those that touch streets, tracks or stations with edges. It waits 2 s for a series of clicks to end and rebuilds the network in 2 ms chunks per frame. On top of that it does a full comparison every 5 min in case something changed without an event.
 
-Częstotliwość eksportu, pojazdy i teren ustawia się w oknie Tf3Bridge (**Ustawienia moda…**). Bridge zapisuje `local\towns_industries\tf3export_settings.lua`, a mod czyta go przez `app.loadUserdata` co 5 s, bez restartu gry (klucze i zakresy: `SETTINGS` w `tf3export.script.lua`). Bez Bridge obowiązują domyślne wartości z `cfg`.
+Export frequency, vehicles and terrain are set in the Tf3Bridge window (**Mod settings…**). The bridge writes `local\towns_industries\tf3export_settings.lua`, and the mod reads it with `app.loadUserdata` every 5 s, without restarting the game (keys and ranges: `SETTINGS` in `tf3export.script.lua`). Without the bridge the defaults from `cfg` apply.
 
-Na pauzie mod nic nie eksportuje. Szczegóły API i ustalenia z gry opisuje [../docs/tf3-api-findings.md](../docs/tf3-api-findings.md).
+While paused the mod exports nothing. API details and findings from the game are in [../docs/tf3-api-findings.md](../docs/tf3-api-findings.md).
 
-## Jak to działa w TF3 (potwierdzone w grze)
+## How it works in TF3 (confirmed in the game)
 
-- `update()` game scriptu działa w wielu wątkach symulacji, a każdy ma osobny stan Lua. Nie ma tam `io` ani `app`, więc z `update()` da się pisać tylko do logu.
-- `guiUpdate()` działa w **jednym** wątku GUI i ma `app.saveUserdata`. **Cały eksport odbywa się w `guiUpdate()`.**
+- The game script's `update()` runs on many simulation threads, and each has its own Lua state. There's no `io` or `app` there, so `update()` can only write to the log.
+- `guiUpdate()` runs on **one** GUI thread and has `app.saveUserdata`. **The whole export happens in `guiUpdate()`.**
 
-## Struktura
+## Structure
 
 ```
-lua_mod/                              → w grze: staging_area/estiv0_tf3export (junction)
-  mod.json                            definicja techniczna (modId, revision, severity)
-  _metadata/modinfo.json              nazwa, opis, autor, tagi w przeglądarce modów
-  _content.json                       lista plików z content/ (wzór: mody z gry)
+lua_mod/                              → in the game: staging_area/estiv0_tf3export (junction)
+  mod.json                            technical definition (modId, revision, severity)
+  _metadata/modinfo.json              name, description, author, tags in the mod browser
+  _content.json                       list of files from content/ (pattern: the game's own mods)
   content/tf3export/
-    tf3export.gs.lua      deskryptor game scriptu (update / handleEvent / guiUpdate)
-    tf3export.script.lua  główny skrypt: harmonogram, sesja, eksport (globalne data())
-    collectors.lua        kolektory: player, towns, industries, warehouses, stations, lines, vehicles, edges
-    json.lua              enkoder JSON (escapowanie, table.concat, null dla NaN)
-    util.lua              bezpieczny dostęp do API, enumy -> nazwy, czas gry, log
-    writer.lua            zapis: app.saveUserdata albo log gry (zapas)
-    terrain.lua           heightmapa (getBaseHeightAt porcjami) + jednorazowy benchmark metod odczytu terenu
-    commands.lua          komendy od Tf3Bridge (akcje widzów): local\towns_industries\tf3export_queue.lua -> api.cmd -> tf3export_results.lua
-    effects.lua           efekty czasowe z nagród (boost miasta/przemysłu, zatrzymanie linii), cofane po X miesiącach gry
-    twitch_notification.res.lua / .script.lua   typ powiadomienia w grze „Twitch” (komenda notify)
-    icons/twitch*.tga     ikona powiadomienia (maska; generuje infra/make_icon.ps1 z infra/twitch_logo.png)
+    tf3export.gs.lua      game script descriptor (update / handleEvent / guiUpdate)
+    tf3export.script.lua  main script: schedule, session, export (global data())
+    collectors.lua        collectors: player, towns, industries, warehouses, stations, lines, vehicles, edges
+    json.lua              JSON encoder (escaping, table.concat, null for NaN)
+    util.lua              safe API access, enums -> names, game time, log
+    writer.lua            writing: app.saveUserdata or the game log (fallback)
+    terrain.lua           heightmap (getBaseHeightAt in chunks) + a one-off benchmark of terrain read methods
+    commands.lua          commands from Tf3Bridge (viewer actions): local\towns_industries\tf3export_queue.lua -> api.cmd -> tf3export_results.lua
+    effects.lua           timed effects from rewards (town/industry boost, line stop), undone after X game months
+    twitch_notification.res.lua / .script.lua   the "Twitch" in-game notification type (notify command)
+    icons/twitch*.tga     notification icon (a mask; generated by infra/make_icon.ps1 from infra/twitch_logo.png)
 ```
 
-Moduły ładuje się względnie przez `ug_require "util.lua"`. Wszystkie leżą w jednym folderze.
+Modules are loaded relatively with `ug_require "util.lua"`. They all live in one folder.
 
-## Instalacja (dev)
+## Installation (dev)
 
-Folder repo jest podlinkowany do staging area gry, więc zmiany są widoczne po restarcie gry bez kopiowania:
+The repo folder is linked into the game's staging area, so changes show up after a game restart without copying:
 
 ```powershell
-New-Item -ItemType Junction -Path "C:\Program Files (x86)\Steam\userdata\<SteamID>\3493540\local\staging_area\estiv0_tf3export" -Target "<repozytorium>\lua_mod"
+New-Item -ItemType Junction -Path "C:\Program Files (x86)\Steam\userdata\<SteamID>\3493540\local\staging_area\estiv0_tf3export" -Target "<repository>\lua_mod"
 ```
 
-Mod trzeba włączyć przy tworzeniu lub wczytywaniu gry.
+The mod has to be enabled when creating or loading a game.
 
-## Paczka dla innych
+## Package for others
 
 ```powershell
 lua_mod\pack.ps1
 ```
 
-Skrypt generuje `_content.json` z plików `.lua` w `content\` (po dodaniu nowego modułu wystarczy go uruchomić; `-ContentOnly` tylko odświeża listę) i buduje `lua_mod\dist\estiv0_tf3export.zip`. Zip zawiera folder `estiv0_tf3export` z `mod.json`, `_content.json`, `_metadata` i `content`. Rozpakowuje się go do `Steam\userdata\<konto>\3493540\local\staging_area\` i włącza mod w grze (w `mods\` gra go nie pokaże, stamtąd bierze tylko mody z Workshopu).
+The script generates `_content.json` from the `.lua` files in `content\` (after adding a new module just run it; `-ContentOnly` only refreshes the list) and builds `lua_mod\dist\estiv0_tf3export.zip`. The zip contains an `estiv0_tf3export` folder with `mod.json`, `_content.json`, `_metadata` and `content`. Unpack it into `Steam\userdata\<account>\3493540\local\staging_area\` and enable the mod in the game (the game won't show it in `mods\`; it only takes Workshop mods from there).
 
-Zipa potrzeba tylko bez Tf3Bridge: Bridge ma moda wbudowanego i sam instaluje go w `staging_area\` przy starcie (patrz `middle_app/README.md`).
+The zip is only needed without Tf3Bridge: the bridge has the mod built in and installs it into `staging_area\` itself at startup (see `middle_app/README.md`).
 
-## Pliki wyjściowe
+## Output files
 
 Folder: `C:\Program Files (x86)\Steam\userdata\<SteamID>\3493540\local\tf3export\`
-Nazwa: `<kind>_<session>_<seq>.lua`, np. `dynamic_6abfcd61d091_000001.lua`
+Name: `<kind>_<session>_<seq>.lua`, e.g. `dynamic_6abfcd61d091_000001.lua`
 
-Gra zapisuje plik w formacie Lua, a JSON jest w środku jako literał stringa:
+The game writes the file as Lua, and the JSON sits inside as a string literal:
 
 ```lua
 function data()
@@ -71,131 +71,131 @@ return {
 end
 ```
 
-Middle app wyciąga `json = "..."`, odwraca escapowanie Lua (`\"`, `\\`, `\n`, `\r`, `\t`, `\ddd`), wysyła dane i usuwa plik. Nie wiadomo, czy zapis jest atomowy, więc gdy plik jest niekompletny (brak końcowego `end`), middle app ponawia odczyt.
+The middle app extracts `json = "..."`, reverses Lua escaping (`\"`, `\\`, `\n`, `\r`, `\t`, `\ddd`), sends the data and deletes the file. It's unknown whether the write is atomic, so when a file is incomplete (no closing `end`), the middle app retries the read.
 
-- **`session`**: losowe ID wątku GUI. Nowe powstaje przy starcie gry i przy cofnięciu czasu gry, czyli po wczytaniu starszego save'a. `seq` liczy się od 1 w każdej sesji, osobno dla `dynamic` i `network`.
+- **`session`**: a random GUI thread ID. A new one is created at game start and when game time is rolled back, i.e. after loading an older save. `seq` counts from 1 in each session, separately for `dynamic` and `network`.
 - **`dynamic`**: `{ v, kind, session, seq, gameTime, date{year,month,day}, player{id,name,balance}, company, models, towns[], industries[], warehouses[], stations[], lines[], vehicles[] }`
-  - `company` (liczone raz na miesiąc gry): `finance` = tabela z okna Finanse (`computeFinanceTable`, `cfg.financeYears` lat): `{ header[], rows[{ carrier, type, maintenance, construction, values[] }], total[], balance[], interest[], loan[] }`, gdzie `type` itd. to nazwy enumów `JournalEntry` (`INCOME`, `MAINTENANCE`/`VEHICLE`…), a `values[i]` to kwota w roku `header[i]`; `history` = serie z logbooka świata `companyBalance`, `companyTotalValue`, `townResidentialCount`, `townCommercialCount`, `townIndustrialCount` (pojemność dzielnic wszystkich miast) jako `[[rok z ułamkiem, wartość], …]`, najwyżej `cfg.historyMaxPoints` punktów;
-  - `towns[].supply`: zaspokojenie potrzeb `[{ cargo, supply, demand }]` z `townBuildingSystem.getCargoSupplyAndLimit` (`demand` -1 = bez limitu);
-  - `industries[]`: `stocks[]` mają `amount` (stan magazynu), `input` i `consumedYear` (zużycie na rok); `producedYear` = ładunek -> produkcja na rok; `year` = `{ produced, consumed, destroyed }` z logbooka zakładu za ostatni rok;
-  - `warehouses[]`: magazyny gracza (komponent `WAREHOUSE`) `{ id, construction, name, file, pos, capacity, amount, cargo{ładunek: ilość}, stocks[], year{unloaded, loaded} }`; `capacity` i `amount` to sumy wszystkich składów, `stocks[]` = `{ cargos[] (dozwolone ładunki), capacity, amount, cargo{ładunek: ilość} }`, `year` = przywiezione / wywiezione za ostatni rok (logbook `itemsUnloaded` / `itemsLoaded`). Nazwa może mieć właściciela („Nazwa | Widz”), jak miasta i zakłady;
-  - ładunki są podawane jako nazwy zasobów, np. `"::/cargos/logs/logs.cargo"`;
-  - `carrier` i `state` pojazdów to nazwy enumów (`RAIL`, `EN_ROUTE`…);
-  - szczegóły pojazdu (`collectors.vehicleDetails`, wyłącznik „Szczegóły pojazdów” w ustawieniach moda): `model` = id modelu czoła składu (w `models`: `{ "id": { name, icon } }`; `name` z `api.res.modelRep` albo nazwa zespołu trakcyjnego z `muFileNames`, `icon` = nazwa pliku `.mdl` bez rozszerzenia, obrazek strony `web/img/vehicles/<icon>.png` z `tools/extract_game_icons.py`), `parts` = liczba części składu (tylko gdy > 1), `age` = wiek najstarszej części w latach kalendarza gry, `wear` = wiek / żywotność tej części (≥ 1 = po żywotności, jak procent w oknie linii), `maint` = średni stan techniczny części 0..1 (jak `vehicle_util.getAvgMaintenanceState`), `cap` = pojemność `{ [ładunek] = liczba }` z `config.capacities` (indeks - 1 = CargoTypeId, jak `gui/main/cargo_util.tl`), `load` = ile pojazd teraz wiezie, te same klucze (`simEntityAtVehicleSystem.getVehicleSimEntitiesCountForCargoType`, jedno wywołanie na ładunek z pojemnością). Bez szczegółów nie ma klucza `models` ani tych pól. **Jeszcze niesprawdzone w grze** (zwłaszcza nazwy modeli);
-  - `stations[]`: jeden wiersz na konstrukcję stacji `{ id, kind, industry, warehouse, carriers[], name, file, pos, owner, passengers, cargo, groups[], stations[] }`, gdzie `kind` to `RAIL`, `ROAD`, `WATER`, `AIR` (rzadko `TRAM`, `OTHER` = nierozpoznana stacja przemysłu), a `industry` / `warehouse` to id zakładu / magazynu, gdy stacja jest jego częścią, wyznaczany ze ścieżki konstrukcji, a dla stacji z modów z `carriers` (nośniki całej grupy stacji). Przystanki (bez konstrukcji, `small_stops`, `underground_station`) są pomijane;
-  - przystanek linii (`lines[].stops[]`) ma `entity` = encja stacji, którą można dopasować do `stations[].stations`;
-  - `carrier` linii bierze się z jej pojazdów, a gdy linia nie ma pojazdów, z rodzaju jej stacji.
-- **`network`**: `{ v, kind, session, seq, gameTime, fields[], edges[][] }`. Każda krawędź to tablica wartości w kolejności z `fields`:
+  - `company` (computed once per game month): `finance` = the table from the Finances window (`computeFinanceTable`, `cfg.financeYears` years): `{ header[], rows[{ carrier, type, maintenance, construction, values[] }], total[], balance[], interest[], loan[] }`, where `type` etc. are `JournalEntry` enum names (`INCOME`, `MAINTENANCE`/`VEHICLE`…), and `values[i]` is the amount in year `header[i]`; `history` = series from the world logbook `companyBalance`, `companyTotalValue`, `townResidentialCount`, `townCommercialCount`, `townIndustrialCount` (district capacity of all towns) as `[[year with fraction, value], …]`, at most `cfg.historyMaxPoints` points;
+  - `towns[].supply`: needs satisfaction `[{ cargo, supply, demand }]` from `townBuildingSystem.getCargoSupplyAndLimit` (`demand` -1 = no limit);
+  - `industries[]`: `stocks[]` have `amount` (stock level), `input` and `consumedYear` (consumption per year); `producedYear` = cargo -> production per year; `year` = `{ produced, consumed, destroyed }` from the industry logbook for the last year;
+  - `warehouses[]`: the player's warehouses (the `WAREHOUSE` component) `{ id, construction, name, file, pos, capacity, amount, cargo{cargo: amount}, stocks[], year{unloaded, loaded} }`; `capacity` and `amount` are sums over all stores, `stocks[]` = `{ cargos[] (allowed cargo), capacity, amount, cargo{cargo: amount} }`, `year` = brought in / shipped out in the last year (logbook `itemsUnloaded` / `itemsLoaded`). The name can carry an owner ("Name | Viewer"), like towns and industries;
+  - cargo is given as resource names, e.g. `"::/cargos/logs/logs.cargo"`;
+  - vehicle `carrier` and `state` are enum names (`RAIL`, `EN_ROUTE`…);
+  - vehicle details (`collectors.vehicleDetails`, the "Vehicle details" switch in the mod settings): `model` = the model id of the lead unit (in `models`: `{ "id": { name, icon } }`; `name` from `api.res.modelRep` or the multiple unit name from `muFileNames`, `icon` = the `.mdl` file name without extension, the website image `web/img/vehicles/<icon>.png` from `tools/extract_game_icons.py`), `parts` = number of parts in the consist (only when > 1), `age` = age of the oldest part in game calendar years, `wear` = age / lifespan of that part (≥ 1 = past its lifespan, like the percentage in the line window), `maint` = average maintenance state of the parts 0..1 (like `vehicle_util.getAvgMaintenanceState`), `cap` = capacity `{ [cargo] = count }` from `config.capacities` (index - 1 = CargoTypeId, like `gui/main/cargo_util.tl`), `load` = what the vehicle carries right now, same keys (`simEntityAtVehicleSystem.getVehicleSimEntitiesCountForCargoType`, one call per cargo with capacity). Without details there's no `models` key and none of these fields. **Not yet checked in the game** (especially the model names);
+  - `stations[]`: one row per station construction `{ id, kind, industry, warehouse, carriers[], name, file, pos, owner, passengers, cargo, groups[], stations[] }`, where `kind` is `RAIL`, `ROAD`, `WATER`, `AIR` (rarely `TRAM`, `OTHER` = an unrecognized industry station), and `industry` / `warehouse` is the id of the industry / warehouse when the station is part of it, determined from the construction path, and for stations from mods from `carriers` (the carriers of the whole station group). Stops (no construction, `small_stops`, `underground_station`) are skipped;
+  - a line stop (`lines[].stops[]`) has `entity` = the station entity, which can be matched to `stations[].stations`;
+  - a line's `carrier` comes from its vehicles, and when the line has no vehicles, from the kind of its stations.
+- **`network`**: `{ v, kind, session, seq, gameTime, fields[], edges[][] }`. Each edge is an array of values in the order given by `fields`:
   - `id`, `node0`, `node1`
-  - pozycje i tangenty
-  - `road`: `STREET` lub `TRACK`
-  - `type`: `NORMAL`, `BRIDGE` lub `TUNNEL`
-  - `owner`: 0 oznacza miasto lub świat
+  - positions and tangents
+  - `road`: `STREET` or `TRACK`
+  - `type`: `NORMAL`, `BRIDGE` or `TUNNEL`
+  - `owner`: 0 means a town or the world
 - **`networkDelta`**: `{ v, kind, session, seq, base, gameTime, fields[], changed[][], removed[] }`
-  - `changed` to dodane lub zmienione krawędzie, w formacie wierszy jak w `edges`;
-  - `removed` to ID usuniętych krawędzi;
-  - `base` to `seq` wersji, do której stosuje się różnicę. `network` i `networkDelta` mają wspólny licznik `seq`, więc `base = seq - 1`.
+  - `changed` are added or changed edges, in the same row format as `edges`;
+  - `removed` are the IDs of removed edges;
+  - `base` is the `seq` of the version the diff applies to. `network` and `networkDelta` share the `seq` counter, so `base = seq - 1`.
 
-  Odbiorca stosuje różnice po kolei. Jeśli brakuje któregoś `seq`, czeka na nowy pełny zrzut, który powstaje przy następnej sesji.
+  The receiver applies diffs in order. If a `seq` is missing, it waits for a new full dump, which comes with the next session.
 
-- **`terrain`**: heightmapa do tła mapy (`terrain.lua`). `{ v, kind, session, seq, gameTime, method, nx, ny, step, x0, y0, zMin, zMax, zScale, waterLevel, encoding, data }`
-  - próbka `(i, j)` leży w świecie w `(x0 + i*step, y0 + j*step)`; wiersze od `j = 0` (południe, najmniejsze y), w wierszu `i` rosnąco;
-  - `encoding = "b64x3"`: każda próbka to 3 znaki base64 (18 bitów, najstarsze pierwsze), `h = zMin + q * zScale` (`zScale = 0.1` m);
-  - `waterLevel` z komponentu `TERRAIN` świata, `null`, jeśli nie udało się go odczytać.
+- **`terrain`**: a heightmap for the map background (`terrain.lua`). `{ v, kind, session, seq, gameTime, method, nx, ny, step, x0, y0, zMin, zMax, zScale, waterLevel, encoding, data }`
+  - sample `(i, j)` is located in the world at `(x0 + i*step, y0 + j*step)`; rows from `j = 0` (south, smallest y), `i` ascending within a row;
+  - `encoding = "b64x3"`: each sample is 3 base64 characters (18 bits, most significant first), `h = zMin + q * zScale` (`zScale = 0.1` m);
+  - `waterLevel` from the world's `TERRAIN` component, `null` if it couldn't be read.
 
-  Powstaje raz na sesję (po pierwszym zrzucie sieci) i ponownie, gdy zmieni się podpis `getTerrainEntityRevisions()` (sprawdzany co `terrainCheckEveryWallSec`). Domyślnie krok 20 m, najwyżej 2048 próbek na bok: mapa 20×41 km daje krok 21 m i 976×1951 próbek (ok. 5,7 MB, ok. 4 s CPU w porcjach po 4 ms, czyli ~18 s w tle). Middle app robi z tego `latest/terrain.png` (cieniowana rzeźba) i `latest/terrain.json` (zakres w świecie).
+  It's produced once per session (after the first network dump) and again when the `getTerrainEntityRevisions()` signature changes (checked every `terrainCheckEveryWallSec`). Default step 20 m, at most 2048 samples per side: a 20×41 km map gives a 21 m step and 976×1951 samples (about 5.7 MB, about 4 s of CPU in 4 ms chunks, i.e. ~18 s in the background). The middle app turns this into `latest/terrain.png` (shaded relief) and `latest/terrain.json` (world extent).
 
-Typowe rozmiary to ok. 120 KB (`dynamic`) i ok. 1 MB (`network`, ok. 8700 krawędzi).
+Typical sizes are about 120 KB (`dynamic`) and about 1 MB (`network`, about 8700 edges).
 
-### Zapas: log gry
+### Fallback: the game log
 
-Gdy `app.saveUserdata` jest niedostępne, `writer.lua` pisze do `...\3493540\local\crash_dump\stdout.txt` w kawałkach do 8000 bajtów, cięte bez przecinania znaków UTF-8:
+When `app.saveUserdata` is unavailable, `writer.lua` writes to `...\3493540\local\crash_dump\stdout.txt` in chunks of up to 8000 bytes, cut without splitting UTF-8 characters:
 
 ```
-[tf3x] <kind> <session> <seq> <part>/<total> <fragment JSON-a>
+[tf3x] <kind> <session> <seq> <part>/<total> <JSON fragment>
 ```
 
-## Komendy od Tf3Bridge (akcje widzów)
+## Commands from Tf3Bridge (viewer actions)
 
-`commands.lua` co sekundę (`commandsEveryWallSec`) czyta w wątku GUI `local\towns_industries\tf3export_queue.lua`, który pisze Tf3Bridge:
+Every second (`commandsEveryWallSec`) `commands.lua` reads, on the GUI thread, `local\towns_industries\tf3export_queue.lua`, which Tf3Bridge writes:
 
 ```lua
 function data()
 return {
 	commands = {
-		{ id = "3f2a9c1d7b4e", kind = "setName", created = 1759590000, entity = 1234, name = "Kraków | widz" },
+		{ id = "3f2a9c1d7b4e", kind = "setName", created = 1759590000, entity = 1234, name = "Kraków | viewer" },
 	},
 }
 end
 ```
 
-- Rodzaje komend:
-  - `setName { entity, name }`: zmiana nazwy (`makeEntitySetNameCmd`);
-  - `adopt { entity, owner }`: „Nazwa” → „Nazwa | owner”, tylko gdy obiekt nie ma właściciela (sprawdzane w chwili wykonania, inaczej `invalid`, a Tf3Bridge zwraca punkty);
-  - `effect { effect, entity, months, factor }`: efekt czasowy z `effects.lua`, opis niżej;
-  - `createTown { x, y, name, owner }` i `createIndustry { x, y, file, name, owner }`: nowe miasto albo zakład „name | owner” (`create.lua`, opis niżej); w wyniku `entity` = id nowego obiektu;
-  - `notify { title, text, entity?, dismissMs? }`: powiadomienie w grze z ikoną Twitcha (zdarzenie `Notifications` → `add`, typ `twitch_notification`); kliknięcie przenosi kamerę do `entity` ([../docs/custom-notifications.md](../docs/custom-notifications.md)).
-- Wynik trafia do `local\towns_industries\tf3export_results.lua` (`app.saveUserdata`): `json` z listą `{ id, status, error }` (status `ok`, `failed`, `invalid`, `expired`) i `done` z identyfikatorami, z których mod po restarcie gry odtwarza, co już wykonał.
-- Komendy starsze niż 300 s są pomijane (`expired`).
-- Gra wysyła komendy ze swoich skryptów w wątkach symulacji; z wątku GUI to **jeszcze niesprawdzone**. Dlatego mod nie ufa tylko callbackowi `sendCommand`: po wysłaniu przez 15 s sprawdza, czy efekt jest widoczny (dla `setName`: czy encja ma nową nazwę). Log: `command <id>: sent setName`, potem `ok` albo `failed (...)`.
+- Command kinds:
+  - `setName { entity, name }`: rename (`makeEntitySetNameCmd`);
+  - `adopt { entity, owner }`: "Name" → "Name | owner", only when the object has no owner (checked at execution time, otherwise `invalid`, and Tf3Bridge refunds the points);
+  - `effect { effect, entity, months, factor }`: a timed effect from `effects.lua`, described below;
+  - `createTown { x, y, name, owner }` and `createIndustry { x, y, file, name, owner }`: a new town or industry "name | owner" (`create.lua`, described below); the result has `entity` = the id of the new object;
+  - `notify { title, text, entity?, dismissMs? }`: an in-game notification with the Twitch icon (the `Notifications` → `add` event, the `twitch_notification` type); clicking moves the camera to `entity` ([../docs/custom-notifications.md](../docs/custom-notifications.md)).
+- The result goes to `local\towns_industries\tf3export_results.lua` (`app.saveUserdata`): `json` with a list of `{ id, status, error }` (status `ok`, `failed`, `invalid`, `expired`) and `done` with the ids, from which the mod rebuilds what it has already executed after a game restart.
+- Commands older than 300 s are skipped (`expired`).
+- The game sends commands from its scripts on simulation threads; from the GUI thread this is **not yet verified**. So the mod doesn't trust only the `sendCommand` callback: after sending, it checks for 15 s whether the result is visible (for `setName`: whether the entity has the new name). Log: `command <id>: sent setName`, then `ok` or `failed (...)`.
 
-### Nowe miasta i zakłady (`create.lua`)
+### New towns and industries (`create.lua`)
 
-Tak samo jak edytor mapy gry (`gui/map_editor/map_editor.tl` w `gui.zip`):
+The same way as the game's map editor (`gui/map_editor/map_editor.tl` in `gui.zip`):
 
-- miasto: `api.type.Map.Town` (pozycja, nazwa, `sizeFactors = {1, 1, 1}`, potrzeby ładunkowe najbliższego miasta z `api.engine.terrain.makeMapFromGame`) → `api.engine.mapgen.createTowns` → `makeTownCreateCmd(toAdd)`; gotowe, gdy jest miasto o nowej nazwie;
-- zakład: `api.type.Map.Industry` (plik `.con`, losowy kąt, `onWater` dla platformy wiertniczej, łowiska i pogłębiarki) → `api.engine.mapgen.createIndustries` → `api.engine.util.proposal.createIndustryProposal` → `makeWorldBuildProposalCmd(proposal, context, false, false, true)`. Bez `ignoreErrors`: kolizja z torami, drogą albo stacją kończy się błędem (zwrot punktów), a nie zburzeniem infrastruktury streamera. Gra nazywa nowy zakład sama, więc po jego pojawieniu się (nowa encja `INDUSTRY` do 1,5 km od punktu) mod zmienia nazwę na „name | owner”.
-- `toRemove` z `mapgen` jest pomijane: budowa nigdy nie usuwa istniejących obiektów.
-- Przed wysłaniem: `isValidCoordinate`, woda (`getHeightAt` poniżej `waterLevel`), zajęta nazwa miasta. Błędy (`on water`, `needs water`, `no room ...`) Tf3Bridge tłumaczy na czacie.
-- Na wynik czekamy do 45 s (zamiast 15 s).
-- **Jeszcze niesprawdzone w grze:** pierwszy test przez **Test akcji…** → symulacja nagrody „Nowe miasto” / „Nowy zakład” z kodem skopiowanym ze strony.
+- town: `api.type.Map.Town` (position, name, `sizeFactors = {1, 1, 1}`, cargo needs of the nearest town from `api.engine.terrain.makeMapFromGame`) → `api.engine.mapgen.createTowns` → `makeTownCreateCmd(toAdd)`; done when a town with the new name exists;
+- industry: `api.type.Map.Industry` (`.con` file, random angle, `onWater` for the oil platform, fishing grounds and sand dredger) → `api.engine.mapgen.createIndustries` → `api.engine.util.proposal.createIndustryProposal` → `makeWorldBuildProposalCmd(proposal, context, false, false, true)`. Without `ignoreErrors`: a collision with tracks, a street or a station ends in an error (points refunded) rather than demolishing the streamer's infrastructure. The game names the new industry itself, so once it appears (a new `INDUSTRY` entity within 1.5 km of the point) the mod renames it to "name | owner".
+- `toRemove` from `mapgen` is ignored: building never removes existing objects.
+- Before sending: `isValidCoordinate`, water (`getHeightAt` below `waterLevel`), a town name already taken. Tf3Bridge translates the errors (`on water`, `needs water`, `no room ...`) in chat.
+- We wait up to 45 s for the result (instead of 15 s).
+- **Not yet checked in the game:** the first test via **Test actions…** → simulating the "New town" / "New industry" reward with a code copied from the website.
 
-### Efekty czasowe (`effects.lua`)
+### Timed effects (`effects.lua`)
 
-| Efekt | Co robi | Cofnięcie po `months` miesiącach gry |
+| Effect | What it does | Undone after `months` game months |
 |---|---|---|
-| `townBoost` | `sizeFactors` miasta × `factor` (`makeTownUpdateSizeCmd`, budynki dorastają stopniowo) | stare `sizeFactors` |
-| `industryBoost` | produktywność zakładu × `factor` (`makeStockListSetModifiersCmd`) | produktywność sprzed efektów |
-| `industryStrike` | blokada wywozu: zakład produkuje normalnie, ale nowe sztuki znikają z magazynów wyjściowych (`api.cmd.debug.makeStockSetCargoAmountCmd`); to, co już leżało, pojazdy mogą zabrać. `factor` = część nowej produkcji, która zostaje | nic do cofania, blokada po prostu się kończy |
-| `industryTaxRaid` | jak wyżej na wszystkich zakładach z `entities` („1,2,3”); klucz efektu to `target` (widz-ofiara) | jak wyżej |
-| `lineFuelPremium` / `lineFuelBad` | `topSpeedScale` pojazdów linii × `factor` (`makeVehicleSetModifiersCmd`, pozostałe skale bez zmian), także pojazdów dokupionych w trakcie | skala sprzed efektów; pojazd, który opuścił linię, wraca od razu |
-| `lineStop` | pojazdy linii zatrzymane jak przyciskiem w grze (`makeVehicleSetStoppedByUserCmd`), także na szlaku | start tych, które zatrzymał efekt |
-| `lineHold` | ręczny odjazd (`makeVehicleSetManualDepartureCmd`): pojazdy czekają na przystankach | ręczny odjazd wyłączony + `makeVehicleTryToDepartCmd` |
+| `townBoost` | the town's `sizeFactors` × `factor` (`makeTownUpdateSizeCmd`, buildings grow gradually) | the old `sizeFactors` |
+| `industryBoost` | industry productivity × `factor` (`makeStockListSetModifiersCmd`) | productivity from before the effects |
+| `industryStrike` | a shipping block: the industry produces normally, but new items disappear from the output stocks (`api.cmd.debug.makeStockSetCargoAmountCmd`); what was already there can be picked up by vehicles. `factor` = the share of new production that stays | nothing to undo, the block just ends |
+| `industryTaxRaid` | as above on all industries from `entities` ("1,2,3"); the effect key is `target` (the victim viewer) | as above |
+| `lineFuelPremium` / `lineFuelBad` | `topSpeedScale` of the line's vehicles × `factor` (`makeVehicleSetModifiersCmd`, other scales unchanged), including vehicles bought in the meantime | the scale from before the effects; a vehicle that left the line returns right away |
+| `lineStop` | the line's vehicles stopped like with the in-game button (`makeVehicleSetStoppedByUserCmd`), also mid-route | starting the ones the effect stopped |
+| `lineHold` | manual departure (`makeVehicleSetManualDepartureCmd`): vehicles wait at stops | manual departure off + `makeVehicleTryToDepartCmd` |
 
-- `factor` w zakresie rodzaju efektu (boosty 1–5, paliwo premium 1–3, strajk i skarbówka 0–1 (część nowej produkcji, która zostaje), chrzczone paliwo 0,1–1), `months` 1–60 (miesiąc = 365/12 dni gry). Czas liczy się w czasie gry, więc na pauzie efekt stoi. Miesiące, bo dzień gry trwa tylko 2–3 s.
-- Drugi efekt tego samego rodzaju na tym samym celu przedłuża czas (nalot na tego samego widza dokłada też jego nowe zakłady). Siła rośnie tylko wtedy, gdy nowe wykupienie ma mocniejszy mnożnik (dalej od 1, np. po zmianie ustawień).
-- **Paliwo to kolejka na linię** (`queue = "fuel"`): paliwo premium i chrzczone na tej samej linii nie działają naraz (nie mnożą się). Inne paliwo kupione w trakcie czeka i zaczyna działać, gdy obecne się skończy (do czatu idzie data końca, log: `effect … queued …`). To samo paliwo przedłuża obecne, a czekające w kolejce przesuwa się o tyle samo.
-- **Sterownik wartości** (`Controller` w `effects.lua`): produktywność zakładu i prędkość pojazdu ustawia jeden sterownik na obiekt, z bazą (wartość sprzed efektów) × iloczyn mnożników wszystkich aktywnych efektów. Dwa boosty na tym samym zakładzie mnożą się, a po końcu jednego zostaje drugi; bez tego efekty przejmowałyby nawzajem swoje wartości jako nową bazę. Bazy są zapisywane w save'ie (`state.effectCtl`); boosty ze starszych save'ów przenoszą swoją bazę do sterownika przy wczytaniu.
-- Skrypt gry `industry_workers` też ustawia produktywność (boost od pracowników). Dlatego co sekundę pilnujemy wartości. Po naszym ustawieniu mod czeka kilka sekund, aż gra je przyjmie, i zapamiętuje faktyczną wartość (gra może mieć własny limit; log: `productivity …: game keeps …`). Dopiero zmiana względem tej wartości oznacza ingerencję innego skryptu: wtedy nowa wartość staje się bazą (log: `productivity …: changed by the game …`). Tak samo dla prędkości (`speed …`). Efekt uznajemy za wykonany, gdy wartość osiągnie cel albo przesunie się od bazy w jego stronę (gra może mieć limit). Cel przyjęty przez grę z opóźnieniem nie staje się nową bazą (inaczej mnożnik naliczałby się drugi raz).
-- **Do sprawdzenia w grze:** czy silnik sam nie nadpisuje `topSpeedScale` (premie miast od landmarków) i czy +20% widać na liniach, które ogranicza prędkość toru, a nie pojazdu.
-- **Strajk i nalot to nie produktywność.** Gra liczy długość cyklu produkcji raz, przy jego starcie (`ruleDatas[i].applyHistory[].interval`), więc cykl zaczęty przy produktywności ×0,01 trwał lata po końcu efektu ([szczegóły](../docs/industry-api-dump.md)). Blokada (`freezeSync` w `effects.lua`) co sekundę czyta sztuki w magazynach wyjściowych (`getStockEntities`: `{czas przybycia, encja}`), liczy nowe (przybyłe po ostatnim odczycie) i ustawia stan magazynu na „stare + część nowych”. Odbiór pojazdem i produkcja w tej samej sekundzie się nie mylą. Komenda niewysłana jeszcze do gry nie jest nadpisywana wyższą wartością. Stan blokady nie trafia do save'a: po wczytaniu startuje od obecnego stanu magazynów. Strajk i nalot na tym samym zakładzie mnożą `factor`. Strajki ze starszych save'ów (na produktywności) sterownik cofa przy wczytaniu do bazy, ale trwającego długiego cyklu to nie skróci.
-- `lineStop` nie rusza pojazdów, które gracz zatrzymał wcześniej.
-- `lineHold`: API nie pokazuje trybu ręcznego odjazdu, więc efekt uznajemy za wykonany po wysłaniu komend.
-- Efekt niepotwierdzony w 15 s jest cofany, a Tf3Bridge zwraca punkty.
+- `factor` within the effect kind's range (boosts 1–5, premium fuel 1–3, strike and tax raid 0–1 (the share of new production that stays), watered-down fuel 0.1–1), `months` 1–60 (a month = 365/12 game days). Time counts in game time, so the effect stands still while paused. Months, because a game day lasts only 2–3 s.
+- A second effect of the same kind on the same target extends the time (a raid on the same viewer also adds their new industries). The strength only grows when the new redemption has a stronger multiplier (further from 1, e.g. after a settings change).
+- **Fuel is a per-line queue** (`queue = "fuel"`): premium and watered-down fuel on the same line don't run at once (they don't multiply). Other fuel bought in the meantime waits and starts when the current one ends (chat gets the end date, log: `effect … queued …`). The same fuel extends the current one, and the queued one shifts by the same amount.
+- **Value controller** (`Controller` in `effects.lua`): industry productivity and vehicle speed are set by one controller per object, with a base (the value from before the effects) × the product of the multipliers of all active effects. Two boosts on the same industry multiply, and after one ends the other remains; without this, effects would take each other's values as the new base. The bases are stored in the save (`state.effectCtl`); boosts from older saves move their base into the controller on load.
+- The game's `industry_workers` script also sets productivity (the worker boost). That's why we watch the value every second. After our change the mod waits a few seconds for the game to accept it and remembers the actual value (the game may have its own cap; log: `productivity …: game keeps …`). Only a change relative to that value means another script interfered: then the new value becomes the base (log: `productivity …: changed by the game …`). The same for speed (`speed …`). An effect counts as applied when the value reaches the target or moves from the base towards it (the game may have a cap). A target accepted by the game with a delay doesn't become the new base (otherwise the multiplier would be applied twice).
+- **To check in the game:** whether the engine overwrites `topSpeedScale` on its own (town bonuses from landmarks) and whether +20% shows on lines limited by track speed rather than vehicle speed.
+- **A strike and a raid aren't productivity.** The game computes the production cycle length once, when it starts (`ruleDatas[i].applyHistory[].interval`), so a cycle started at ×0.01 productivity lasted years after the effect ended ([details](../docs/industry-api-dump.md)). The block (`freezeSync` in `effects.lua`) reads the items in the output stocks every second (`getStockEntities`: `{arrival time, entity}`), counts the new ones (arrived since the last read) and sets the stock level to "old + a share of the new". A vehicle pickup and production in the same second don't get mixed up. A command not yet sent to the game isn't overwritten by a higher value. The block state isn't stored in the save: after loading it starts from the current stock levels. A strike and a raid on the same industry multiply `factor`. Strikes from older saves (on productivity) are reset to the base by the controller on load, but that won't shorten a long running cycle.
+- `lineStop` doesn't touch vehicles the player stopped earlier.
+- `lineHold`: the API doesn't expose the manual departure mode, so the effect counts as applied once the commands are sent.
+- An effect not confirmed within 15 s is undone, and Tf3Bridge refunds the points.
 
-### Sabotaż hamulców (`wreck` w `commands.lua`)
+### Brake sabotage (`wreck` in `commands.lua`)
 
-Gra nie ma wypadków (brak komendy, stanu ani zdarzenia kolizji), więc „wypadek” to zniknięcie pojazdu: losowo od 1 do `share` (domyślnie 50%) pojazdów linii, zawsze co najmniej jeden, jest sprzedawanych (`makeVehicleSellCmd`). Kwotę ze sprzedaży (suma `vehicle.getDepreciatedValue` sprzed sprzedaży) mod zabiera wpisem w księgach (`makeJournalBookAssetCmd`, kategoria `OTHER`, kwota ujemna), żeby streamer nic na tym nie zarobił. Wpis idzie dopiero po potwierdzeniu sprzedaży (callback `true` albo żaden z wybranych pojazdów nie jeździ już na linii), więc odrzucona sprzedaż nic nie kosztuje. Pojazd sprawdzamy po komponencie `TRANSPORT_VEHICLE` i linii, nie samym `entityExists`, bo gra może oddać id sprzedanego pojazdu nowej encji. 15 s na potwierdzenie liczy się tylko wtedy, gdy czas gry płynie, bo na pauzie sprzedaż może wejść dopiero po wznowieniu. Przy `failed` log podaje, ile sprzedanych pojazdów wciąż jest na linii. Wynik: `count` (zniszczone) i `total` (pojazdy linii przed sabotażem). Nie do cofnięcia. **Jeszcze niesprawdzone w grze.**
-- **Kto i do kiedy:** komenda `effect` niesie `user` (widz z Twitcha). Wynik komendy w `results.lua` ma `until = { year, month, day }`, czyli koniec efektu w kalendarzu gry; Tf3Bridge podaje tę datę widzowi na czacie. Aktywne efekty trafiają do każdego eksportu dynamicznego jako `effects` (`effects.list()`), a strona pokazuje je przy obiektach.
-- **Zapis w save'ie:** wątek GUI nie może pisać stanu game scriptu. Lista efektów idzie więc zdarzeniem `tf3x_effects` (`makeScriptingSendEventCmd`) do `handleEvent` w wątku symulacji, który zapisuje ją w `state.effects`. Po wczytaniu gry mod odtwarza efekty z tego stanu (log: `effects: N active effect(s) restored from the save`).
+The game has no accidents (no command, state or collision event), so an "accident" means a vehicle disappears: randomly 1 to `share` (default 50%) of the line's vehicles, always at least one, are sold (`makeVehicleSellCmd`). The mod takes the sale amount (the sum of `vehicle.getDepreciatedValue` from before the sale) back with a journal entry (`makeJournalBookAssetCmd`, category `OTHER`, negative amount), so the streamer gains nothing from it. The entry is only made after the sale is confirmed (callback `true` or none of the chosen vehicles runs on the line anymore), so a rejected sale costs nothing. A vehicle is checked by its `TRANSPORT_VEHICLE` component and line, not just `entityExists`, because the game may give a sold vehicle's id to a new entity. The 15 s for confirmation only count while game time runs, because while paused the sale may only go through after resuming. On `failed` the log says how many sold vehicles are still on the line. Result: `count` (destroyed) and `total` (the line's vehicles before the sabotage). Can't be undone. **Not yet checked in the game.**
+- **Who and until when:** the `effect` command carries `user` (the Twitch viewer). The command result in `results.lua` has `until = { year, month, day }`, the effect's end in the game calendar; Tf3Bridge gives this date to the viewer in chat. Active effects go into every dynamic export as `effects` (`effects.list()`), and the website shows them next to the objects.
+- **Stored in the save:** the GUI thread can't write the game script state. So the list of effects is sent with a `tf3x_effects` event (`makeScriptingSendEventCmd`) to `handleEvent` on the simulation thread, which stores it in `state.effects`. After loading a game the mod restores the effects from this state (log: `effects: N active effect(s) restored from the save`).
 
-### Dotacja i kredyt (`subsidy`, `loan` w `commands.lua`)
+### Subsidy and loan (`subsidy`, `loan` in `commands.lua`)
 
-Dotacja to wpis w księgach (`makeJournalBookAssetCmd`, kategoria `SUBSIDY`, kwota dodatnia); stan konta zmienia się cały czas, więc o wyniku decyduje callback komendy. Kredyt korzysta z systemu kredytów gry (`game_mechanics/finance/loan.script.tl`): mod wysyła to samo zdarzenie co okno Finanse dla własnego kredytu, `makeScriptingSendEventCmd("", "Loan", "Obtain", { nil, loan })` z `loan = { type = "Custom", amount, duration = months × getDefaultMonthDuration(), percentage = percent / 100 }`. Skrypt gry wypłaca kwotę (wpis `LOAN`), dopisuje kredyt do `obtainedLoans` i co miesiąc pobiera ratę z odsetkami (`LOAN` + `INTEREST`), także po zapisie i wczytaniu gry. Mod potwierdza sukces po wzroście `freeId` w stanie tego skryptu (czekanie nie liczy się na pauzie). Odmowa: `loan limit N` (gra pozwala na 4 kredyty, `loan_util.maximalObtainableLoans`), `unlimited money` (`getPlayersBalance` = nil; gra zamraża wtedy kredyty), dla obu nagród. **Jeszcze niesprawdzone w grze.**
+A subsidy is a journal entry (`makeJournalBookAssetCmd`, category `SUBSIDY`, positive amount); the balance changes all the time, so the command callback decides the result. A loan uses the game's loan system (`game_mechanics/finance/loan.script.tl`): the mod sends the same event the Finances window sends for a custom loan, `makeScriptingSendEventCmd("", "Loan", "Obtain", { nil, loan })` with `loan = { type = "Custom", amount, duration = months × getDefaultMonthDuration(), percentage = percent / 100 }`. The game script pays out the amount (a `LOAN` entry), adds the loan to `obtainedLoans` and collects an installment with interest every month (`LOAN` + `INTEREST`), also after saving and loading the game. The mod confirms success once `freeId` grows in that script's state (waiting doesn't count while paused). Refusal: `loan limit N` (the game allows 4 loans, `loan_util.maximalObtainableLoans`), `unlimited money` (`getPlayersBalance` = nil; the game freezes loans then), for both rewards. **Not yet checked in the game.**
 
-## Diagnostyka
+## Diagnostics
 
-W logu gry (`crash_dump\stdout.txt`) szukaj linii `[tf3export]`:
-- `new session … (writer mode 'userdata'|'log')`: początek sesji;
-- `dynamic #N: work … ms in … frames (max … ms/frame), … s wall; vehicles …, positions …, details … (… vehicles), stations …, lines …, line stats … (… lines), towns …, industries …, warehouses …, player …, encode …, write … ms; … B`: czas pracy łącznie i w najgorszej klatce oraz czasy kroków. Krok, który sam przekracza budżet (np. `towns`), to kandydat do podziału na porcje;
-- `vehicle positions: … ms for … vehicles (max … ms) - disabled for this session`: pozycje pojazdów wyłączone automatycznie, bo łącznie trwały za długo;
-- `network #N (full): … edges (initial, …)` oraz `networkDelta #N: … changed, … removed (build event, …)`;
-- `network: no change (periodic|build event, …)`: przebudowa nie znalazła zmian;
-- `saveUserdata failed: …`: błąd zapisu, po którym mod przełącza się na log;
-- `settings: klucz=wartość, …`: wczytane ustawienia z Tf3Bridge, które różnią się od poprzednich.
+In the game log (`crash_dump\stdout.txt`) look for `[tf3export]` lines:
+- `new session … (writer mode 'userdata'|'log')`: the start of a session;
+- `dynamic #N: work … ms in … frames (max … ms/frame), … s wall; vehicles …, positions …, details … (… vehicles), stations …, lines …, line stats … (… lines), towns …, industries …, warehouses …, player …, encode …, write … ms; … B`: total work time and the worst frame, plus step times. A step that alone exceeds the budget (e.g. `towns`) is a candidate for splitting into chunks;
+- `vehicle positions: … ms for … vehicles (max … ms) - disabled for this session`: vehicle positions turned off automatically because together they took too long;
+- `network #N (full): … edges (initial, …)` and `networkDelta #N: … changed, … removed (build event, …)`;
+- `network: no change (periodic|build event, …)`: the rebuild found no changes;
+- `saveUserdata failed: …`: a write error, after which the mod switches to the log;
+- `settings: key=value, …`: settings loaded from Tf3Bridge that differ from the previous ones.
 
-## Znane ograniczenia
+## Known limitations
 
-- Snapshot sieci nie jest atomowy. Budowa w trakcie zbierania może dać mieszany stan.
-- Eksport dynamiczny jest rozłożony na klatki (budżet `cfg.dynamicBudgetMs`), więc snapshot powstaje przez kilka–kilkanaście klatek, a nie w jednej. Pętle (pozycje pojazdów, statystyki linii, kodowanie JSON) są dzielone w dowolnym miejscu. Pojedynczy kolektor (pojazdy, stacje, linie, miasta, przemysł) idzie w całości, więc najdłuższy z nich wyznacza najgorszą klatkę. Przed tą zmianą cały eksport zajmował 30–45 ms w jednej klatce.
-- Pozycje pojazdów (`api.engine.util.vehicle.getPosition` / `getSpeed`) są w każdym eksporcie dynamicznym, nie na żywo. Wyłącznik: „Pojazdy” w ustawieniach moda w Tf3Bridge; wyłącza całe zbieranie pojazdów, a JSON nie ma wtedy klucza `vehicles` i `lines[].vehicleCount` (strona pokazuje „–”). Mod sam je wyłącza do końca sesji, gdy średnio z 3 eksportów trwają łącznie dłużej niż `cfg.vehiclePositionsMaxMs` (30 ms). Strona wtedy zgaduje położenie z numeru przystanku.
+- The network snapshot isn't atomic. Building during collection can give a mixed state.
+- The dynamic export is spread over frames (the `cfg.dynamicBudgetMs` budget), so the snapshot is built over several to a dozen frames, not in one. Loops (vehicle positions, line statistics, JSON encoding) are split anywhere. A single collector (vehicles, stations, lines, towns, industry) runs in one piece, so the longest of them determines the worst frame. Before this change the whole export took 30–45 ms in one frame.
+- Vehicle positions (`api.engine.util.vehicle.getPosition` / `getSpeed`) are in every dynamic export, not live. Switch: "Vehicles" in the mod settings in Tf3Bridge; it turns off collecting vehicles altogether, and the JSON then has no `vehicles` key and no `lines[].vehicleCount` (the website shows "–"). The mod turns them off itself until the end of the session when, averaged over 3 exports, they take longer than `cfg.vehiclePositionsMaxMs` (30 ms) in total. The website then guesses the position from the stop number.

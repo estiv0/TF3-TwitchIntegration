@@ -1,152 +1,152 @@
 # Tf3Bridge: middle app
 
-Aplikacja okienkowa w .NET 9 (WinForms), która odbiera dane z moda `estiv0_tf3export` i publikuje je jako gotowe pliki JSON dla strony.
+A .NET 9 desktop app (WinForms) that receives data from the `estiv0_tf3export` mod and publishes it as ready-made JSON files for the website.
 
 ```
 TF3 (mod) ──app.saveUserdata──▶ ...\3493540\local\tf3export\*.lua
-                                      │  Tf3Bridge (co 500 ms)
+                                      │  Tf3Bridge (every 500 ms)
                                       ▼
-                               output\latest\dynamic.json   najnowszy snapshot dynamiczny
-                               output\latest\network.json   pełna sieć (zrzut + złożone różnice)
-                               output\latest\meta.json      session, seq, data gry, liczba krawędzi
+                               output\latest\dynamic.json   the newest dynamic snapshot
+                               output\latest\network.json   the full network (dump + applied diffs)
+                               output\latest\meta.json      session, seq, game date, edge count
 ```
 
-Zapis idzie zawsze lokalnie (`LocalFolderPublisher`), a opcjonalnie także do Azure Blob Storage w tym samym układzie `latest/*` (patrz „Wysyłka do Azure”).
+Output always goes to a local folder (`LocalFolderPublisher`), and optionally also to Azure Blob Storage with the same `latest/*` layout (see "Upload to Azure").
 
-## Uruchomienie
+## Running
 
-Tf3Bridge to mała aplikacja okienkowa (WinForms). Okno pokazuje stan (działa / zatrzymany), czas ostatniej publikacji, foldery wejścia i wyjścia oraz log. Most rusza od razu po starcie.
+Tf3Bridge is a small desktop app (WinForms). The window shows the state (running / stopped), the time of the last publish, the input and output folders, and a log. The bridge starts right away.
 
-- **Zatrzymaj / Uruchom** wstrzymuje i wznawia przetwarzanie bez zamykania aplikacji.
-- **Minimalizacja** chowa okno do zasobnika (zielona kropka = działa). Dwuklik na ikonie przywraca okno, menu ikony ma „Zamknij”.
-- **Zamknięcie okna** kończy bieżący przebieg i wyłącza aplikację.
-- Może działać tylko jedna instancja; druga pokaże komunikat i się zakończy.
+- **Stop / Start** pauses and resumes processing without closing the app.
+- **Minimizing** hides the window to the tray (green dot = running). Double-clicking the icon restores the window; the icon menu has "Close".
+- **Closing the window** finishes the current pass and exits the app.
+- Only one instance can run; a second one shows a message and exits.
 
-Gotowy exe ze skrótem na pulpicie:
+A ready exe with a desktop shortcut:
 
 ```powershell
 infra\publish.ps1
 ```
 
-Skrypt buduje `middle_app\dist\Tf3Bridge.exe` (folder `dist\` jest w `.gitignore`) i tworzy skrót `Tf3Bridge` na pulpicie (`-NoShortcut` pomija skrót). Przed ponowną publikacją zamknij działającą aplikację.
+The script builds `middle_app\dist\Tf3Bridge.exe` (the `dist\` folder is in `.gitignore`) and creates a `Tf3Bridge` shortcut on the desktop (`-NoShortcut` skips the shortcut). Close the running app before publishing again.
 
-Exe jest self-contained single-file (win-x64, ok. 55 MB): nie wymaga zainstalowanego .NET, a obok leży `appsettings.json` (i ewentualnie `appsettings.Local.json`, patrz niżej). Dla kogoś innego wystarczy przekazać `Tf3Bridge.exe` + `appsettings.json`. Folder moda Bridge znajdzie sam (patrz `InputDir`), a poza repozytorium publikuje do `output\` obok exe.
+The exe is self-contained single-file (win-x64, about 55 MB): it needs no installed .NET, and next to it there's `appsettings.json` (and possibly `appsettings.Local.json`, see below). To give it to someone else, `Tf3Bridge.exe` + `appsettings.json` is enough. The bridge finds the mod folder on its own (see `InputDir`), and outside the repository it publishes to `output\` next to the exe.
 
-Mod jest wbudowany w exe (`lua_mod\` z chwili budowania, `ModInstaller`). Przy starcie Bridge instaluje go albo aktualizuje w `Steam\userdata\<konto>\3493540\local\staging_area\estiv0_tf3export` (nie `mods\`: stamtąd gra pokazuje tylko mody z Workshopu): zapisuje nowe i zmienione pliki, a usuwa tylko te `.lua` w `content\`, których mod już nie ma. Nowy exe aktualizuje więc też moda. Jeśli gra jest uruchomiona, nowa wersja działa dopiero po ponownym wczytaniu zapisu. Kopii deweloperskiej (junction `staging_area\estiv0_tf3export` → repozytorium) Bridge nie rusza. Test `Embedded_mod_is_complete` pilnuje, żeby `_content.json` zgadzał się z plikami `.lua` (odśwież go przez `lua_mod\pack.ps1 -ContentOnly`).
+The mod is built into the exe (`lua_mod\` as of build time, `ModInstaller`). At startup the bridge installs or updates it in `Steam\userdata\<account>\3493540\local\staging_area\estiv0_tf3export` (not `mods\`: from there the game only shows Workshop mods): it writes new and changed files, and only deletes those `.lua` files in `content\` that the mod no longer has. So a new exe also updates the mod. If the game is running, the new version only takes effect after the save is loaded again. The bridge doesn't touch a development copy (a junction `staging_area\estiv0_tf3export` → the repository). The `Embedded_mod_is_complete` test makes sure `_content.json` matches the `.lua` files (refresh it with `lua_mod\pack.ps1 -ContentOnly`).
 
-Z kodu: `dotnet run` w `middle_app/src/Tf3Bridge` albo `Tf3Bridge.sln` w Riderze. Jeśli SDK jest w katalogu użytkownika (np. instalacja z Ridera), a `dotnet` nie ma w `PATH`, użyj `%USERPROFILE%\.dotnet\dotnet.exe`.
+From source: `dotnet run` in `middle_app/src/Tf3Bridge`, or `Tf3Bridge.sln` in Rider. If the SDK is in your user folder (e.g. installed by Rider) and `dotnet` isn't on `PATH`, use `%USERPROFILE%\.dotnet\dotnet.exe`.
 
-Testy:
+Tests:
 
 ```bash
 cd middle_app
 dotnet test
 ```
 
-## Konfiguracja (`src/Tf3Bridge/appsettings.json`, sekcja `Bridge`)
+## Configuration (`src/Tf3Bridge/appsettings.json`, `Bridge` section)
 
-Własne wartości (np. `Twitch:SiteUrl`, adres Twojej strony) wpisz do `src/Tf3Bridge/appsettings.Local.json` obok `appsettings.json`. Ten plik jest w `.gitignore`, nadpisuje `appsettings.json` i trafia do `dist` przy publikacji:
+Put your own values (e.g. `Twitch:SiteUrl`, your website's address) into `src/Tf3Bridge/appsettings.Local.json` next to `appsettings.json`. That file is in `.gitignore`, overrides `appsettings.json` and ends up in `dist` when publishing:
 
 ```json
-{ "Twitch": { "SiteUrl": "https://twoja-strona.example/" } }
+{ "Twitch": { "SiteUrl": "https://your-site.example/" } }
 ```
 
-| Klucz | Domyślnie | Opis |
+| Key | Default | Description |
 |---|---|---|
-| `InputDir` | puste: wykrywane ze Steam (`SteamLocator`): folder Steam z rejestru, a w nim `userdata\<konto>\3493540\local\tf3export` zalogowanego konta; bez zalogowanego Steam konto, które ostatnio grało w TF3 z modem | folder, do którego pisze mod |
-| `OutputDir` | puste: `web\data` repozytorium, w którym leży exe (szukane w górę od folderu exe), czyli tam, skąd czyta lokalna strona; poza repozytorium `output\` obok exe. Ścieżka względna liczy się od folderu exe | gdzie publikować `latest/*.json` |
-| `PollIntervalMs` | 500 | co ile sprawdzać folder |
-| `IncompleteFileTimeoutSec` | 30 | plik, którego po tym czasie nadal nie da się odczytać, trafia do `InputDir\failed` |
-| `KeepProcessedFiles` | false | zamiast kasować, przenosi pliki do `InputDir\processed` (debug) |
-| `IndentOutput` | false | czytelny JSON na wyjściu (debug) |
+| `InputDir` | empty: detected from Steam (`SteamLocator`): the Steam folder from the registry, and in it `userdata\<account>\3493540\local\tf3export` of the logged-in account; without a logged-in Steam, the account that last played TF3 with the mod | the folder the mod writes to |
+| `OutputDir` | empty: `web\data` of the repository the exe lives in (searched upwards from the exe folder), i.e. where the local website reads from; outside the repository, `output\` next to the exe. A relative path counts from the exe folder | where to publish `latest/*.json` |
+| `PollIntervalMs` | 500 | how often to check the folder |
+| `IncompleteFileTimeoutSec` | 30 | a file that still can't be read after this time goes to `InputDir\failed` |
+| `KeepProcessedFiles` | false | moves files to `InputDir\processed` instead of deleting them (debug) |
+| `IndentOutput` | false | readable JSON output (debug) |
 
-Każdy klucz można nadpisać z linii poleceń, np. `Tf3Bridge.exe --Bridge:OutputDir=D:\tf3out` (w polu „Element docelowy” skrótu) albo `dotnet run -- --Bridge:OutputDir=D:\tf3out`.
+Any key can be overridden from the command line, e.g. `Tf3Bridge.exe --Bridge:OutputDir=D:\tf3out` (in the shortcut's "Target" field) or `dotnet run -- --Bridge:OutputDir=D:\tf3out`.
 
-## Ustawienia moda
+## Mod settings
 
-Przycisk **Ustawienia moda…** w oknie zmienia działanie moda w grze bez edycji plików:
+The **Mod settings…** button in the window changes how the mod behaves in the game without editing files:
 
-| Pole | Domyślnie | Klucz w modzie |
+| Field | Default | Key in the mod |
 |---|---|---|
-| Eksport danych co … dni gry | 2 (1–30) | `dynamicEveryDays` |
-| …ale nie częściej niż co … s | 10 (2–300) | `minDynamicWallSec` |
-| Czas pracy na klatkę | 3 ms (1–10) | `dynamicBudgetMs` |
-| Pojazdy (lista, pozycje, liczba na liniach) | tak | `vehicles` |
-| Eksport terenu | tak | `terrain` |
-| Dokładność terenu | 20 m (5–100) | `terrainStepM` |
+| Export data every … game days | 2 (1–30) | `dynamicEveryDays` |
+| …but not more often than every … s | 10 (2–300) | `minDynamicWallSec` |
+| Work time per frame | 3 ms (1–10) | `dynamicBudgetMs` |
+| Vehicles (list, positions, count on lines) | yes | `vehicles` |
+| Terrain export | yes | `terrain` |
+| Terrain resolution | 20 m (5–100) | `terrainStepM` |
 
-Mod nie ma dostępu do plików poza `app.loadUserdata`, więc Bridge zapisuje ustawienia jako plik userdata w folderze eksportu: `local\towns_industries\tf3export_settings.lua` (`ModSettingsStore`, zapis przez plik tymczasowy). Mod czyta go co 5 s, więc zmiany działają bez restartu gry; w logu gry pojawia się `[tf3export] settings: …`. Usunięcie pliku przywraca wartości domyślne.
+The mod has no file access apart from `app.loadUserdata`, so the bridge saves the settings as a userdata file in the export folder: `local\towns_industries\tf3export_settings.lua` (`ModSettingsStore`, written through a temporary file). The mod reads it every 5 s, so changes apply without restarting the game; the game log shows `[tf3export] settings: …`. Deleting the file restores the defaults.
 
-## Wysyłka do Azure
+## Upload to Azure
 
-Zapis zawsze idzie lokalnie (`web\data`), a jeśli w oknie włączono Azure, `AzureMirror` dosyła zmienione pliki do kontenera Blob Storage, z którego czyta strona.
+Output always goes locally (`web\data`), and if Azure is enabled in the window, `AzureMirror` also uploads the changed files to the Blob Storage container the website reads from.
 
-**Pierwsza konfiguracja:**
+**First-time setup:**
 
-1. Zainstaluj Azure CLI: `winget install Microsoft.AzureCLI` (potem nowe okno PowerShell).
-2. Załóż zasoby: `.\infra\azure-setup.ps1 -Name <nazwa>`. Nazwa konta: 3–24 małe litery i cyfry, unikalna w Azure, bo jest w adresie (`https://<nazwa>.blob.core.windows.net`). Skrypt zakłada grupę `tf3-live` w `polandcentral`, konto Storage (Standard_LRS), publiczny kontener `live`, CORS i wypisuje adres kontenera oraz token SAS (ważny rok, prawa tylko create + write).
-3. W Tf3Bridge kliknij **Azure…**, wklej adres i token, **Testuj połączenie**, **Zapisz**.
-4. Na stronie ustaw `dataBaseUrl` w `web/config.js` na `https://<nazwa>.blob.core.windows.net/live/latest/`. Do testu bez zmiany pliku: `http://localhost:5080/?data=https://<nazwa>.blob.core.windows.net/live/latest/`.
+1. Install the Azure CLI: `winget install Microsoft.AzureCLI` (then open a new PowerShell window).
+2. Create the resources: `.\infra\azure-setup.ps1 -Name <name>`. Account name: 3–24 lower-case letters and digits, unique in Azure, because it's part of the address (`https://<name>.blob.core.windows.net`). The script creates the `tf3-live` resource group in `polandcentral`, a Storage account (Standard_LRS), a public `live` container and CORS, and prints the container address and a SAS token (valid for a year, create + write rights only).
+3. In Tf3Bridge click **Azure…**, paste the address and the token, **Test connection**, **Save**.
+4. On the website set `dataUrl` in `web/site.json` to `https://<name>.blob.core.windows.net/live/latest/` (see [../web/README.md](../web/README.md)). To test without editing the file: `http://localhost:5080/?data=https://<name>.blob.core.windows.net/live/latest/`.
 
-Nowy token (np. gdy stary wygasa): `.\infra\azure-setup.ps1 -Name <nazwa> -SasOnly`.
+A new token (e.g. when the old one expires): `.\infra\azure-setup.ps1 -Name <name> -SasOnly`.
 
-**Jak działa wysyłka:**
+**How the upload works:**
 
-- Token SAS jest w `%LOCALAPPDATA%\Tf3Bridge\azure.json`, zaszyfrowany DPAPI dla bieżącego konta Windows. Nie trafia do repo ani do `appsettings.json`.
-- Po każdym przebiegu wysyłane są pliki zmienione lokalnie. Po włączeniu Azure (albo starcie aplikacji) idzie wszystko, co już jest w `latest\`.
-- JSON jest gzipowany (`Content-Encoding: gzip`), wszystko ma `Cache-Control: no-cache`.
-- `meta.json` idzie zawsze na końcu i tylko gdy reszta się udała, bo strona po zmianie seq w meta od razu pobiera pozostałe pliki.
-- Błąd (brak sieci, wygasły token) nie zatrzymuje lokalnego zapisu. Pliki zostają w kolejce i są dosyłane co 10 s; stan widać w oknie („Azure: błąd: …”).
+- The SAS token is in `%LOCALAPPDATA%\Tf3Bridge\azure.json`, encrypted with DPAPI for the current Windows account. It never goes into the repo or `appsettings.json`.
+- After each pass the locally changed files are uploaded. After enabling Azure (or starting the app) everything already in `latest\` is sent.
+- JSON is gzipped (`Content-Encoding: gzip`), and everything has `Cache-Control: no-cache`.
+- `meta.json` always goes last and only when the rest succeeded, because after a seq change in meta the website immediately downloads the other files.
+- An error (no network, expired token) doesn't stop the local output. Files stay queued and are retried every 10 s; the state shows in the window ("Azure: error: …").
 
-## Twitch (logowanie)
+## Twitch login
 
-Integracja z Twitchem ([../docs/twitch-channel-points.md](../docs/twitch-channel-points.md)): logowanie streamera, EventSub, nagrody za punkty kanału i komendy z czatu (opis niżej). Grę zmieniają tylko punkty kanału; czat jest wyłącznie informacyjny.
+Twitch integration ([../docs/twitch-channel-points.md](../docs/twitch-channel-points.md)): streamer login, EventSub, channel points rewards and chat commands (described below). Only channel points change the game; chat is informational only.
 
-- Aplikacja na dev.twitch.tv jest typu **Public**, bez client secret. `Twitch:ClientId` w `appsettings.json` jest jawny i wspólny dla wszystkich streamerów.
-- **Twitch…** → **Zaloguj przez Twitch**: okno pokazuje kod i otwiera `twitch.tv/activate`, a streamer zatwierdza tam dostęp (Device Code Grant Flow). Uprawnienia: `channel:read:redemptions`, `channel:manage:redemptions`, `user:read:chat`, `user:write:chat` (odpowiedzi dla widzów po wykupieniu). Gdy aplikacja potrzebuje nowego uprawnienia, zapisane konto jest zapominane i trzeba zalogować się ponownie.
-- Używany jest tylko user access token. App access token nie jest potrzebny: EventSub przez WebSocket i endpointy punktów kanału go nie przyjmują.
-- Tokeny są w `%LOCALAPPDATA%\Tf3Bridge\twitch.json`, zaszyfrowane DPAPI. Login, ID i uprawnienia są jawne.
-- `TwitchSession` sprawdza token przy starcie i co godzinę (`/oauth2/validate`, Twitch tego wymaga) i odświeża go przed wygaśnięciem. Refresh token public clienta jest jednorazowy i ważny 30 dni, więc po każdym odświeżeniu nowy jest od razu zapisywany. Gdy Twitch go odrzuci (dłuższa przerwa, zmiana hasła, odłączenie aplikacji), konto jest zapominane i trzeba zalogować się ponownie. Przy braku sieci konto zostaje.
-- Okno pokazuje też typ kanału. Bez statusu Affiliate/Partner nie da się tworzyć nagród za punkty.
+- The app on dev.twitch.tv is a **Public** client, without a client secret. `Twitch:ClientId` in `appsettings.json` is public and shared by all streamers. If you distribute your own build, register your own app on dev.twitch.tv and put its Client ID in `appsettings.Local.json`.
+- **Twitch…** → **Log in with Twitch**: the window shows a code and opens `twitch.tv/activate`, where the streamer approves access (Device Code Grant Flow). Permissions: `channel:read:redemptions`, `channel:manage:redemptions`, `user:read:chat`, `user:write:chat` (replies to viewers after a redemption). When the app needs a new permission, the saved account is forgotten and you have to log in again.
+- Only a user access token is used. No app access token is needed: EventSub over WebSocket and the channel points endpoints don't accept it.
+- The tokens are in `%LOCALAPPDATA%\Tf3Bridge\twitch.json`, encrypted with DPAPI. Login, ID and permissions are in plain text.
+- `TwitchSession` validates the token at startup and every hour (`/oauth2/validate`, Twitch requires this) and refreshes it before it expires. A public client's refresh token is single-use and valid for 30 days, so after every refresh the new one is saved right away. When Twitch rejects it (a longer break, a password change, disconnecting the app), the account is forgotten and you have to log in again. Without network the account stays.
+- The window also shows the channel type. Without Affiliate/Partner status you can't create channel points rewards.
 
-## Twitch EventSub (czat i punkty kanału)
+## Twitch EventSub (chat and channel points)
 
-`EventSubClient` łączy się z `wss://eventsub.wss.twitch.tv/ws` tokenem streamera (bez publicznego serwera i webhooków) i subskrybuje:
+`EventSubClient` connects to `wss://eventsub.wss.twitch.tv/ws` with the streamer's token (no public server, no webhooks) and subscribes to:
 
-- `channel.chat.message` (czat kanału): działa na każdym kanale;
-- `channel.channel_points_custom_reward_redemption.add` (wykupienia nagród): ma sens tylko na kanale Affiliate/Partner.
+- `channel.chat.message` (channel chat): works on any channel;
+- `channel.channel_points_custom_reward_redemption.add` (reward redemptions): only makes sense on an Affiliate/Partner channel.
 
-Jak działa:
-- Subskrypcje są tworzone w Helix (`POST /eventsub/subscriptions`) po powitaniu `session_welcome`. Twitch daje na to 10 s.
-- Gdy jedna subskrypcja się nie uda, połączenie zostaje z pozostałymi, a przyczyna jest w logu. Gdy nie uda się żadna, połączenie jest zrywane i ponawiane.
-- Keepalive co 30 s. Brak wiadomości przez keepalive + 10 s oznacza zerwane połączenie. Wtedy klient łączy się ponownie z przerwami 1, 2, 5, 10, 30 i 60 s i zakłada subskrypcje od nowa.
-- `session_reconnect`: przejście na nowy adres bez ponownych subskrypcji (Twitch je przenosi).
-- Zdarzenia są odrzucane jako duplikaty po `message_id`. W logu pojawiają się wykupienia i wiadomości z czatu zaczynające się od `!`.
-- Stan widać w oknie w linii „EventSub: …”.
+How it works:
+- Subscriptions are created in Helix (`POST /eventsub/subscriptions`) after the `session_welcome` greeting. Twitch allows 10 s for this.
+- When one subscription fails, the connection stays with the others, and the reason is logged. When all fail, the connection is dropped and retried.
+- Keepalive every 30 s. No message for keepalive + 10 s means a broken connection. The client then reconnects with delays of 1, 2, 5, 10, 30 and 60 s and creates the subscriptions again.
+- `session_reconnect`: moving to a new address without resubscribing (Twitch carries them over).
+- Events are dropped as duplicates by `message_id`. The log shows redemptions and chat messages starting with `!`.
+- The state shows in the window in the "EventSub: …" line.
 
-## Komendy z czatu
+## Chat commands
 
-Nasze komendy zaczynają się od `!` (bez prefiksu). Tylko czytają ostatni `dynamic.json` i odpowiadają na czacie jako streamer, nigdy nie wysyłają nic do gry (`Chat/ChatCommandService.cs`: lista komend i cooldowny, `Chat/ChatAnswers.cs`: treść odpowiedzi). Linki tylko przy ustawionym `Twitch:SiteUrl`. Nazwy obiektów są dopasowywane tak samo jak w nagrodach (`TargetResolver`): bez wielkości liter i polskich znaków, najpierw dokładnie, potem po początku, potem po fragmencie; przy kilku pasujących odpowiedź je wymienia.
+Our commands start with `!` (no prefix). They only read the last `dynamic.json` and reply in chat as the streamer; they never send anything to the game (`Chat/ChatCommandService.cs`: list of commands and cooldowns, `Chat/ChatAnswers.cs`: the reply texts). Links only when `Twitch:SiteUrl` is set. Object names are matched the same way as in rewards (`TargetResolver`): case- and diacritics-insensitive, first exactly, then by prefix, then by substring; when several match, the reply lists them. The command names and replies are currently Polish.
 
-| Komenda | Aliasy | Odpowiedź | Cooldown (cały czat) |
+| Command | Aliases | Reply | Cooldown (whole chat) |
 |---|---|---|---|
-| `!pomoc` | `!komendy`, `!help` | lista komend | 30 s |
-| `!mapa` | | link do strony | 30 s |
-| `!majatek [widz]` | `!majątek` | majątek widza (bez argumentu: pytającego), np. „@ala estiv0: 2 miasta (Szczecin – główne, Barcin), 1 zakład (Browar), 2 linie, 16 pojazdów, zysk linii (12 mies.) $ 833 881. Mapa: https://…/#owner=estiv0”. Grupowanie jak zakładka „Właściciele” (`Commands/OwnerAssets.cs`): bez rozróżniania wielkości liter, główne miasto = największe, stacje nazwane od kupionego miasta nie są widza | 30 s |
-| `!miasto <nazwa>` | | właściciel, pojemność, wzrost od startu gry, zaspokojenie potrzeb, aktywne efekty z nagród (z datą końca i kupującym), link | 30 s |
-| `!zaklad <nazwa>` | `!zakład` | właściciel, poziom, produktywność, produkcja z ostatniego roku, efekty, link | 30 s |
-| `!linia <nazwa>` | | właściciel, pojazdy (i ile zatrzymanych), zysk z 12 mies., zapełnienie, przewiezione w roku, efekty, link | 30 s |
-| `!ranking` | `!top` | 5 widzów z największym majątkiem jak na stronie: miasto 100 pkt + wielkość/25 + wzrost od startu gry ×100, zakład 50, stacja i linia 1, pojazd na liniach: pociąg/samolot 10, statek 2, drogowy 1; przy remisie zysk linii | 60 s |
-| `!wolne [miasta\|zaklady]` | | obiekty bez właściciela do kupienia za punkty: 5 największych miast i zakładów o najwyższym poziomie, z liczbą wszystkich | 60 s |
-| `!data` | | data w grze; gdy eksport jest starszy niż 2 min, dopisek „pauza albo gra wyłączona” | 30 s |
-| `!firma` | | firma streamera: saldo, wartość firmy, zysk w tym i poprzednim roku (tabela Finanse), linie, pojazdy | 60 s |
-| `!najlepsza [linia\|firma]` | `!najlepszy` | linia z najwyższym zyskiem z 12 mies. albo (`firma`) widz z najwyższym łącznym zyskiem swoich linii | 60 s |
-| `!najgorsza [linia\|firma]` | `!najgorszy` | jak wyżej, najniższy zysk | 60 s |
+| `!pomoc` | `!komendy`, `!help` | list of commands | 30 s |
+| `!mapa` | | link to the website | 30 s |
+| `!majatek [viewer]` | `!majątek` | a viewer's estate (without an argument: the asker's), e.g. "@ala estiv0: 2 towns (Szczecin – main, Barcin), 1 industry (Brewery), 2 lines, 16 vehicles, line profit (12 mo.) $ 833 881. Map: https://…/#owner=estiv0". Grouping like the "Owners" tab (`Commands/OwnerAssets.cs`): case-insensitive, main town = the largest, stations named after a bought town don't belong to the viewer | 30 s |
+| `!miasto <name>` | | owner, capacity, growth since game start, needs satisfaction, active reward effects (with end date and buyer), link | 30 s |
+| `!zaklad <name>` | `!zakład` | owner, level, productivity, production in the last year, effects, link | 30 s |
+| `!linia <name>` | | owner, vehicles (and how many stopped), 12-month profit, load factor, transported this year, effects, link | 30 s |
+| `!ranking` | `!top` | the 5 viewers with the largest estate, as on the website: town 100 pts + size/25 + growth since game start ×100, industry 50, station and line 1, vehicle on lines: train/plane 10, ship 2, road 1; ties broken by line profit | 60 s |
+| `!wolne [miasta\|zaklady]` | | unowned objects to buy with points: the 5 largest towns and the highest-level industries, with the total count | 60 s |
+| `!data` | | the in-game date; when the export is older than 2 min, a note "paused or game off" | 30 s |
+| `!firma` | | the streamer's company: balance, company value, profit this year and last year (Finances table), lines, vehicles | 60 s |
+| `!najlepsza [linia\|firma]` | `!najlepszy` | the line with the highest 12-month profit or (`firma`) the viewer with the highest total profit of their lines | 60 s |
+| `!najgorsza [linia\|firma]` | `!najgorszy` | as above, lowest profit | 60 s |
 
-- Cooldowny są dwa, oba ciche (bez odpowiedzi): jeden widz dostaje najwyżej jedną odpowiedź na 10 s (dowolna komenda), a ta sama komenda z tym samym argumentem jest powtarzana na czacie najwyżej raz na czas z tabeli. Argument porównujemy bez wielkości liter i polskich znaków, więc `!miasto Łódź` i `!miasto lodz` to ta sama odpowiedź. `!majatek` bez argumentu liczy się osobno dla każdego widza.
-- Z serwerem testowym Twitch CLI odpowiedź trafia tylko do logu (serwer nie ma czatu).
+- There are two cooldowns, both silent (no reply): one viewer gets at most one reply per 10 s (any command), and the same command with the same argument is repeated in chat at most once per the time in the table. Arguments are compared case- and diacritics-insensitively, so `!miasto Łódź` and `!miasto lodz` are the same reply. `!majatek` without an argument counts separately for each viewer.
+- With the Twitch CLI test server the reply only goes to the log (the server has no chat).
 
-**Test bez Twitcha (Twitch CLI):**
+**Testing without Twitch (Twitch CLI):**
 
 ```
 twitch event websocket start-server
@@ -154,78 +154,78 @@ Tf3Bridge.exe --Twitch:EventSubUrl=ws://127.0.0.1:8080/ws --Twitch:Subscriptions
 twitch event trigger channel.channel_points_custom_reward_redemption.add --transport=websocket
 ```
 
-W Visual Studio/Riderze jest do tego profil uruchomienia „Tf3Bridge (Twitch CLI)”. Sprawdzone z Twitch CLI 1.1.24:
-- wykupienie dochodzi;
-- `channel.chat.message` nie jest obsługiwane przez serwer testowy: subskrypcja kończy się błędem 400, a `trigger` odmawia. Czat trzeba testować na prawdziwym kanale.
-- `trigger` nie ma opcji portu, więc serwer musi działać na domyślnym 8080.
-- Konto Twitch musi być zalogowane, ale serwer testowy nie sprawdza tokenu.
+Visual Studio/Rider has a "Tf3Bridge (Twitch CLI)" launch profile for this. Checked with Twitch CLI 1.1.24:
+- the redemption arrives;
+- `channel.chat.message` isn't supported by the test server: the subscription fails with 400, and `trigger` refuses. Chat has to be tested on a real channel.
+- `trigger` has no port option, so the server has to run on the default 8080.
+- The Twitch account has to be logged in, but the test server doesn't check the token.
 
-## Nagrody za punkty kanału
+## Channel points rewards
 
-Jedyna droga zmian w grze od widzów (`RewardService`). Trzynaście nagród, każdą da się wyłączyć i zbalansować w oknie **Nagrody…**: tytuł, opis, koszt, cooldown, limity na stream i na widza, czas w miesiącach gry i mnożnik. Czas jest w miesiącach, nie w dniach: dzień gry trwa tylko 2–3 s, więc efekt na kilka dni mijał, zanim było go widać.
+The only way for viewers to change the game (`RewardService`). Fifteen rewards; each can be disabled and balanced in the **Rewards…** window: title, description, cost, cooldown, per-stream and per-viewer limits, duration in game months and multiplier. Duration is in months, not days: a game day lasts only 2–3 s, so an effect of a few days was over before you could see it.
 
-| Nagroda | Cel (tekst od widza) | Komenda dla moda |
+| Reward | Target (text from the viewer) | Mod command |
 |---|---|---|
-| Kupno miasta | miasto bez właściciela | `adopt`: „Nazwa \| widz”; miasto z właścicielem = zwrot punktów |
-| Kupno zakładu | istniejący zakład bez właściciela | `adopt`: „Nazwa \| widz”; zakład z właścicielem = zwrot punktów |
-| Boost miasta | miasto | `effect townBoost` (miesiące, mnożnik) |
-| Boost przemysłu | zakład | `effect industryBoost` (miesiące, mnożnik) |
-| Stop linii (od razu) | linia | `effect lineStop` (miesiące) |
-| Linia czeka na stacjach | linia | `effect lineHold` (miesiące) |
-| Nowe miasto | kod z mapy: `[x, y] Nazwa` | `createTown`: miasto „Nazwa \| widz” w punkcie (x, y) |
-| Nowy zakład | kod z mapy: `[x, y, rodzaj] Nazwa` | `createIndustry`: zakład „Nazwa \| widz” (rodzaj = `coal_mine` itp.) |
-| Strajk w zakładzie | zakład innego widza | `effect industryStrike` (miesiące, mnożnik 0,01 = −99%) |
-| Nalot skarbówki | nick innego widza | `effect industryTaxRaid`: wszystkie jego zakłady naraz (`entities`, klucz `target` = widz), mnożnik 0,5 |
-| Paliwo premium | dowolna linia | `effect lineFuelPremium`: prędkość maks. pojazdów × 1,2 |
-| Chrzczone paliwo | linia innego widza | `effect lineFuelBad`: prędkość maks. pojazdów × 0,8 |
-| Sabotaż hamulców | linia innego widza | `wreck`: od 1 do „mnożnik” (domyślnie 50%) pojazdów znika, nie do cofnięcia |
-| Dotacja dla firmy | brak (widz nic nie wpisuje) | `subsidy`: „Kwota” (domyślnie 10 mln $) wpisana w księgi jako dotacja |
-| Kredyt dla firmy | brak (widz nic nie wpisuje) | `loan`: kredyt w systemie kredytów gry, „Kwota” (10 mln $) na „%” (2%) na „Miesiące gry” (60) |
+| Buy a town | an unowned town | `adopt`: "Name \| viewer"; an owned town = points refunded |
+| Buy an industry | an existing unowned industry | `adopt`: "Name \| viewer"; an owned industry = points refunded |
+| Town boost | a town | `effect townBoost` (months, multiplier) |
+| Industry boost | an industry | `effect industryBoost` (months, multiplier) |
+| Line stop (immediate) | a line | `effect lineStop` (months) |
+| Line waits at stations | a line | `effect lineHold` (months) |
+| New town | a code from the map: `[x, y] Name` | `createTown`: a town "Name \| viewer" at point (x, y) |
+| New industry | a code from the map: `[x, y, kind] Name` | `createIndustry`: an industry "Name \| viewer" (kind = `coal_mine` etc.) |
+| Industry strike | another viewer's industry | `effect industryStrike` (months, multiplier 0.01 = −99%) |
+| Tax raid | another viewer's nick | `effect industryTaxRaid`: all their industries at once (`entities`, key `target` = the viewer), multiplier 0.5 |
+| Premium fuel | any line | `effect lineFuelPremium`: vehicles' top speed × 1.2 |
+| Watered-down fuel | another viewer's line | `effect lineFuelBad`: vehicles' top speed × 0.8 |
+| Brake sabotage | another viewer's line | `wreck`: 1 to "multiplier" (default 50%) of the vehicles disappear, can't be undone |
+| Subsidy for the company | none (the viewer types nothing) | `subsidy`: "Amount" (default $10M) booked as a subsidy |
+| Loan for the company | none (the viewer types nothing) | `loan`: a loan in the game's loan system, "Amount" ($10M) at "%" (2%) for "Game months" (60) |
 
-- **Sabotaże** (strajk, skarbówka, chrzczone paliwo, hamulce) działają tylko na obiekty innych widzów: cel bez właściciela albo własny kupującego = zwrot punktów. Nalot skarbówki dopasowuje nick jak nazwy (wielkość liter, polskie znaki i `@` bez znaczenia) do właścicieli z eksportu; widz bez zakładów = zwrot. Mnożnik ma zakres zależny od nagrody (`RewardKinds.FactorRange`): boosty i paliwo premium powyżej 1, sabotaże poniżej 1, przy hamulcach to największa część pojazdów linii. W opisie `{percent}` to zmiana bez znaku („spada o {percent}%”).
-- **Dotacja i kredyt** (`RewardKinds.HasAmount`): kwotę ustawia streamer w kolumnie „Kwota” okna **Nagrody…** (`RewardConfig.Amount`, 1000 $ – 100 mld $; w opisie `{amount}`, np. „10 mln $”). Przy kredycie kolumna mnożnika to oprocentowanie w % (0–50), a „Miesiące gry” to czas spłaty (1–360). Kredyt trafia do zakładki Finanse → Kredyty w grze: gra sama co miesiąc pobiera ratę (kwota / miesiące + odsetki); odsetki w TF3 są proste, razem kwota × %, czyli 10 mln na 2% to 200 tys. odsetek. Streamer może go spłacić wcześniej w grze. Gra pozwala mieć najwyżej 4 kredyty naraz (razem z kredytami streamera): przy komplecie, a także przy grze z nieograniczonymi pieniędzmi, punkty wracają.
-- **Sabotaż hamulców:** mod podaje w wyniku, ile pojazdów zniknęło (`count` z `total`). Odpowiedź na czacie: „@widz sabotaż hamulców na linii X: zniszczone pojazdy: 2 z 5.”, powiadomienie w grze: „Problemy techniczne na linii X: zniszczone pojazdy: 2 z 5 (sabotaż: widz).”; kliknięcie pokazuje linię.
+- **Sabotage** (strike, tax raid, watered-down fuel, brakes) only works on other viewers' objects: an unowned target or the buyer's own = points refunded. The tax raid matches the nick like names (case, diacritics and `@` don't matter) against the owners in the export; a viewer without industries = refund. The multiplier's range depends on the reward (`RewardKinds.FactorRange`): boosts and premium fuel above 1, sabotage below 1, for brakes it's the largest share of the line's vehicles. In the description `{percent}` is the change without a sign ("drops by {percent}%").
+- **Subsidy and loan** (`RewardKinds.HasAmount`): the streamer sets the amount in the "Amount" column of the **Rewards…** window (`RewardConfig.Amount`, $1,000 – $100B; in the description `{amount}`, e.g. "$10M"). For the loan the multiplier column is the interest rate in % (0–50), and "Game months" is the repayment period (1–360). The loan goes to the Finances → Loans tab in the game: the game collects an installment every month (amount / months + interest); interest in TF3 is simple, amount × % in total, so $10M at 2% is $200k of interest. The streamer can pay it off early in the game. The game allows at most 4 loans at once (including the streamer's own): when full, and also in a game with unlimited money, the points are refunded.
+- **Brake sabotage:** the mod reports how many vehicles disappeared (`count` out of `total`). The chat reply says that the brake sabotage on line X destroyed 2 of 5 vehicles, and the in-game notification says "Technical problems on line X: vehicles destroyed: 2 of 5 (sabotage: viewer)"; clicking shows the line.
 
-- **Nowe miasto i zakład:** Twitch nie ma linku, który otwiera nagrodę z wpisanym tekstem, więc widz bierze kod ze strony: przycisk 🏗 na mapie, kliknięcie miejsca, rodzaj i nazwa, „Kopiuj kod” ([../web/README.md](../web/README.md#budowa-za-punkty-kanału)). `BuildCode` sprawdza kod jeszcze raz na ostatnim eksporcie: nazwa 2–40 znaków i niezajęta, punkt co najmniej 300 m od krawędzi mapy (`terrain.json`), miasto ≥ 1500 m od miast i ≥ 600 m od zakładów, zakład ≥ 800 m od miast i ≥ 600 m od zakładów, rodzaj zakładu tylko spośród tych, które są na mapie (plik `.con` bierzemy z eksportu). Miasto nie może stać na wodzie ani w górach: `TownSites` (liczone przy każdym nowym eksporcie terenu, publikowane też jako `latest/terrain-site.png` dla strony) mówi, jaka część obszaru ±250 m wokół punktu to woda i zbocza > 15%; powyżej 30% wody albo 50% zboczy kod jest odrzucany (gra zakładała tam miasto bez ani jednej ulicy). Zakłady mają regiony (`TerrainZones`, `latest/terrain-zone.png`, okno ±1 km): **góry** = średnie nachylenie ≥ 8% i zarazem najwyżej 15% najbardziej pofałdowanego lądu mapy, **przy wodzie** = woda w oknie, **nizina** = średnie nachylenie ≤ 3%, **z dala od wody** = brak wody w oknie. Domyślnie kopalnie węgla i rudy oraz kamieniołom tylko w górach, piaskarnia, pogłębiarka i glinianka przy wodzie, farmy na nizinie, poręba z dala od wody; streamer zmienia to w oknie „Nagrody” (zapis w `rewards.json`, pole `Zones`), a Tf3Bridge publikuje to stronie jako `latest/build-rules.json`. Region, którego na mapie nie ma, niczego nie ogranicza. Ile lądu zajmuje każdy region, Tf3Bridge pisze w logu po eksporcie terenu. Mod wysyła teren tylko po wczytaniu zapisu albo po terraformowaniu, więc Tf3Bridge trzyma kopię ostatniego eksportu (`%LOCALAPPDATA%\Tf3Bridge\terrain-cache.json`, `Bridge:TerrainCacheFile`) i po restarcie bierze teren stamtąd, jeśli to ta sama sesja gry. Bez żadnego eksportu terenu tych sprawdzeń nie ma. Kolizje z torami, drogami i budynkami sprawdza dopiero gra; wtedy punkty wracają. W opisie nagrody `{site}` zamienia się na adres mapy (`Twitch:SiteUrl`), a odpowiedź na czacie linkuje nowy obiekt po id, które mod podaje w wyniku komendy (`#town=<id>`, `#industry=<id>`); strona czeka chwilę, aż obiekt pojawi się w eksporcie. Gdy w grze jest starsza wersja moda bez id, link prowadzi do pinezki w miejscu budowy (`#pin=x_y&note=Nazwa`).
+- **New town and industry:** Twitch has no link that opens a reward with the text filled in, so the viewer takes the code from the website: the 🏗 button on the map, click a spot, kind and name, "Copy code" ([../web/README.md](../web/README.md#building-for-channel-points)). `BuildCode` checks the code again against the last export: name 2–40 characters and not taken, the point at least 300 m from the map edge (`terrain.json`), a town ≥ 1500 m from towns and ≥ 600 m from industries, an industry ≥ 800 m from towns and ≥ 600 m from industries, the industry kind only among those on the map (the `.con` file is taken from the export). A town can't stand on water or in the mountains: `TownSites` (computed on every new terrain export, also published as `latest/terrain-site.png` for the website) says what share of the ±250 m area around the point is water and slopes > 15%; above 30% water or 50% slopes the code is rejected (the game would found a town there without a single street). Industries have regions (`TerrainZones`, `latest/terrain-zone.png`, a ±1 km window): **mountains** = average slope ≥ 8% and also at most the 15% most rugged land on the map, **by the water** = water in the window, **lowland** = average slope ≤ 3%, **away from water** = no water in the window. By default coal and ore mines and the quarry only in the mountains, the sand pit, sand dredger and clay pit by the water, farms in the lowland, the logging camp away from water; the streamer changes this in the "Rewards" window (stored in `rewards.json`, the `Zones` field), and Tf3Bridge publishes it to the website as `latest/build-rules.json`. A region the map doesn't have restricts nothing. Tf3Bridge logs how much land each region covers after a terrain export. The mod only sends the terrain after a save is loaded or after terraforming, so Tf3Bridge keeps a copy of the last export (`%LOCALAPPDATA%\Tf3Bridge\terrain-cache.json`, `Bridge:TerrainCacheFile`) and after a restart takes the terrain from there if it's the same game session. Without any terrain export these checks don't happen. Collisions with tracks, streets and buildings are only checked by the game; then the points are refunded. In the reward description `{site}` is replaced with the map address (`Twitch:SiteUrl`), and the chat reply links to the new object by the id the mod returns in the command result (`#town=<id>`, `#industry=<id>`); the website waits a moment for the object to appear in the export. When the game runs an older mod version without the id, the link points to a pin at the building spot (`#pin=x_y&note=Name`).
 
-- **Na Twitchu:** Tf3Bridge sam tworzy nagrody (tylko te może potem zmieniać i rozliczać), zapamiętuje ich ID w `%LOCALAPPDATA%\Tf3Bridge\rewards.json` i aktualizuje je po zapisaniu ustawień. Nagrody są włączone tylko wtedy, gdy most działa i dostał od startu dane z gry (zapis jest wczytany); przy „Zatrzymaj”, bez nowego eksportu przez 2 minuty (np. pauza w grze) i przy zamykaniu Tf3Bridge są wyłączane (widzowie ich nie widzą). Wykupienia, które mimo to przyjdą, gdy gra nie działa, są od razu zwracane. Wymaga kanału Affiliate/Partner; bez tego nic nie trafia na Twitcha.
-- **Nagrody wykonywane przez streamera** (`RewardKinds.Manual`): „TF3: bomba”, „TF3: linia”, „TF3: natura”, „TF3: pojazd drogowy”, „TF3: pojazd specjalny”. Nie mają żadnego efektu w modzie. Tf3Bridge tworzy je jak pozostałe, żeby móc je włączać i wyłączać razem z grą (nagrody dodanej ręcznie w panelu Twitcha nie mógłby zmieniać). Ich wykupienia zostają w kolejce Twitcha, a streamer sam je wykonuje i akceptuje albo zwraca punkty. Tf3Bridge ich nie rozlicza, także wtedy, gdy gra nie działa, i nie zwraca starych przy starcie. Opis, koszt i limity streamer ustawia w oknie **Nagrody…**; tam też wybiera, czy widz wpisuje tekst (kolumna „Widz wpisuje tekst”, domyślnie nie). Nie ma ich w „Symuluj nagrodę”.
-- **Własne nagrody z prefiksem TF3** (`ExtraReward`): nagrody streamera, których tytuł zaczyna się od „TF3” i które nie są żadną z akcji (np. „TF3: wybierz następną linię”). Tf3Bridge nie robi z nimi nic w grze, a ich wykupienia zostają w kolejce Twitcha dla streamera. Włącza je i wyłącza (`is_enabled`, bez usuwania) dokładnie wtedy, co nasze akcje. Listę odczytuje raz, przy połączeniu z Twitchem (start Tf3Bridge, zalogowanie), i po zapisaniu okna **Nagrody…**; tam każdą można odznaczyć, wtedy zostaje wyłączona na stałe. Uwaga: Twitch pozwala zmieniać nagrodę tylko aplikacji (Client ID), która ją utworzyła. Na nagrodę dodaną ręcznie w panelu odpowiada 403. Tf3Bridge pokazuje ją wtedy w statusie („Twitch nie pozwala Tf3Bridge włączać i wyłączać: …”) i do następnego startu już jej nie rusza. Ręczna nagroda z tytułem jednej z naszych akcji blokuje założenie naszej (Twitch odrzuca powtórzony tytuł) i też trafia do statusu.
-- **Wykupienie:** tekst od widza jest dopasowywany do nazw z ostatniego `dynamic.json` (`TargetResolver`). Wielkość liter, polskie znaki, spacje i „\| właściciel” nie mają znaczenia. Wygrywa dokładne dopasowanie, potem jednoznaczny początek nazwy, potem jednoznaczny fragment.
-- **Rozliczenie:** gdy gra potwierdzi, wykupienie dostaje FULFILLED. Gdy celu nie ma, cel jest niejednoznaczny, nagroda jest wyłączona albo gra odmówi lub nie zdąży, wykupienie dostaje CANCELED i Twitch zwraca punkty.
-- **Wykupienia z czasu, gdy Tf3Bridge był wyłączony:** świeższe niż 5 minut są wykonywane, starsze zwracane.
-- **Odpowiedź na czacie** (`RewardMessages`, `ChatApi`, Helix `POST /chat/messages` jako streamer). Wyłącznik jest w **Nagrody…**. Przykłady:
-  - „@widz boost miasta Szczecin (+50%) działa do 12 maja 1922 (data w grze). https://tf3.example.com/#town=225799” Datę końca w kalendarzu gry podaje mod w wyniku komendy (`until`).
-  - „@widz miasto Kraków jest teraz Twoje! https://tf3.example.com/#town=…”
-  - Link prowadzi do obiektu na stronie (`#town=`, `#industry=`, `#line=`). Adres strony: `Twitch:SiteUrl` w `appsettings.json`; pusty = bez linków.
-  - Przy zwrocie: „@widz boost miasta: nie znaleziono „gdańsk”. Punkty wróciły do Ciebie.”
-- **Powiadomienie w grze:** po wykonanej nagrodzie, dopiero gdy Twitch przyjmie FULFILLED (punkty pobrane), Tf3Bridge wysyła do moda komendę `notify`: okienko z logo Twitcha, „Twitch: widz” i opisem („widz kupił(a) miasto Kraków.”), kliknięcie pokazuje obiekt. Przy zwrocie punktów go nie ma. Wyłącznik i czas wyświetlania (3–300 s, domyślnie 30 s; potem okienko znika, a wpis zostaje w dzienniku powiadomień gry) w **Nagrody…**; w symulacji z dopiskiem `[TEST]`, a w **Test akcji…** jest też przycisk „Testowe powiadomienie”. Szczegóły: [../docs/custom-notifications.md](../docs/custom-notifications.md).
-- **Efekty na stronie:** mod eksportuje aktywne efekty w `dynamic.json` (`effects`), a strona pokazuje je przy mieście, zakładzie i linii ([../web/README.md](../web/README.md#efekty-od-widzów)).
-- **Test bez Twitcha:** **Test akcji…** → „Nagroda za punkty kanału (symulacja)”. Ta sama droga co prawdziwe wykupienie, z wynikiem, informacją, czy byłby zwrot, i treścią odpowiedzi na czacie. Po zaznaczeniu „Wyślij też odpowiedź na czat” odpowiedź naprawdę trafia na czat kanału, więc działa to także bez statusu Affiliate. W trybie Twitch CLI `twitch event trigger channel.channel_points_custom_reward_redemption.add --transport=websocket -i AdoptTown` wskazuje nagrodę po nazwie rodzaju, ale CLI zawsze wysyła tekst „Test Input From CLI”, więc kończy się zwrotem.
+- **On Twitch:** Tf3Bridge creates the rewards itself (only those can it later change and settle), remembers their IDs in `%LOCALAPPDATA%\Tf3Bridge\rewards.json` and updates them after the settings are saved. The rewards are enabled only while the bridge runs and has received game data since starting (a save is loaded); on "Stop", without a new export for 2 minutes (e.g. the game is paused) and when Tf3Bridge closes they are disabled (viewers don't see them). Redemptions that still arrive while the game isn't running are refunded right away. Needs an Affiliate/Partner channel; without that nothing reaches Twitch.
+- **Rewards carried out by the streamer** (`RewardKinds.Manual`): "TF3: bomb", "TF3: line", "TF3: nature", "TF3: road vehicle", "TF3: special vehicle" (the titles are currently Polish). They have no effect in the mod. Tf3Bridge creates them like the others so it can enable and disable them together with the game (it couldn't change a reward added by hand in the Twitch dashboard). Their redemptions stay in the Twitch queue, and the streamer carries them out and accepts them or refunds the points. Tf3Bridge doesn't settle them, not even when the game isn't running, and doesn't refund old ones at startup. The streamer sets the description, cost and limits in the **Rewards…** window; there they also choose whether the viewer types text (the "Viewer types text" column, off by default). They aren't in "Simulate reward".
+- **Your own rewards prefixed TF3** (`ExtraReward`): the streamer's rewards whose title starts with "TF3" and which aren't any of our actions (e.g. "TF3: choose the next line"). Tf3Bridge does nothing with them in the game, and their redemptions stay in the Twitch queue for the streamer. It enables and disables them (`is_enabled`, without deleting) exactly when it does our actions. It reads the list once, when connecting to Twitch (Tf3Bridge start, login), and after the **Rewards…** window is saved; there each can be unchecked, and then it stays disabled for good. Note: Twitch only lets the application (Client ID) that created a reward change it. For a reward added by hand in the dashboard it answers 403. Tf3Bridge then shows it in the status ("Twitch won't let Tf3Bridge enable and disable: …") and doesn't touch it until the next start. A manual reward with the title of one of our actions blocks creating ours (Twitch rejects a repeated title) and also shows up in the status.
+- **Redemption:** the viewer's text is matched to the names from the last `dynamic.json` (`TargetResolver`). Case, diacritics, spaces and "\| owner" don't matter. An exact match wins, then an unambiguous name prefix, then an unambiguous substring.
+- **Settlement:** when the game confirms, the redemption gets FULFILLED. When the target is missing or ambiguous, the reward is disabled, or the game refuses or runs out of time, the redemption gets CANCELED and Twitch refunds the points.
+- **Redemptions from while Tf3Bridge was off:** those fresher than 5 minutes are carried out, older ones are refunded.
+- **Chat reply** (`RewardMessages`, `ChatApi`, Helix `POST /chat/messages` as the streamer). The switch is in **Rewards…**. Examples (the texts are currently Polish):
+  - "@viewer town boost Szczecin (+50%) runs until 12 May 1922 (in-game date). https://tf3.example.com/#town=225799" The mod gives the end date in the game calendar in the command result (`until`).
+  - "@viewer the town Kraków is now yours! https://tf3.example.com/#town=…"
+  - The link points to the object on the website (`#town=`, `#industry=`, `#line=`). Website address: `Twitch:SiteUrl` (in `appsettings.Local.json`); empty = no links.
+  - On a refund: "@viewer town boost: "gdańsk" not found. Your points have been refunded."
+- **In-game notification:** after a reward is carried out, and only once Twitch accepts FULFILLED (points taken), Tf3Bridge sends the mod a `notify` command: a popup with the Twitch logo, "Twitch: viewer" and a description ("viewer bought the town Kraków."); clicking shows the object. There's none on a refund. The switch and display time (3–300 s, default 30 s; then the popup disappears and the entry stays in the game's notification log) are in **Rewards…**; in a simulation it gets `[TEST]`, and **Test actions…** also has a "Test notification" button. Details: [../docs/custom-notifications.md](../docs/custom-notifications.md).
+- **Effects on the website:** the mod exports active effects in `dynamic.json` (`effects`), and the website shows them next to the town, industry and line ([../web/README.md](../web/README.md#effects-from-viewers)).
+- **Testing without Twitch:** **Test actions…** → "Channel points reward (simulation)". The same path as a real redemption, with the result, whether there would be a refund, and the chat reply text. With "Also send the reply to chat" checked the reply really goes to the channel chat, so this also works without Affiliate status. In Twitch CLI mode `twitch event trigger channel.channel_points_custom_reward_redemption.add --transport=websocket -i AdoptTown` picks the reward by kind name, but the CLI always sends the text "Test Input From CLI", so it ends in a refund.
 
-## Komendy dla moda (akcje widzów)
+## Mod commands (viewer actions)
 
-Droga zmian w grze od widzów. Źródła (`CommandSource`): punkty kanału i ręczny test w oknie. Czat celowo nie może tu nic wysłać: komendy z czatu są tylko informacyjne, bo streamer nie ma nad nimi kontroli i mogłyby popsuć balans.
+The path for viewers' game changes. Sources (`CommandSource`): channel points and the manual test in the window. Chat deliberately can't send anything here: chat commands are informational only, because the streamer has no control over them and they could break the balance.
 
-- `ModCommandQueue` pisze kolejkę do `local\towns_industries\tf3export_queue.lua` (format `app.saveUserdata`, zapis przez plik tymczasowy). Mod czyta ją co sekundę i zapisuje wyniki do `tf3export_results.lua` obok. Szczegóły formatu: [../lua_mod/README.md](../lua_mod/README.md#komendy-od-tf3bridge-akcje-widzów).
-- Komenda zostaje w kolejce, dopóki mod nie zgłosi wyniku. Mod pomija identyfikatory, które już obsłużył, więc przepisywanie kolejki niczego nie wykona dwa razy. Po 320 s bez odpowiedzi (gra wyłączona albo bez moda) komenda jest oznaczana jako `expired`.
-- Tekst od widzów trafia do pliku Lua tylko jako escapowany literał (`ModCommandLua.Str`), a nazwy argumentów muszą być identyfikatorami.
-- Nazwy obiektów mają postać `Nazwa | Właściciel`, tak samo jak na stronie (`OwnerName`).
-- **Test akcji…** w oknie: wybór miasta, zakładu, stacji albo linii z ostatniego `dynamic.json`, widza i akcji (ustaw właściciela, usuń właściciela, nowa nazwa), a potem wysyłka do gry i wynik. Do testu TF3 musi działać z włączonym modem.
+- `ModCommandQueue` writes the queue to `local\towns_industries\tf3export_queue.lua` (`app.saveUserdata` format, written through a temporary file). The mod reads it every second and writes the results to `tf3export_results.lua` next to it. Format details: [../lua_mod/README.md](../lua_mod/README.md#commands-from-tf3bridge-viewer-actions).
+- A command stays in the queue until the mod reports a result. The mod skips ids it has already handled, so rewriting the queue never runs anything twice. After 320 s without an answer (game off or without the mod) the command is marked `expired`.
+- Text from viewers only reaches the Lua file as an escaped literal (`ModCommandLua.Str`), and argument names must be identifiers.
+- Object names have the form `Name | Owner`, the same as on the website (`OwnerName`).
+- **Test actions…** in the window: pick a town, industry, station or line from the last `dynamic.json`, a viewer and an action (set owner, remove owner, new name), then send it to the game and see the result. TF3 has to be running with the mod enabled for the test.
 
-## Co robi jeden przebieg (`ExportProcessor`)
+## What one pass does (`ExportProcessor`)
 
-1. Wczytuje pliki `<kind>_<session>_<seq>.lua`. Inne pliki, np. `bench_*`, pomija.
-2. **Sesja** to ta z najnowszym plikiem. Pliki starszych sesji kasuje, bo pochodzą z poprzedniego uruchomienia gry albo wczytanego save'a.
-3. **Sieć:** stosuje `network` (pełny zrzut) i `networkDelta` w kolejności `seq`. Różnica bez zrzutu tej sesji jest pomijana z ostrzeżeniem. Różnicę po luce (brakujący `seq`) stosuje mimo to, bo to upsert i usunięcia, i loguje ostrzeżenie.
-4. **Dynamic:** publikuje tylko najnowszy snapshot, starsze kasuje.
-5. Publikuje zmienione pliki `latest/*.json` atomowo (plik tymczasowy, potem zmiana nazwy) i kasuje przetworzone wejście.
+1. Reads the `<kind>_<session>_<seq>.lua` files. Other files, e.g. `bench_*`, are skipped.
+2. **The session** is the one with the newest file. Files from older sessions are deleted, because they come from an earlier game run or a loaded save.
+3. **Network:** applies `network` (full dump) and `networkDelta` in `seq` order. A diff without this session's dump is skipped with a warning. A diff after a gap (a missing `seq`) is applied anyway, because it's upserts and removals, and a warning is logged.
+4. **Dynamic:** publishes only the newest snapshot and deletes older ones.
+5. Publishes the changed `latest/*.json` files atomically (temporary file, then rename) and deletes the processed input.
 
-Plik, którego nie da się jeszcze odczytać (brak końcowego `end`, czyli gra wciąż go zapisuje), zostaje na następny przebieg. Kolejne różnice sieci czekają na niego, żeby zachować kolejność.
+A file that can't be read yet (no closing `end`, i.e. the game is still writing it) stays for the next pass. Later network diffs wait for it to keep the order.
 
-## Format plików z gry
+## Format of the game files
 
-`app.saveUserdata` zapisuje JSON jako literał stringa Lua:
+`app.saveUserdata` writes JSON as a Lua string literal:
 
 ```lua
 function data()
@@ -235,57 +235,56 @@ return {
 end
 ```
 
-`LuaUserdataReader` wycina literał i odwraca escapowanie Lua (`\"`, `\\`, `\n`, `\ddd`, `\xXX`…). Pracuje na bajtach, więc UTF-8 (polskie nazwy) przechodzi bez zmian. Opis pól JSON jest w [../lua_mod/README.md](../lua_mod/README.md).
+`LuaUserdataReader` cuts out the literal and reverses Lua escaping (`\"`, `\\`, `\n`, `\ddd`, `\xXX`…). It works on bytes, so UTF-8 (e.g. Polish names) passes through unchanged. The JSON fields are described in [../lua_mod/README.md](../lua_mod/README.md).
 
-## Struktura
+## Structure
 
 ```
 middle_app/
   Tf3Bridge.sln
   src/Tf3Bridge/
-    Program.cs                    rejestracja usług, start okna
-    BridgeOptions.cs              konfiguracja
-    BridgeRunner.cs               pętla co PollIntervalMs (start/stop z okna): przebieg + wysyłka do Azure
-    Ui/MainForm.cs                okno: stan, log, zasobnik
-    Ui/AzureDialog.cs             ustawienia Azure z testem połączenia
-    Ui/ModSettingsDialog.cs       ustawienia moda (częstotliwość eksportu, pojazdy, teren)
-    ModSettings.cs                ustawienia moda i ich zapis jako settings.lua dla app.loadUserdata
-    Ui/UiLogProvider.cs           logi do okna
-    Cloud/AzureSettings.cs        adres kontenera + SAS, zapis zaszyfrowany (DPAPI)
-    Cloud/AzureMirror.cs          kolejka zmienionych plików i upload do Blob Storage
-    Cloud/MirroringPublisher.cs   zapis lokalny + oznaczenie pliku do wysyłki
-    Twitch/TwitchAuthClient.cs    OAuth Twitcha: device code, refresh, validate, revoke, typ kanału
-    Twitch/TwitchAccount.cs       konto streamera + tokeny, zapis zaszyfrowany (DPAPI), TwitchOptions
-    Twitch/TwitchSession.cs       walidacja co godzinę i odświeżanie tokenu, stan dla okna
-    Twitch/EventSubClient.cs      EventSub przez WebSocket: subskrypcje, keepalive, reconnect, zdarzenia czatu i punktów
-    Ui/TwitchDialog.cs            logowanie kodem z twitch.tv/activate, wylogowanie
-    Commands/ModCommand.cs        komenda dla moda i jej zapis jako Lua (escapowanie tekstu widzów)
-    Commands/ModCommandQueue.cs   kolejka queue.lua, odczyt wyników z results.lua, wygasanie
-    Commands/GameObjects.cs       cele akcji z dynamic.json, nazwy „Nazwa | Właściciel”
-    Commands/OwnerAssets.cs       majątek widzów z dynamic.json (jak zakładka Właściciele na stronie)
-    Chat/ChatCommandService.cs    komendy z czatu (!...): lista, aliasy, cooldowny; bez zmian w grze
-    Chat/ChatAnswers.cs           treść odpowiedzi na komendy z czatu (z dynamic.json)
-    Ui/CommandTestDialog.cs       test bez Twitcha: symulacja nagrody i ręczna zmiana nazwy
-    Rewards/RewardSettings.cs     nagrody (rodzaje, koszty, miesiące, mnożniki), zapis rewards.json
-    Rewards/TargetResolver.cs     dopasowanie tekstu od widza do miasta, zakładu albo linii
-    Rewards/RewardService.cs      nagrody na Twitchu, wykupienia -> komendy, FULFILLED/CANCELED, wyłączanie bez gry
-    Twitch/ChannelPointsApi.cs    Helix: nagrody i status wykupień
-    Twitch/ChatApi.cs             Helix: wiadomość na czacie jako streamer
-    Rewards/RewardMessages.cs     treść odpowiedzi dla widzów (data końca efektu w grze, powód zwrotu)
-    Ui/RewardsDialog.cs           ustawienia nagród (balans)
-    Input/LuaUserdataReader.cs    wyciąganie JSON z plików .lua
-    Input/ExportFile.cs           parsowanie nazw plików
-    Processing/ExportProcessor.cs jeden przebieg: sesje, sieć, dynamic, publikacja
-    Processing/NetworkState.cs    składanie sieci z zrzutu i różnic
-    Processing/JsonRead.cs        bezpieczne odczyty liczb i stringów z JsonNode
-    Output/IPublisher.cs          interfejs celu publikacji
+    Program.cs                    service registration, window start
+    BridgeOptions.cs              configuration
+    BridgeRunner.cs               loop every PollIntervalMs (start/stop from the window): a pass + upload to Azure
+    Ui/MainForm.cs                window: state, log, tray
+    Ui/AzureDialog.cs             Azure settings with a connection test
+    Ui/ModSettingsDialog.cs       mod settings (export frequency, vehicles, terrain)
+    ModSettings.cs                mod settings and writing them as settings.lua for app.loadUserdata
+    Ui/UiLogProvider.cs           logs to the window
+    Cloud/AzureSettings.cs        container address + SAS, stored encrypted (DPAPI)
+    Cloud/AzureMirror.cs          queue of changed files and upload to Blob Storage
+    Cloud/MirroringPublisher.cs   local output + marking the file for upload
+    Twitch/TwitchAuthClient.cs    Twitch OAuth: device code, refresh, validate, revoke, channel type
+    Twitch/TwitchAccount.cs       streamer account + tokens, stored encrypted (DPAPI), TwitchOptions
+    Twitch/TwitchSession.cs       hourly validation and token refresh, state for the window
+    Twitch/EventSubClient.cs      EventSub over WebSocket: subscriptions, keepalive, reconnect, chat and points events
+    Ui/TwitchDialog.cs            login with a code from twitch.tv/activate, logout
+    Commands/ModCommand.cs        a mod command and writing it as Lua (escaping viewers' text)
+    Commands/ModCommandQueue.cs   the queue.lua queue, reading results from results.lua, expiry
+    Commands/GameObjects.cs       action targets from dynamic.json, "Name | Owner" names
+    Commands/OwnerAssets.cs       viewers' estates from dynamic.json (like the Owners tab on the website)
+    Chat/ChatCommandService.cs    chat commands (!...): list, aliases, cooldowns; no game changes
+    Chat/ChatAnswers.cs           reply texts for chat commands (from dynamic.json)
+    Ui/CommandTestDialog.cs       testing without Twitch: reward simulation and manual rename
+    Rewards/RewardSettings.cs     rewards (kinds, costs, months, multipliers), stored in rewards.json
+    Rewards/TargetResolver.cs     matching the viewer's text to a town, industry or line
+    Rewards/RewardService.cs      rewards on Twitch, redemptions -> commands, FULFILLED/CANCELED, disabling without the game
+    Twitch/ChannelPointsApi.cs    Helix: rewards and redemption status
+    Twitch/ChatApi.cs             Helix: a chat message as the streamer
+    Rewards/RewardMessages.cs     reply texts for viewers (effect end date in the game, refund reason)
+    Ui/RewardsDialog.cs           reward settings (balance)
+    Input/LuaUserdataReader.cs    extracting JSON from .lua files
+    Input/ExportFile.cs           parsing file names
+    Processing/ExportProcessor.cs one pass: sessions, network, dynamic, publishing
+    Processing/NetworkState.cs    assembling the network from a dump and diffs
+    Processing/JsonRead.cs        safe reads of numbers and strings from JsonNode
+    Output/IPublisher.cs          publish target interface
     Output/LocalFolderPublisher.cs
-  tests/Tf3Bridge.Tests/          xUnit: reader, składanie sieci, przebieg procesora, ustawienia Azure i moda, logowanie Twitcha, EventSub, kolejka komend, nagrody
+  tests/Tf3Bridge.Tests/          xUnit: reader, network assembly, processor pass, Azure and mod settings, Twitch login, EventSub, command queue, rewards
 ```
 
-Skrypt zakładający zasoby w Azure: [../infra/azure-setup.ps1](../infra/azure-setup.ps1).
+Script that creates the Azure resources: [../infra/azure-setup.ps1](../infra/azure-setup.ps1).
 
-## Następne kroki
+## Next steps
 
-- Hosting strony w Azure Static Web Apps (plan Free) i ustawienie tam `dataBaseUrl`.
-- Strona jest osobnym projektem w [../web/](../web/README.md). Lokalnie czyta to, co Tf3Bridge publikuje do `web/data/latest/`.
+- The website is a separate project in [../web/](../web/README.md). Locally it reads what Tf3Bridge publishes to `web/data/latest/`.

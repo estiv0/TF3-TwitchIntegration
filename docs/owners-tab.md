@@ -1,70 +1,70 @@
-# Zakładka „Właściciele”: majątek widzów (2026-10-05)
+# The "Owners" tab: viewers' estates (2026-10-05)
 
-Stan: **etap 1 zrobiony bez mapy** (lista, szczegóły widza, link `#owner=`), **etap 2 (`!majatek`) zrobiony.**
-Do zrobienia: podświetlenie majątku na mapie.
+Status: **stage 1 done without the map** (list, viewer details, `#owner=` link), **stage 2 (`!majatek`) done.**
+To do: highlighting the estate on the map.
 
 ## Problem
 
-Widz może mieć kilka miast, zakładów, stacji i linii. Nie muszą leżeć w jednym miejscu ani być
-powiązane z jego „głównym” miastem. Wcześniej własność było widać tylko w szczegółach pojedynczego
-obiektu, a szukanie po nazwie widza działało na każdej zakładce osobno.
+A viewer can own several towns, industries, stations and lines. They don't have to be in one place or be
+connected to the viewer's "main" town. Before, ownership was only visible in the details of a single
+object, and searching by viewer name worked on each tab separately.
 
-## Skąd dane
+## Where the data comes from
 
-Źródłem prawdy jest nazwa obiektu w grze: `Nazwa | Właściciel` (`adopt`, `createTown`, `createIndustry`),
-rozdzielana na stronie w `splitAllOwners` (`web/js/format.js`). Zestawienie liczy się w przeglądarce
-z `dynamic.json` (`web/js/owners.js`, `ownersIndex`). **Mod i Tf3Bridge bez zmian.**
+The source of truth is the object name in the game: `Name | Owner` (`adopt`, `createTown`, `createIndustry`),
+split on the website in `splitAllOwners` (`web/js/format.js`). The summary is computed in the browser
+from `dynamic.json` (`web/js/owners.js`, `ownersIndex`). **No changes to the mod or Tf3Bridge.**
 
-| Aktywo | Skąd |
+| Asset | From |
 |---|---|
-| Miasta | `towns[].owner` |
-| Zakłady | `industries[].owner` |
-| Stacje | `stations[].owner`; stacja zakładu tego samego widza jest liczona przy zakładzie. Gra nazywa stacje od miasta, także kupionego („Dworzec Szczecin \| estiv0 Zachód”), więc `splitAllOwners` najpierw zamienia w nazwach stacji i przystanków pełne nazwy miast i zakładów z właścicielem na same nazwy („Dworzec Szczecin Zachód”, bez właściciela) |
-| Linie | `lines[].owner` |
+| Towns | `towns[].owner` |
+| Industries | `industries[].owner` |
+| Stations | `stations[].owner`; a station of the same viewer's industry is counted with the industry. The game names stations after the town, including a bought one ("Dworzec Szczecin \| estiv0 Zachód"), so `splitAllOwners` first replaces full town and industry names with their owner in station and stop names with the bare names ("Dworzec Szczecin Zachód", without the owner) |
+| Lines | `lines[].owner` |
 
-Decyzje:
-- **Główne miasto = największe miasto widza** (`townSize`). Może się zmienić, gdy inne jego miasto urośnie.
-- **Tożsamość:** grupujemy bez rozróżniania wielkości liter (`Ala` = `ala`); na liście jest najczęstszy
-  zapis. Tf3Bridge zapisuje nazwę wyświetlaną widza, więc po zmianie nazwy na Twitchu stare obiekty
-  zostają pod starą nazwą. To znane ograniczenie, świadomie go nie rozwiązujemy.
+Decisions:
+- **Main town = the viewer's largest town** (`townSize`). It can change when another of their towns grows.
+- **Identity:** we group case-insensitively (`Ala` = `ala`); the list shows the most common
+  spelling. Tf3Bridge stores the viewer's display name, so after a name change on Twitch the old objects
+  stay under the old name. This is a known limitation that we deliberately don't solve.
 
-## Etap 1: strona
+## Stage 1: the website
 
-Zrobione:
-- zakładka „Właściciele” z licznikiem widzów; wiersz to nazwa i liczniki obiektów (miasta, zakłady,
-  stacje, linie, tylko niezerowe);
-- sortowanie: majątek (miasto 100 pkt + wielkość/25 + wzrost od startu gry ×100, zakład 50, stacja i linia 1, pojazd na liniach: pociąg/samolot 10, statek 2, drogowy 1; ten sam wzór w `!ranking`), zarobek linii (suma `stats.profit12m`), nazwa;
-- szukanie po nazwie widza i po nazwach jego obiektów („Szczecin” pokaże właściciela Szczecina);
-- szczegóły widza w pływającym okienku: główne miasto, podsumowanie, klikalne listy obiektów (★ przy
-  głównym mieście); najechanie na obiekt podświetla go na mapie;
-- pojazdy na liniach widza: liczba (też na liście), podział według nośnika, w drodze / na przystanku /
-  zatrzymane (z `vehicles[]`; bez nich tylko suma `lines[].vehicleCount`); statystyki jego linii razem:
-  zysk z 12 miesięcy, z poprzedniego roku i sumaryczny ze wszystkich zakończonych lat (`stats.profitTotal`,
-  „Sumaryczny zarobek” albo „Sumaryczna strata”), przewiezione, przepustowość (sumy), zapełnienie (średnia ważona
-  liczbą pojazdów) i ładunek w pojazdach teraz (suma per ładunek);
-- nazwa właściciela w szczegółach każdego obiektu jest linkiem do jego majątku;
-- adres `#owner=<klucz>` (nazwa małymi literami, `encodeURIComponent`), działa też otwarty od zera;
-- pasek zakładek przewija się w poziomie, bo sześć zakładek nie mieści się w panelu 360 px ani na telefonie.
+Done:
+- an "Owners" tab with a viewer count; a row is the name and object counters (towns, industries,
+  stations, lines, non-zero only);
+- sorting: estate (town 100 pts + size/25 + growth since game start ×100, industry 50, station and line 1, vehicle on lines: train/plane 10, ship 2, road 1; the same formula in `!ranking`), line earnings (sum of `stats.profit12m`), name;
+- searching by viewer name and by the names of their objects ("Szczecin" shows the owner of Szczecin);
+- viewer details in a floating window: main town, summary, clickable object lists (★ next to the
+  main town); hovering an object highlights it on the map;
+- vehicles on the viewer's lines: count (also in the list), split by carrier, on the way / at a stop /
+  stopped (from `vehicles[]`; without it only the sum of `lines[].vehicleCount`); statistics of their lines combined:
+  profit for 12 months, for the previous year and the total over all finished years (`stats.profitTotal`,
+  "Total earnings" or "Total loss"), transported, capacity (sums), load factor (average weighted
+  by vehicle count) and cargo in vehicles right now (sum per cargo);
+- the owner's name in the details of every object is a link to their estate;
+- the `#owner=<key>` address (the name in lower case, `encodeURIComponent`), also works when opened from scratch;
+- the tab bar scrolls horizontally, because six tabs don't fit in a 360 px panel or on a phone.
 
-Do zrobienia: **mapa.** Po zaznaczeniu widza mapa ma podświetlić wszystkie jego obiekty naraz i dopasować
-widok do ich obrysu. Dziś `map.js` zna jedno zaznaczenie `{ kind, id }`, więc wybór widza tylko czyści
-zaznaczenie mapy (`main.js`, `onPick`). Potrzebne:
-- `selected = { kind: "owner", items: [{ kind, id }] }` i obwódki dla każdego elementu (linie cieńsze niż
-  przy jednej zaznaczonej linii, żeby przy wielu liniach mapa była czytelna);
-- `fit()` do obrysu obiektów (jest już `fit(bbox, maxScale)`).
+To do: **the map.** After selecting a viewer the map should highlight all their objects at once and fit
+the view to their bounds. Today `map.js` knows a single selection `{ kind, id }`, so choosing a viewer only clears
+the map selection (`main.js`, `onPick`). Needed:
+- `selected = { kind: "owner", items: [{ kind, id }] }` and outlines for each item (lines thinner than
+  for a single selected line, so the map stays readable with many lines);
+- `fit()` to the objects' bounds (`fit(bbox, maxScale)` already exists).
 
-## Etap 2: komenda na czacie (Tf3Bridge) — zrobione, opis w `middle_app/README.md`
+## Stage 2: the chat command (Tf3Bridge): done, described in `middle_app/README.md`
 
-`!majatek [widz]` odpowiada np. „ala: 2 miasta (Gdańsk, Sopot), 1 zakład, 3 linie, zysk linii
-$1,2 mln, mapa: <link #owner=ala>”. Bez argumentu pokazuje majątek pytającego. Komenda tylko czyta
-ostatni `dynamic.json` (`OwnerName.Split` w `GameObjects.cs`, grupowanie jak w `owners.js`) i **nic nie
-wysyła do gry**, zgodnie z zasadą, że grę zmieniają tylko punkty kanału (`CommandSource`). Wymaga czytania
-czatu (`user:read:chat`, `user:write:chat`), patrz `twitch-channel-points.md`, punkt 4.
-Nasze komendy nie mają prefiksu.
+`!majatek [viewer]` answers e.g. "ala: 2 towns (Gdańsk, Sopot), 1 industry, 3 lines, line profit
+$1.2M, map: <link #owner=ala>". Without an argument it shows the asker's estate. The command only reads
+the last `dynamic.json` (`OwnerName.Split` in `GameObjects.cs`, grouping as in `owners.js`) and **sends nothing
+to the game**, following the rule that only channel points change the game (`CommandSource`). It needs to read
+chat (`user:read:chat`, `user:write:chat`), see `twitch-channel-points.md`, point 4.
+Our commands have no prefix.
 
-## Odłożone: rejestr właścicieli w Tf3Bridge
+## Postponed: an owner registry in Tf3Bridge
 
-Na razie niepotrzebny. Wróćmy do niego, jeśli będzie potrzebna historia zakupów (kiedy i za jaką nagrodę),
-„główne miasto” wybierane przez widza albo scalanie obiektów po zmianie nazwy widza (`user_id` z EventSub).
-Pomysł: Tf3Bridge prowadzi `owners.json` dopisywany po udanym `RewardOutcome`, a źródłem prawdy o tym,
-kto ma co teraz, zostaje nazwa w grze.
+Not needed for now. Let's come back to it if we need a purchase history (when and for which reward),
+a "main town" chosen by the viewer, or merging objects after a viewer renames (`user_id` from EventSub).
+Idea: Tf3Bridge keeps an `owners.json` appended after a successful `RewardOutcome`, while the name in the game stays the source of truth
+for who owns what right now.

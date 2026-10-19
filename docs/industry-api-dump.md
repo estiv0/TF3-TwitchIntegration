@@ -1,146 +1,146 @@
-# API przemysłu w TF3: zrzut metod i jak gra liczy cykl produkcji
+# Industry API in TF3: method dump and how the game computes the production cycle
 
-Zebrane 2026-10-09 przy szukaniu błędu strajku: po końcu efektu zakład dalej produkuje 1/rok, pasek
-produkcji pokazuje „5 lat”. Źródła: definicje Teal (`<TF3>/api/tealdef/api/*.d.tl`) i skrypty gry
-rozpakowane z `base/content/gui.zip`, `game_mechanics.zip`, `industries/industry_*.tl`.
+Collected on 2026-10-09 while hunting the strike bug: after the effect ends, the industry keeps producing 1/year, and
+the production bar shows "5 years". Sources: Teal definitions (`<TF3>/api/tealdef/api/*.d.tl`) and game scripts
+unpacked from `base/content/gui.zip`, `game_mechanics.zip`, `industries/industry_*.tl`.
 
-Kolumna „my” = gdzie tego używamy w modzie (`lua_mod/content/tf3export/`).
+The "us" column = where we use it in the mod (`lua_mod/content/tf3export/`).
 
-## Jak gra liczy cykl produkcji (to tłumaczy błąd strajku)
+## How the game computes the production cycle (this explains the strike bug)
 
-Każda reguła zakładu (`StockList.rules[i]`) produkuje w cyklach. Gdy cykl startuje, silnik dopisuje
-wpis do `StockList.ruleDatas[i].applyHistory`: `{ time, interval, consumedCargo, producedCargo }`.
-**`interval` jest liczony raz, przy starcie cyklu**, z ówczesnej produktywności:
+Each industry rule (`StockList.rules[i]`) produces in cycles. When a cycle starts, the engine appends
+an entry to `StockList.ruleDatas[i].applyHistory`: `{ time, interval, consumedCargo, producedCargo }`.
+**`interval` is computed once, when the cycle starts**, from the productivity at that moment:
 
 ```
-interval ≈ rokGry / rule.capacity / boost       -- boost = modifiers.productivity × boostery
-         × lastApplyDecayFactor                 -- „+ X dni z powodu czasu dostawy”
+interval ≈ gameYear / rule.capacity / boost     -- boost = modifiers.productivity × boosters
+         × lastApplyDecayFactor                 -- "+ X days due to delivery time"
 ```
 
-Okno zakładu (`gui/entity_window/industry_react_util.tl`, `GetRuleDurationTextAndBoosted`,
-`RuleProgressBar`) pokazuje:
-- pasek = `(teraz - last.time) / last.interval`,
-- tooltip = `last.interval`, gdy cykl trwa (`last.time + last.interval > teraz`); inaczej
-  `rokGry / capacity / boost` (czas, jaki miałby następny cykl).
+The industry window (`gui/entity_window/industry_react_util.tl`, `GetRuleDurationTextAndBoosted`,
+`RuleProgressBar`) shows:
+- bar = `(now - last.time) / last.interval`,
+- tooltip = `last.interval` while the cycle runs (`last.time + last.interval > now`); otherwise
+  `gameYear / capacity / boost` (how long the next cycle would take).
 
-Zmiana `modifiers.productivity` (`makeStockListSetModifiersCmd`) **nie przelicza trwającego cyklu**.
-Strajk ×0,01 na zakładzie 107/rok daje cykl ~1 rok (dłuższy, gdy baza była w tej chwili niższa;
-„5 lat” ≈ 1/(107 × 0,002)). Po końcu strajku produktywność wraca, ale trwający cykl kończy się
-dopiero po swoim `interval`. `cargoData[c].produceFrequency` (to, co pokazuje strona) też wynika
-z tego cyklu, więc trzyma 1/rok.
+Changing `modifiers.productivity` (`makeStockListSetModifiersCmd`) **does not recompute the running cycle**.
+A ×0.01 strike on a 107/year industry gives a ~1-year cycle (longer when the base was lower at that moment;
+"5 years" ≈ 1/(107 × 0.002)). After the strike ends productivity comes back, but the running cycle only ends
+after its `interval`. `cargoData[c].produceFrequency` (what the website shows) also follows
+that cycle, so it stays at 1/year.
 
-Nie znalazłem w API niczego, co przerywa albo skraca trwający cykl (szczegóły niżej).
+I found nothing in the API that interrupts or shortens a running cycle (details below).
 
-## Komponenty
+## Components
 
 ### `INDUSTRY` (`Engine.Component.Industry`)
-| pole | opis | my |
+| field | description | us |
 |---|---|---|
-| `stockList` | encja listy magazynowej (u nas zwykle = encja zakładu) | collectors, effects |
-| `level`, `maxLevel` | poziom zakładu | collectors |
-| `upgradeProgress` | postęp do awansu/spadku | collectors |
-| `manualDevelopment` | bez zamykania i zmiany poziomu | collectors |
-| `closureTimeStamp` | czas zamknięcia (0 = brak) | – |
-| `construction` | encja konstrukcji | collectors |
+| `stockList` | stock list entity (for us usually = the industry entity) | collectors, effects |
+| `level`, `maxLevel` | industry level | collectors |
+| `upgradeProgress` | progress to level up/down | collectors |
+| `manualDevelopment` | no closing and no level changes | collectors |
+| `closureTimeStamp` | closing time (0 = none) | – |
+| `construction` | construction entity | collectors |
 
 ### `STOCK_LIST` (`Engine.Component.StockList`)
-| pole | opis | my |
+| field | description | us |
 |---|---|---|
 | `stocks[]` | `type` (Input/Output/Storage), `cargoType`, `cargoTypes`, `mixedTypes`, `capacity`, `loadSpeedModifier`, `tag` | collectors |
-| `rules[]` | `input {{int}}`, `output {cargo: int}`, `capacity` (cykli/rok), `consumptionFactor`, `booster`, `boostFactor`, `priority`, `slot` | collectors (bez consumptionFactor/boostFactor/priority) |
-| `stockDatas[]` | `consumeFrequency` (faktyczne zużycie/rok) | collectors |
-| `ruleDatas[]` | `applyHistory[] { time, interval, consumedCargo {StockId}, producedCargo {{cargo, n}} }`, `lastApplyDecayFactor` | **nie** (tu siedzi długość cyklu) |
-| `cargoData{cargo}` | `produceFrequency` (faktyczna produkcja/rok) | collectors |
+| `rules[]` | `input {{int}}`, `output {cargo: int}`, `capacity` (cycles/year), `consumptionFactor`, `booster`, `boostFactor`, `priority`, `slot` | collectors (without consumptionFactor/boostFactor/priority) |
+| `stockDatas[]` | `consumeFrequency` (actual consumption/year) | collectors |
+| `ruleDatas[]` | `applyHistory[] { time, interval, consumedCargo {StockId}, producedCargo {{cargo, n}} }`, `lastApplyDecayFactor` | **no** (the cycle length lives here) |
+| `cargoData{cargo}` | `produceFrequency` (actual production/year) | collectors |
 | `modifiers` | `productivity` | collectors, effects |
-| `thrownAwayCargo` | zmarnowany ładunek | – |
+| `thrownAwayCargo` | wasted cargo | – |
 
-### `IndustryScriptingInfo` (`api/type/transformator.d.tl`, dla skryptów modeli)
+### `IndustryScriptingInfo` (`api/type/transformator.d.tl`, for model scripts)
 `boosted01`, `doubleBoosted01`, `idle01`, `level`, `production01`, `workplaces`, `progress {number}`,
-`producing`, `boosting`. Tylko odczyt w skryptach modeli, nie mamy do niego dostępu z game scriptu.
+`producing`, `boosting`. Read-only in model scripts; we can't reach it from a game script.
 
-## Odczyt: `api.engine.util.stock.*` (argument: encja stockList)
-| funkcja | zwraca | my |
+## Reading: `api.engine.util.stock.*` (argument: the stockList entity)
+| function | returns | us |
 |---|---|---|
-| `getStockCargoTypes(sl, stockId)` | ładunki magazynu | – |
-| `getCargoTypeShippedPerYear(sl, cargo)` / `getCargoShippedPerYear(sl)` | wywiezione/rok | – |
-| `getCargoTypeDeliveredPerYear(sl, cargo)` / `getCargoDeliveredPerYear(sl)` | dowiezione/rok | – |
-| `getCargoConsumedPerYear(sl, cargo)` | zużyte/rok | – |
-| `getCargoProducedPerYear(sl, cargo)` | wyprodukowane/rok (z logbooka) | – |
-| `getCargoMaxProductionPerYear(sl, cargo)` / `getCargoMaxConsumptionPerYear(sl, cargo)` | maksimum/rok | – |
-| `getInputsOutputsFromRules(sl)` | `{wejścia, wyjścia}` | – (gra: industries.script) |
-| `getCargoOutputPerYear(sl)` | produkcja/rok wg reguł | – (gra: rozbudowa zakładu) |
-| `getCargoLogValueDiffPerYear(sl, logType, cargo)` | różnica logbooka/rok | – |
-| `getCargoLogPerYearForTarget(src, dst, logType, cargo)` / `...ForTargetFilter(src, fn, logType, cargo)` | przepływ do celu | – |
-| `getProductionRating(sl)` | 0..1, ocena produkcji (gra: szansa rozbudowy) | – |
-| `getStockGroups...(sl, ..., producedOnly)` | grupy magazynów | – |
-| `getStockListsWithThrownAwayCargo()` | `{sl: ilość}` | – |
+| `getStockCargoTypes(sl, stockId)` | the stock's cargo | – |
+| `getCargoTypeShippedPerYear(sl, cargo)` / `getCargoShippedPerYear(sl)` | shipped/year | – |
+| `getCargoTypeDeliveredPerYear(sl, cargo)` / `getCargoDeliveredPerYear(sl)` | delivered/year | – |
+| `getCargoConsumedPerYear(sl, cargo)` | consumed/year | – |
+| `getCargoProducedPerYear(sl, cargo)` | produced/year (from the logbook) | – |
+| `getCargoMaxProductionPerYear(sl, cargo)` / `getCargoMaxConsumptionPerYear(sl, cargo)` | maximum/year | – |
+| `getInputsOutputsFromRules(sl)` | `{inputs, outputs}` | – (game: industries.script) |
+| `getCargoOutputPerYear(sl)` | production/year by rules | – (game: industry expansion) |
+| `getCargoLogValueDiffPerYear(sl, logType, cargo)` | logbook difference/year | – |
+| `getCargoLogPerYearForTarget(src, dst, logType, cargo)` / `...ForTargetFilter(src, fn, logType, cargo)` | flow to a target | – |
+| `getProductionRating(sl)` | 0..1, production rating (game: expansion chance) | – |
+| `getStockGroups...(sl, ..., producedOnly)` | stock groups | – |
+| `getStockListsWithThrownAwayCargo()` | `{sl: amount}` | – |
 | `hasAnyCompatibleStock(entities, cargo, load)` | bool | – |
 
-## Odczyt: inne
-| funkcja | opis | my |
+## Reading: other
+| function | description | us |
 |---|---|---|
 | `api.engine.util.industry.getIndustryProductivityInfo(e)` | `{ producing, boostFromRule, boostFromPersonCapacity }` | – |
 | `api.engine.util.industry.getClosingIndustries()` | `{{e, resName}}` | – |
-| `api.engine.util.industry.getEconomyCargoDependencies(id)` | zależności ładunków | – |
-| `api.engine.system.simEntityAtStockSystem.getStockCount(sl, stockId)` | stan magazynu | collectors |
-| `...simEntityAtStockSystem` (inne) | mapa magazyn → ładunek, encje czekające, najdłużej czekająca | – |
+| `api.engine.util.industry.getEconomyCargoDependencies(id)` | cargo dependencies | – |
+| `api.engine.system.simEntityAtStockSystem.getStockCount(sl, stockId)` | stock level | collectors |
+| `...simEntityAtStockSystem` (others) | stock → cargo map, waiting entities, longest waiting | – |
 | `api.engine.util.logbook.getLogValuePerYear(sl, name)` | `itemsProduced`, `itemsConsumed`, `itemsDestroyed`, `itemsLoaded` | collectors |
 | `api.engine.util.logbook.getLogValueMostRecent / getLogValueOldest` | – | – |
-| `api.engine.util.logbook.getChart` | wykres | collectors |
-| `api.engine.system.streetConnectorSystem.getConstructionEntityForSubconstruction(e)` | konstrukcja zakładu | collectors |
-| `api.engine.util.cargo.getCargoQualityDataForStockList / ...ForStock / getSummarizedCargoQualityDataForStockList` | jakość ładunku | – |
-| `api.engine.util.construction.getNumAndFilledAutoFillSlots(constr)` | satelity zakładu | – |
-| `industry_productivity_util` (gra, `/industries/industry_productivity_util.tl`) | `getVisitors`, `isIndustryWorkersBoosted`, `getPersonCapacityPotentialBoost`, `workersTimeIntervalMax` = 2 lata, `RequiredWorkersFractionForBoost` = 0,5 | – |
+| `api.engine.util.logbook.getChart` | chart | collectors |
+| `api.engine.system.streetConnectorSystem.getConstructionEntityForSubconstruction(e)` | the industry's construction | collectors |
+| `api.engine.util.cargo.getCargoQualityDataForStockList / ...ForStock / getSummarizedCargoQualityDataForStockList` | cargo quality | – |
+| `api.engine.util.construction.getNumAndFilledAutoFillSlots(constr)` | industry satellites | – |
+| `industry_productivity_util` (game, `/industries/industry_productivity_util.tl`) | `getVisitors`, `isIndustryWorkersBoosted`, `getPersonCapacityPotentialBoost`, `workersTimeIntervalMax` = 2 years, `RequiredWorkersFractionForBoost` = 0.5 | – |
 
-## Zapis (komendy)
-| komenda | co robi | czy przelicza cykl |
+## Writing (commands)
+| command | what it does | recomputes the cycle? |
 |---|---|---|
-| `makeStockListSetModifiersCmd(industry, modifiers)` | ustawia `productivity` | **nie** (potwierdzone błędem strajku) |
-| `makeStockListDiscardCargoCmd(sl, stockIds, remainingTimeToDelivery)` | wyrzuca ładunek z magazynów | nie powinno (dotyczy magazynów, nie reguł) |
-| `makeStockListSetStocksCargoTypeCmd(sl, stockIds, cargo?)` | zmienia ładunek magazynu (magazyny/hurtownie) | nieznane, ryzykowne dla zakładów |
-| `makeIndustrySetManualDevelopmentCmd(e, manual)` | tryb ręczny | nie |
-| `makeIndustrySetDespawnTimeCmd(e, t)` | czas zamknięcia | nie |
-| `makeCreateIndustryExtendProposalCmd(constr, try, keep)` / `proposal.makeIndustryExtendProposal` | rozbudowa (gra robi to sama) | nieznane; zmienia zakład na stałe |
-| `proposal.refreshConstruction(e, file?)` + `makeWorldBuildProposalCmd` | przebudowa konstrukcji | może zresetować `ruleDatas`, ale najpewniej tworzy nowe encje (zrywa właściciela zakładu po id, stan magazynów) |
-| `makeStockSetCargoAmountCmd(sl, stockId, n, cargo?)` | **DEBUG**: stan magazynu | nie |
-| `makeComponentExchangeCmd(e, comp)` | **DEBUG**: tylko `EmissionEmitter` / `ModelInstanceList` | nie da się podmienić StockList |
-| `makeGamePerformSimulationStepsCmd(n)` | **DEBUG**: kroki symulacji całego świata | nie (globalne) |
+| `makeStockListSetModifiersCmd(industry, modifiers)` | sets `productivity` | **no** (confirmed by the strike bug) |
+| `makeStockListDiscardCargoCmd(sl, stockIds, remainingTimeToDelivery)` | throws cargo out of stocks | shouldn't (it's about stocks, not rules) |
+| `makeStockListSetStocksCargoTypeCmd(sl, stockIds, cargo?)` | changes a stock's cargo (warehouses/wholesale) | unknown, risky for industries |
+| `makeIndustrySetManualDevelopmentCmd(e, manual)` | manual mode | no |
+| `makeIndustrySetDespawnTimeCmd(e, t)` | closing time | no |
+| `makeCreateIndustryExtendProposalCmd(constr, try, keep)` / `proposal.makeIndustryExtendProposal` | expansion (the game does this itself) | unknown; changes the industry permanently |
+| `proposal.refreshConstruction(e, file?)` + `makeWorldBuildProposalCmd` | rebuilding the construction | may reset `ruleDatas`, but most likely creates new entities (breaks industry ownership by id, stock levels) |
+| `makeStockSetCargoAmountCmd(sl, stockId, n, cargo?)` | **DEBUG**: stock level | no |
+| `makeComponentExchangeCmd(e, comp)` | **DEBUG**: only `EmissionEmitter` / `ModelInstanceList` | the StockList can't be swapped |
+| `makeGamePerformSimulationStepsCmd(n)` | **DEBUG**: simulation steps of the whole world | no (global) |
 
-## Sprawdzone w grze (2026-10-09, zakład 226115)
+## Checked in the game (2026-10-09, industry 226115)
 
-- `makeStockListDiscardCargoCmd(sl, {stock}, 1.0)` czyści **cały** magazyn. Z `0.5` nie zrobił nic
-  (291 sztuk przed i po). Parametr najpewniej dotyczy jakości / czasu dostawy, a ładunek prosto
-  z fabryki ma `averageQuality = 0`. Nie nadaje się do zdejmowania tylko nowych sztuk.
-- `simEntityAtStockSystem.getStockEntities(sl, stock)` zwraca pary `{czas przybycia (ms gry), encja}`,
-  od najstarszej; to samo co `SIM_ENTITY_AT_STOCK.arrivalTime`. Fabryka dokłada partię naraz
-  (np. 9 sztuk z tym samym czasem). Magazyn wyjściowy miał limit 300.
-- `api.cmd.debug.makeStockSetCargoAmountCmd(sl, stock, n)` **działa** z konsoli (bez trybu debug).
-  Na tym oparty jest strajk i nalot skarbówki (`effects.lua`, blokada wywozu).
+- `makeStockListDiscardCargoCmd(sl, {stock}, 1.0)` clears the **whole** stock. With `0.5` it did nothing
+  (291 items before and after). The parameter most likely relates to quality / delivery time, and cargo straight
+  from the factory has `averageQuality = 0`. Not usable for removing only new items.
+- `simEntityAtStockSystem.getStockEntities(sl, stock)` returns pairs `{arrival time (game ms), entity}`,
+  oldest first; the same as `SIM_ENTITY_AT_STOCK.arrivalTime`. The factory adds a batch at once
+  (e.g. 9 items with the same time). The output stock had a limit of 300.
+- `api.cmd.debug.makeStockSetCargoAmountCmd(sl, stock, n)` **works** from the console (without debug mode).
+  The strike and the tax raid are built on it (`effects.lua`, shipping block).
 
-## Wnioski dla strajku (przed testami; wybrana blokada wywozu)
+## Conclusions for the strike (before testing; the shipping block was chosen)
 
-Skoro trwającego cyklu nie da się skrócić, trzeba nie dopuścić do cyklu dłuższego niż reszta efektu:
+Since a running cycle can't be shortened, a cycle longer than the rest of the effect must not be allowed to start:
 
-1. **Dolna granica zależna od czasu do końca efektu** (zalecane). Sterownik produktywności zna
-   `rules[i].capacity`, czas gry i `untilTime` efektu. Cykl zaczęty teraz trwa
-   `rokGry / (capacity × p)`, więc wystarczy trzymać
-   `p ≥ rokGry / (capacity × pozostałyCzas)` (z zapasem na `lastApplyDecayFactor`).
-   Strajk 3 mies. na zakładzie 107/rok: p ≥ 12/(107 × 3) ≈ 0,037, czyli 1 sztuka na końcu strajku
-   i od razu normalna produkcja. Pod koniec efektu granica rośnie, więc późne cykle są krótkie.
-2. **Produktywność 0** zamiast 0,01: może silnik wtedy nie startuje cyklu (`producing = false`) i po
-   końcu od razu startuje normalny. Ryzyko dzielenia przez 0 (cykl „nieskończony”); trzeba sprawdzić
-   w grze na zakładzie testowym.
-3. **Stałe minimum** (np. 0,1): najprostsze, ale strajk słabszy i nadal może wyjść poza koniec efektu.
+1. **A lower bound depending on the time left in the effect** (recommended). The productivity controller knows
+   `rules[i].capacity`, the game time and the effect's `untilTime`. A cycle started now lasts
+   `gameYear / (capacity × p)`, so it's enough to keep
+   `p ≥ gameYear / (capacity × timeLeft)` (with a margin for `lastApplyDecayFactor`).
+   A 3-month strike on a 107/year industry: p ≥ 12/(107 × 3) ≈ 0.037, i.e. 1 item at the end of the strike
+   and normal production right away. Near the end of the effect the bound grows, so late cycles are short.
+2. **Productivity 0** instead of 0.01: maybe the engine then starts no cycle (`producing = false`) and after
+   the end starts a normal one right away. Risk of a division by 0 (an "infinite" cycle); needs checking
+   in the game on a test industry.
+3. **A fixed minimum** (e.g. 0.1): the simplest, but the strike is weaker and can still run past the end of the effect.
 
-Ta sama pułapka dotyczy nalotu skarbówki (`industryTaxRaid`). Boost (×2..5) jej nie ma: po końcu
-boostu trwający cykl jest krótszy niż normalny.
+The same trap applies to the tax raid (`industryTaxRaid`). A boost (×2..5) doesn't have it: after the boost ends
+the running cycle is shorter than normal.
 
-## Snippet do konsoli gry
+## Game console snippet
 
-Stan cyklu zakładu (id z eksportu / strony). Wklej w konsoli gry:
+The cycle state of an industry (id from the export / website). Paste into the game console:
 
 ```lua
-local e = 12345 -- id zakładu
+local e = 12345 -- industry id
 local sl = api.engine.getComponent(e, api.type.ComponentType.STOCK_LIST)
 local now = api.engine.getComponent(api.engine.util.getWorld(), api.type.ComponentType.GAME_TIME).gameTime
 local year = api.util.getDefaultYearDuration()

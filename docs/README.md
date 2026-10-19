@@ -1,25 +1,25 @@
-# Dokumentacja projektu TF3 → Twitch
+# TF3 → Twitch project documentation
 
-| Plik | Zawartość |
+| File | Contents |
 |---|---|
-| [tf3-api-findings.md](tf3-api-findings.md) | Czym TF3 różni się od TF2 (struktura moda, game script, API). Na tej podstawie trzeba przebudować `lua_mod`. |
-| [mod-known-issues.md](mod-known-issues.md) | Błędy i ryzyka w obecnym szkielecie moda (do naprawy później). |
-| [reactive-dynamic-export.md](reactive-dynamic-export.md) | Odłożona propozycja: różnicowy i reaktywny eksport danych dynamicznych (zdarzenia gry, `dynamicDelta`, strumień zdarzeń, stacje). |
-| [game-time-and-pause.md](game-time-and-pause.md) | Czas gry: co się dzieje na pauzie i po cofnięciu daty, opcja efektów w czasie rzeczywistym, plan eksportu `dynamic` na pauzie i pytania otwarte. |
-| [export-format-performance.md](export-format-performance.md) | Format eksportu a wydajność: gdzie jest koszt, propozycje (tabele Lua zamiast JSON, format kolumnowy, mniejsza precyzja) i pomiar `bench.lua`. |
-| [architecture.md](architecture.md) | Architektura całości: mod → middle app → Azure → strona, plus koszty i opcje rozszerzenia Twitcha. |
-| [owners-tab.md](owners-tab.md) | Zakładka „Właściciele”: cały majątek widza (miasta, zakłady, stacje, linie) w jednym miejscu, główne miasto, link `#owner=`; dalej mapa i komenda `!majatek`. |
-| [industry-api-dump.md](industry-api-dump.md) | Zrzut API przemysłu (komponenty, odczyt, komendy) i jak gra liczy cykl produkcji; czemu strajk przeciąga się po końcu efektu; snippet do konsoli. |
-| [twitch-channel-points.md](twitch-channel-points.md) | Analiza integracji punktów kanału Twitcha: API (Helix, EventSub), przepływ Tf3Bridge → mod, pomysły na nagrody i komendy gry, ryzyka. |
+| [tf3-api-findings.md](tf3-api-findings.md) | How TF3 differs from TF2 (mod structure, game script, API). `lua_mod` was rebuilt based on this. |
+| [mod-known-issues.md](mod-known-issues.md) | Bugs and risks in the current mod skeleton (to fix later). |
+| [reactive-dynamic-export.md](reactive-dynamic-export.md) | Postponed proposal: differential and reactive export of dynamic data (game events, `dynamicDelta`, event stream, stations). |
+| [game-time-and-pause.md](game-time-and-pause.md) | Game time: what happens when paused and after the date is rolled back, an option for real-time effects, a plan for exporting `dynamic` while paused, and open questions. |
+| [export-format-performance.md](export-format-performance.md) | Export format vs. performance: where the cost is, proposals (Lua tables instead of JSON, a columnar format, lower precision) and the `bench.lua` measurement. |
+| [architecture.md](architecture.md) | Overall architecture: mod → middle app → Azure → website, plus costs and Twitch extension options. |
+| [owners-tab.md](owners-tab.md) | The "Owners" tab: a viewer's whole estate (towns, industries, stations, lines) in one place, the main town, the `#owner=` link; then the map and the `!majatek` command. |
+| [industry-api-dump.md](industry-api-dump.md) | Dump of the industry API (components, reading, commands) and how the game computes the production cycle; why a strike lingers after the effect ends; a console snippet. |
+| [twitch-channel-points.md](twitch-channel-points.md) | Analysis of the Twitch channel points integration: API (Helix, EventSub), the Tf3Bridge → mod flow, ideas for rewards and game commands, risks. |
 
-Kod:
-- [../lua_mod/](../lua_mod/README.md): mod do gry;
-- [../middle_app/](../middle_app/README.md): Tf3Bridge, .NET 9, działa lokalnie obok gry;
-- [../web/](../web/README.md): strona, statyczna, docelowo na Azure Static Web Apps.
+Code:
+- [../lua_mod/](../lua_mod/README.md): the game mod;
+- [../middle_app/](../middle_app/README.md): Tf3Bridge, .NET 9, runs locally next to the game;
+- [../web/](../web/README.md): the website, static, hosted on Azure Static Web Apps.
 
-Źródła:
-- Dokumentacja API: https://wiki.transportfever3.com/script-doc/api/cmd.html (oraz `engine`, `engine/util`, `engine/system`, `type`)
-- Wiki moddingu: https://wiki.transportfever3.com/doku.php?id=modding
-- `<gra>` w dokumentach to folder instalacji gry, np. `C:/Program Files (x86)/Steam/steamapps/common/Transport Fever 3`.
-- Definicje Teal w instalacji gry: `<gra>/api/tealdef/` i `base/tealdef/`
-- Przykładowe game scripty z gry: `base/content/terrain/reforestation.gs.lua` + `reforestation.script.tl`
+Sources:
+- API documentation: https://wiki.transportfever3.com/script-doc/api/cmd.html (and `engine`, `engine/util`, `engine/system`, `type`)
+- Modding wiki: https://wiki.transportfever3.com/doku.php?id=modding
+- `<game>` in these documents is the game install folder, e.g. `C:/Program Files (x86)/Steam/steamapps/common/Transport Fever 3`.
+- Teal definitions in the game install: `<game>/api/tealdef/` and `base/tealdef/`
+- Sample game scripts shipped with the game: `base/content/terrain/reforestation.gs.lua` + `reforestation.script.tl`

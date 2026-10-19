@@ -1,73 +1,73 @@
-# Architektura (propozycja)
+# Architecture (proposal)
 
-Cel: jak najtaniej, docelowo prawie 0 zł miesięcznie, na Azure.
+Goal: as cheap as possible on Azure, ideally close to zero per month.
 
-## Przepływ
+## Flow
 
 ```
- TF3 + mod Lua
-   │  app.saveUserdata → ...\3493540\local\tf3export\*.lua (JSON w literale Lua)
-   │  zapas: linie [tf3x] w crash_dump\stdout.txt
+ TF3 + Lua mod
+   │  app.saveUserdata → ...\3493540\local\tf3export\*.lua (JSON inside a Lua literal)
+   │  fallback: [tf3x] lines in crash_dump\stdout.txt
    ▼
- Middle app (C# / .NET, na PC streamera)
-   │  gzip, upload HTTPS bezpośrednio do Blob Storage (token SAS z prawem tylko do zapisu)
+ Middle app (C# / .NET, on the streamer's PC)
+   │  gzip, HTTPS upload straight to Blob Storage (write-only SAS token)
    ▼
- Azure Blob Storage (kontener "live", publiczny odczyt)
-   │  latest/dynamic.json.gz     ← nadpisywany co snapshot
-   │  latest/network.json.gz     ← nadpisywany przy zmianie sieci
-   │  latest/meta.json           ← sessionId, seq, czas: mały plik do pollingu
-   │  history/<session>/<seq>.json.gz   (opcjonalnie, do wykresów)
+ Azure Blob Storage ("live" container, public read)
+   │  latest/dynamic.json.gz     ← overwritten on every snapshot
+   │  latest/network.json.gz     ← overwritten when the network changes
+   │  latest/meta.json           ← sessionId, seq, time: a small file to poll
+   │  history/<session>/<seq>.json.gz   (optional, for charts)
    ▼
- Strona (Azure Static Web Apps, plan Free)
-     polluje meta.json co ~5–10 s; gdy seq się zmieni, pobiera dynamic.json
-     network.json pobiera tylko wtedy, gdy zmieni się jego wersja
+ Website (Azure Static Web Apps, Free plan)
+     polls meta.json every ~5–10 s; when seq changes, it downloads dynamic.json
+     downloads network.json only when its version changes
 ```
 
-### Dlaczego bez własnego serwera i bazy na start
+### Why no server or database to start with
 
-- Dane mają **jednego pisarza** (mod streamera) i **wielu czytelników**. To przypadek „statyczny plik + CDN”, a nie baza danych.
-- Blob Storage kosztuje grosze: kilka MB danych, a zapisów co ~30 s jest ok. 90 tys. miesięcznie. Static Web Apps Free hostuje stronę za darmo.
-- Odpada kod serwera, cold starty Functions i zarządzanie połączeniami.
-- Pliki są gzipowane, `Content-Encoding: gzip` ustawia middle app przy uploadzie, a przeglądarka rozpakowuje je sama.
-- CORS ustawiamy w Storage Account na domenę strony.
+- The data has **one writer** (the streamer's mod) and **many readers**. That is a "static file + CDN" case, not a database.
+- Blob Storage costs pennies: a few MB of data, and writing every ~30 s is about 90k writes a month. Static Web Apps Free hosts the site for free.
+- No server code, no Functions cold starts and no connection management.
+- Files are gzipped, the middle app sets `Content-Encoding: gzip` on upload, and the browser unpacks them on its own.
+- CORS is set on the Storage Account for the site's domain.
 
-> Ceny i limity planów Free sprawdzić w aktualnym cenniku Azure przed wdrożeniem.
+> Check Free plan prices and limits in the current Azure price list before deploying.
 
-### Kiedy dołożyć coś więcej
+### When to add more
 
-| Potrzeba | Dodatek | Koszt |
+| Need | Add-on | Cost |
 |---|---|---|
-| Historia, wykresy w czasie | Azure Table Storage (NoSQL, klucz `session/seq`) albo Cosmos DB z darmowym tierem (jeden na subskrypcję) | grosze / 0 |
-| Ukrycie tokenu SAS, walidacja danych | Azure Functions (plan Consumption, darmowa pula wywołań) jako endpoint `POST /ingest` | ~0 |
-| Prawdziwy push zamiast pollingu | Azure Web PubSub (plan Free ma bardzo niski limit połączeń, więc nie skaluje się na widzów) albo SignalR | płatne przy większym ruchu |
+| History, charts over time | Azure Table Storage (NoSQL, key `session/seq`) or Cosmos DB with the free tier (one per subscription) | pennies / 0 |
+| Hiding the SAS token, validating data | Azure Functions (Consumption plan, free call allowance) as a `POST /ingest` endpoint | ~0 |
+| Real push instead of polling | Azure Web PubSub (the Free plan has a very low connection limit, so it does not scale to viewers) or SignalR | paid with more traffic |
 
-Na MVP wystarczy polling co 5–10 s. Dane i tak zmieniają się co 2 dni gry, czyli co kilkadziesiąt sekund.
+Polling every 5–10 s is enough for an MVP. The data changes every 2 game days anyway, i.e. every few dozen seconds.
 
 ## Middle app (C#)
 
-**Stan (2026-10-02):** wersja lokalna jest gotowa w `middle_app/` (`Tf3Bridge`) i przetestowana na prawdziwych plikach z gry. Publikuje `latest/dynamic.json`, `latest/network.json` i `latest/meta.json` do lokalnego folderu. Szczegóły w [../middle_app/README.md](../middle_app/README.md). Wysyłka do Azure Blob Storage jest zrobiona (`AzureMirror`, zasoby zakłada `infra/azure-setup.ps1`), ale jeszcze nie przetestowana na prawdziwym koncie. Hosting strony w Static Web Apps jeszcze nie jest zrobiony.
+**Status (2026-10-02):** the local version is done in `middle_app/` (`Tf3Bridge`) and tested on real game files. It publishes `latest/dynamic.json`, `latest/network.json` and `latest/meta.json` to a local folder. Details in [../middle_app/README.md](../middle_app/README.md). Upload to Azure Blob Storage is done (`AzureMirror`, `infra/azure-setup.ps1` creates the resources) but not yet tested on a real account. Hosting the site on Static Web Apps is not done yet.
 
-- `FileSystemWatcher` na `local\tf3export\*.lua` plus okresowy skan katalogu jako zabezpieczenie, bo watcher gubi zdarzenia przy buforze.
-- Z pliku wyciąga literał `json = "..."` i odwraca escapowanie Lua (`\"`, `\\`, `\n`, `\r`, `\t`, `\ddd`). Plik bez końcowego `end` jest jeszcze zapisywany, więc odczyt trzeba ponowić.
-- Pliki obsługuje kolejno według `(session, seq)`. Wysyła z ponawianiem prób (backoff), a plik usuwa **dopiero po sukcesie** uploadu. Przy zaległościach wystarczy wysłać najnowszy `dynamic` i najnowszy `network`.
-- Zapas (gdy `app.saveUserdata` zawiedzie): tail `crash_dump\stdout.txt` i sklejanie linii `[tf3x] <kind> <session> <seq> <part>/<total> ...`.
-- Konfiguracja katalogów w `appsettings.json`; URL kontenera i token SAS wpisywane w oknie aplikacji i trzymane w `%LOCALAPPDATA%\Tf3Bridge\azure.json` (SAS szyfrowany DPAPI), poza repo.
-- Najlepiej jako aplikacja z ikoną w trayu, z podglądem statusu: ostatni seq i błędy.
+- `FileSystemWatcher` on `local\tf3export\*.lua` plus a periodic folder scan as a safety net, because the watcher loses events when its buffer overflows.
+- It extracts the `json = "..."` literal from the file and reverses Lua escaping (`\"`, `\\`, `\n`, `\r`, `\t`, `\ddd`). A file without the closing `end` is still being written, so the read has to be retried.
+- Files are handled in `(session, seq)` order. Uploads retry with backoff, and a file is deleted **only after** a successful upload. When there is a backlog, sending the newest `dynamic` and the newest `network` is enough.
+- Fallback (when `app.saveUserdata` fails): tail `crash_dump\stdout.txt` and join the `[tf3x] <kind> <session> <seq> <part>/<total> ...` lines.
+- Folder settings live in `appsettings.json`; the container URL and SAS token are entered in the app window and kept in `%LOCALAPPDATA%\Tf3Bridge\azure.json` (SAS encrypted with DPAPI), outside the repo.
+- Best as a tray-icon app with a status view: last seq and errors.
 
-## Rozszerzenie Twitcha (po MVP)
+## Twitch extension (after the MVP)
 
-Rozszerzenie to statyczny frontend (HTML/JS) hostowany przez Twitcha i wyświetlany w jednym z trzech miejsc:
+An extension is a static frontend (HTML/JS) hosted by Twitch and shown in one of three places:
 
-| Typ | Gdzie | Pomysł dla nas |
+| Type | Where | Idea for us |
 |---|---|---|
-| **Panel** | pod streamem, w zakładce opisu | Mini-dashboard: firma, saldo, liczba linii i pojazdów, top miasta |
-| **Video overlay** | przezroczysta warstwa na całym streamie (desktop) | Widz najeżdża na mapę lub ikonę i widzi szczegóły linii albo miasta. Mapa sieci jako przełączana nakładka. |
-| **Component** | mały, przesuwalny element na wideo | Licznik lub ticker zdarzeń („nowa linia”, „miasto X urosło”) |
+| **Panel** | below the stream, in the About tab | Mini dashboard: company, balance, number of lines and vehicles, top towns |
+| **Video overlay** | a transparent layer over the whole stream (desktop) | The viewer hovers over the map or an icon and sees line or town details. The network map as a toggleable overlay. |
+| **Component** | a small, movable element on the video | A counter or event ticker ("new line", "town X grew") |
 
-Ograniczenia, które trzeba znać:
-- Pliki frontendu wgrywa się do Twitcha jako paczkę. Zewnętrzne zapytania (do naszego Bloba) muszą być na liście dozwolonych URL-i rozszerzenia.
-- Do Twitcha nadaje się mały push przez Extension PubSub z backendu (małe wiadomości, limit częstotliwości), np. sygnał „jest nowy seq”. Duże dane widz i tak pobiera z Bloba.
-- Publiczne wydanie wymaga przeglądu (review) przez Twitcha. Do testów na własnym kanale review nie jest potrzebne.
-- Interakcja widzów z grą (głosowania na nową linię, nazwy pociągów od subów) to osobny, większy temat: wymaga kierunku strona → mod, który mod mógłby czytać z pliku.
+Limits to know about:
+- Frontend files are uploaded to Twitch as a package. External requests (to our Blob) must be on the extension's allowed URL list.
+- Twitch suits a small push via Extension PubSub from a backend (small messages, rate limited), e.g. a "new seq available" signal. Viewers still download the large data from the Blob.
+- A public release needs a review by Twitch. Testing on your own channel does not.
+- Viewers interacting with the game (votes for a new line, train names from subs) is a separate, bigger topic: it needs a site → mod direction that the mod could read from a file.
 
-**Rekomendacja:** robić MVP jako zwykłą stronę, ale tak, żeby komponenty (mapa, dashboard) dało się potem wpiąć do rozszerzenia bez przepisywania. Wystarczy statyczny build bez SSR i jedno źródło danych (Blob).
+**Recommendation:** build the MVP as a normal website, but so that its components (map, dashboard) can later be plugged into an extension without a rewrite. A static build without SSR and a single data source (the Blob) is enough.

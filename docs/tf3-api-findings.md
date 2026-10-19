@@ -1,33 +1,33 @@
-# TF3: ustalenia z dokumentacji i plików gry
+# TF3: findings from the documentation and game files
 
-Stan na 2026-10-02. Źródła: script-doc na wiki TF3, strony wiki o modach oraz pliki gry z `<gra>`.
+Status as of 2026-10-02. Sources: the script-doc on the TF3 wiki, the wiki pages about mods, and the game files in `<game>`.
 
-**Wniosek:** `lua_mod` miał strukturę z TF2 i w TF3 by się nie załadował. Mod został już przebudowany na strukturę TF3, a status poszczególnych punktów jest w [mod-known-issues.md](mod-known-issues.md).
+**Conclusion:** `lua_mod` had the TF2 structure and would not load in TF3. The mod has since been rebuilt to the TF3 structure; the status of each point is in [mod-known-issues.md](mod-known-issues.md).
 
-Lokalizacje na tym PC:
-- staging area dla modów w trakcie tworzenia: `C:\Program Files (x86)\Steam\userdata\<SteamID>\3493540\local\staging_area\`
-- ręcznie instalowane mody: `...\3493540\local\mods\`
-- log gry: prawdopodobnie `...\3493540\local\crash_dump\stdout.txt`
+Locations on a PC:
+- staging area for mods under development: `C:\Program Files (x86)\Steam\userdata\<SteamID>\3493540\local\staging_area\`
+- manually installed mods: `...\3493540\local\mods\`
+- game log: probably `...\3493540\local\crash_dump\stdout.txt`
 
-## 1. Struktura moda
+## 1. Mod structure
 
-TF3 nie używa `mod.lua` z `function data()`. Wymagany układ ([wiki: Mod Definition](https://wiki.transportfever3.com/doku.php?id=modding:general:moddefinition)):
+TF3 doesn't use `mod.lua` with `function data()`. The required layout ([wiki: Mod Definition](https://wiki.transportfever3.com/doku.php?id=modding:general:moddefinition)):
 
 ```
 mods/
-  autor_tf3export/              nazwa folderu bez znaczenia, zalecane = modId
-    mod.json                    techniczna definicja (modId, revision, severity, skrypty)
+  author_tf3export/             folder name doesn't matter, recommended = modId
+    mod.json                    technical definition (modId, revision, severity, scripts)
     _metadata/
-      modinfo.json              nazwa, opis, autorzy, tagi (["Script Mod"])
-    content/                    zasoby moda, struktura jak w base/content
+      modinfo.json              name, description, authors, tags (["Script Mod"])
+    content/                    mod resources, same structure as base/content
       ...
-    _content.json               lista plików; w modach z gry jest obecny (do sprawdzenia, czy gra generuje go sama)
+    _content.json               file list; present in the game's own mods (to check whether the game generates it itself)
 ```
 
-- `modId` może zawierać tylko `a-z0-9_`. **Nie ma już sufiksu `_1`** (w modach z gry nadal występuje, np. `urbangames_sandbox_1`, ale wiki mówi, że nie jest wymagany).
-- Ręcznie instalowane mody: katalog `mods/` (do ustalenia, czy w instalacji gry, czy w profilu użytkownika). W grze jest `mods/release/` z modami Urban Games.
+- `modId` may only contain `a-z0-9_`. **There is no `_1` suffix anymore** (the game's own mods still have it, e.g. `urbangames_sandbox_1`, but the wiki says it's not required).
+- Manually installed mods: a `mods/` folder (to determine whether in the game install or in the user profile). The game has `mods/release/` with Urban Games mods.
 
-Przykład z gry (`mods/release/urbangames_sandbox/mod.json`):
+Example from the game (`mods/release/urbangames_sandbox/mod.json`):
 
 ```json
 {
@@ -41,13 +41,13 @@ Przykład z gry (`mods/release/urbangames_sandbox/mod.json`):
 }
 ```
 
-## 2. Game script: zupełnie inny mechanizm
+## 2. Game script: a completely different mechanism
 
-TF2 miał `res/config/game_script/*.lua` z `data()` zwracającym `{ save, load, update, guiUpdate }`.
+TF2 had `res/config/game_script/*.lua` with `data()` returning `{ save, load, update, guiUpdate }`.
 
-TF3 używa **pary plików** w `content/` (wzór: `base/content/terrain/`):
+TF3 uses a **pair of files** in `content/` (pattern: `base/content/terrain/`):
 
-`reforestation.gs.lua` to deskryptor:
+`reforestation.gs.lua` is the descriptor:
 ```lua
 function data()
 	return {
@@ -57,14 +57,14 @@ function data()
 end
 ```
 
-`reforestation.script.tl` to implementacja (Teal; zwykła Lua też powinna działać):
+`reforestation.script.tl` is the implementation (Teal; plain Lua should also work):
 ```lua
 local ret : GameScript<State> = {
 	update = function(_userParams, state : GameScriptState<State>, dt : number) : any
-		if dt == 0 then return end           -- pauza
+		if dt == 0 then return end           -- paused
 		local s = state:get()
 		-- ...
-		state:set(s)                          -- stan trwały, zapisywany w save
+		state:set(s)                          -- persistent state, stored in the save
 	end,
 	handleEvent = function(_userParams, state, src, id, name, param) : any
 		if id == "" and (name == "initNewGame" or name == "handleLegacy") then ... end
@@ -73,132 +73,132 @@ local ret : GameScript<State> = {
 return ret
 ```
 
-Najważniejsze różnice:
-- **Nie ma `save()` ani `load()`.** Stan trwały jest w `state:get()` / `state:set()` (komponent `GAME_SCRIPT`), więc nasz `state` (seq, lastDynamicTime) trzeba tam przenieść. Gra sama zapisuje go w save.
-- `update(userParams, state, dt)`: `dt` to krok symulacji w sekundach, `dt == 0` oznacza pauzę.
-- `handleEvent` dostaje m.in. `initNewGame` i `handleLegacy`. Przez `state:subscribeToEvent(name)` można subskrybować inne zdarzenia (np. `ArriveAtStop`, patrz `content.scripts.gamescript`).
-- Istnieje wariant `GameScriptWithGui` z `guiUpdate` / `guiHandleEvent` (wątek GUI, stan read-only).
-- **Do sprawdzenia:** jak gra wykrywa `*.gs.lua` z moda. W grze nikt ich nie rejestruje jawnie, więc prawdopodobnie wystarczy, że plik leży w `content/`. Inne skrypty odwołują się do nich jako `::/landmarks/landmarks.gs`.
+The most important differences:
+- **There is no `save()` or `load()`.** Persistent state lives in `state:get()` / `state:set()` (the `GAME_SCRIPT` component), so our `state` (seq, lastDynamicTime) has to move there. The game stores it in the save itself.
+- `update(userParams, state, dt)`: `dt` is the simulation step in seconds, `dt == 0` means paused.
+- `handleEvent` receives `initNewGame` and `handleLegacy`, among others. Other events can be subscribed to with `state:subscribeToEvent(name)` (e.g. `ArriveAtStop`, see `content.scripts.gamescript`).
+- There is a `GameScriptWithGui` variant with `guiUpdate` / `guiHandleEvent` (GUI thread, read-only state).
+- **To check:** how the game discovers `*.gs.lua` from a mod. Nobody registers them explicitly in the game, so it's probably enough for the file to sit in `content/`. Other scripts refer to them as `::/landmarks/landmarks.gs`.
 
 ## 3. Require
 
-- `require` zastępuje `ug_require "ścieżka"` ([wiki: syntax](https://wiki.transportfever3.com/doku.php?id=modding:general:syntax)).
-  - `ug_require "::/scripts/x.tl"`: od korzenia `content/`
-  - `ug_require "x.tl"`: względnie do bieżącego pliku
-  - `ug_require "modid::/scripts/x.tl"`: plik z konkretnego moda
-- Biblioteki moda trzymamy więc np. w `content/scripts/tf3export/*.lua` i ładujemy przez `ug_require "::/scripts/tf3export/json.lua"`.
+- `require` is replaced by `ug_require "path"` ([wiki: syntax](https://wiki.transportfever3.com/doku.php?id=modding:general:syntax)).
+  - `ug_require "::/scripts/x.tl"`: from the `content/` root
+  - `ug_require "x.tl"`: relative to the current file
+  - `ug_require "modid::/scripts/x.tl"`: a file from a specific mod
+- So we keep mod libraries e.g. in `content/scripts/tf3export/*.lua` and load them with `ug_require "::/scripts/tf3export/json.lua"`.
 
-## 4. Środowisko Lua
+## 4. Lua environment
 
-- Silnik to **Lua 5.2** (w `TransportFever3.exe` jest napis "Lua 5.2.2"), nie LuaJIT. `coroutine`, `table.concat` i `string.format` działają standardowo. W 5.2 `pcall` pozwala na yield, ale **nie można robić yield z callbacku** przekazanego do funkcji C (np. `forEachEntityWithComponent`).
-- **`io` i `os`: NIEZNANE.** Żaden skrypt gry ich nie używa. To najważniejszy test w konsoli, bo bez `io.open` cały plan z plikami JSON odpada:
+- The engine is **Lua 5.2** (`TransportFever3.exe` contains the string "Lua 5.2.2"), not LuaJIT. `coroutine`, `table.concat` and `string.format` work as standard. In 5.2 `pcall` allows yield, but **you can't yield from a callback** passed to a C function (e.g. `forEachEntityWithComponent`).
+- **`io` and `os`: UNKNOWN.** No game script uses them. This is the most important console test, because without `io.open` the whole JSON-file plan falls apart:
   ```lua
   print(io, os, io and io.open, os and os.rename, os and os.clock)
   ```
-  Plan B, jeśli `io` jest zablokowane: pisać dane przez `print`/`log.message` do logu gry z prefiksem (`[tf3export]{json...}`), a middle app śledzi plik logu (tail) i parsuje linie z tym prefiksem. W modach do TF2 ten trik działał.
-- Logowanie: `debugPrint(x)` (wypisuje też tabele) i `log.message/warning/error`.
+  Plan B if `io` is blocked: write data with `print`/`log.message` to the game log with a prefix (`[tf3export]{json...}`), and have the middle app tail the log file and parse the lines with that prefix. This trick worked in TF2 mods.
+- Logging: `debugPrint(x)` (also prints tables) and `log.message/warning/error`.
 
-## 4a. Potwierdzone w grze (2026-10-02)
+## 4a. Confirmed in the game (2026-10-02)
 
-- **Plik `.script.lua` musi definiować globalne `function data() return { update = ..., handleEvent = ... } end`.** Styl `return {...}` działa tylko w `.tl`. Biblioteki ładowane przez `ug_require "x.lua"` mogą zwracać moduł przez `return`, bo są cache'owane w `_ug_loadedModules` (`base/init.lua`).
-- **Korutyny odpadają.** Funkcje C gry, na pewno `log.message`, wywołane z korutyny rzucają `Value is not a string, but a thread`. Zadania rozłożone na wiele ticków trzeba pisać jako obiekty z kursorem.
-- **`getEntitiesWithComponent(LINE)` i `(BASE_EDGE)` zwracają `Cannot loop over this component type`.** Działa dla TOWN, INDUSTRY i TRANSPORT_VEHICLE, bo skrypty gry iterują po nich przez `forEachEntityWithComponent`. Zamienniki:
-  - linie: `api.engine.system.lineSystem.getLinesForPlayer(player)`;
-  - krawędzie: `api.engine.system.streetSystem.getNode2SegmentMap()` (węzeł → segmenty). Są też warianty `getNode2StreetEdgeMap` i `getNode2TrackEdgeMap`.
-- **`update()` game scriptu jest wołane z wielu wątków symulacji (`Sim Pool 1..N`), a każdy ma osobny stan Lua.** Zmienne modułu (`local` na poziomie pliku) nie są współdzielone: w jednym uruchomieniu było 13 niezależnych kopii. Jedyny wspólny stan to `state:get()` / `state:set()`. Każdy eksport musi więc kończyć się w jednym wywołaniu `update()`, a harmonogram trzeba trzymać w `state`.
-- Log gry: `C:\Program Files (x86)\Steam\userdata\<SteamID>\3493540\local\crash_dump\stdout.txt` (potwierdzone). `debugPrint` w `base/init.lua` używa `log.message`.
-- **Wyniki sondy środowiska** (konsola w TF3 się nie otwiera, więc sprawdzał to mod):
-  - wątki symulacji (`update`): `io=false`, `os.rename=false`, `os.remove=false`, `os.time=true`, `os.clock=true`, `app=false`;
-  - wątek GUI (`guiUpdate`, „Main Thread”): to samo, ale `app=true` i **`app.saveUserdata` działa**. Zapisuje `local\<dir>\<name>.lua` w postaci `function data()\r\nreturn { \r\n\t\tjson = "...",\r\n\t}\r\nend`, czyli stringi jako escapowane literały Lua, z zachowanym UTF-8.
-  - Wniosek: eksport robi `guiUpdate` i zapisuje przez `app.saveUserdata`. Mod używa tego od formatu v4.
-- **Rewizje krawędzi (`getRevision`) zmieniają się ciągle**, nawet gdy sieć się nie zmienia. Sygnatura oparta na nich nie wykrywa zmian, więc mod porównuje zamiast tego treść zakodowanej sieci.
-- **Pomiar sieci:** 8698 krawędzi daje ok. 1 MB JSON. Skan trwa ok. 20 ms, kodowanie 150–200 ms, więc całości nie można robić w jednym ticku. Mod rozkłada to na klatki GUI po 2 ms.
-- **(Historyczne) Zapis plików przez `io` jest niedostępny.** Pierwsze uruchomienie zgłosiło `writer mode 'log'`, czyli brakuje `io.open` albo `os.rename`. `os.clock` działa, bo czasy w logu są niezerowe. Do potwierdzenia w konsoli, czego dokładnie brakuje: `print(io, io and io.open, os.rename, os.remove, os.time)`. Na razie dane idą przez log, w liniach `[tf3x] ...` po ≤8000 bajtów, cięte bez przecinania znaków UTF-8.
-- Wyniki pierwszego eksportu dynamicznego (mapa z ok. 75 miastami, ok. 130 zakładami przemysłowymi i ok. 400 pojazdami): zbieranie 5 ms, kodowanie 4 ms, wynik 102 KB w 13 kawałkach logu. Działają: nazwy encji, `bbox` (`min`/`max`), `getCalendarDate`, `getPlayersBalance`, nazwy enumów (`RAIL`, `EN_ROUTE`…), nazwy ładunków oraz `cargoNeeds`.
+- **A `.script.lua` file must define a global `function data() return { update = ..., handleEvent = ... } end`.** The `return {...}` style only works in `.tl`. Libraries loaded with `ug_require "x.lua"` may return a module with `return`, because they are cached in `_ug_loadedModules` (`base/init.lua`).
+- **Coroutines are out.** The game's C functions, definitely `log.message`, called from a coroutine throw `Value is not a string, but a thread`. Tasks spread over many ticks have to be written as objects with a cursor.
+- **`getEntitiesWithComponent(LINE)` and `(BASE_EDGE)` return `Cannot loop over this component type`.** It works for TOWN, INDUSTRY and TRANSPORT_VEHICLE, because the game scripts iterate over them with `forEachEntityWithComponent`. Replacements:
+  - lines: `api.engine.system.lineSystem.getLinesForPlayer(player)`;
+  - edges: `api.engine.system.streetSystem.getNode2SegmentMap()` (node → segments). There are also `getNode2StreetEdgeMap` and `getNode2TrackEdgeMap`.
+- **The game script's `update()` is called from many simulation threads (`Sim Pool 1..N`), and each has its own Lua state.** Module variables (file-level `local`) are not shared: one run had 13 independent copies. The only shared state is `state:get()` / `state:set()`. So every export has to finish within a single `update()` call, and the schedule has to be kept in `state`.
+- Game log: `C:\Program Files (x86)\Steam\userdata\<SteamID>\3493540\local\crash_dump\stdout.txt` (confirmed). `debugPrint` in `base/init.lua` uses `log.message`.
+- **Environment probe results** (the console doesn't open in TF3, so the mod checked this):
+  - simulation threads (`update`): `io=false`, `os.rename=false`, `os.remove=false`, `os.time=true`, `os.clock=true`, `app=false`;
+  - GUI thread (`guiUpdate`, "Main Thread"): the same, but `app=true` and **`app.saveUserdata` works**. It writes `local\<dir>\<name>.lua` as `function data()\r\nreturn { \r\n\t\tjson = "...",\r\n\t}\r\nend`, i.e. strings as escaped Lua literals, with UTF-8 preserved.
+  - Conclusion: the export runs in `guiUpdate` and writes with `app.saveUserdata`. The mod has used this since format v4.
+- **Edge revisions (`getRevision`) change all the time**, even when the network doesn't. A signature based on them doesn't detect changes, so the mod compares the content of the encoded network instead.
+- **Network measurement:** 8698 edges give about 1 MB of JSON. The scan takes about 20 ms and encoding 150–200 ms, so the whole thing can't be done in one tick. The mod spreads it over GUI frames, 2 ms each.
+- **(Historical) Writing files with `io` is unavailable.** The first run reported `writer mode 'log'`, i.e. `io.open` or `os.rename` is missing. `os.clock` works, because the times in the log are non-zero. To confirm in the console what exactly is missing: `print(io, io and io.open, os.rename, os.remove, os.time)`. For now the data goes through the log, in `[tf3x] ...` lines of ≤8000 bytes, cut without splitting UTF-8 characters.
+- Results of the first dynamic export (a map with about 75 towns, about 130 industries and about 400 vehicles): 5 ms collecting, 4 ms encoding, 102 KB result in 13 log chunks. Working: entity names, `bbox` (`min`/`max`), `getCalendarDate`, `getPlayersBalance`, enum names (`RAIL`, `EN_ROUTE`…), cargo names and `cargoNeeds`.
 
-## 5. API silnika: co pasuje do naszego kodu
+## 5. Engine API: what fits our code
 
-Ze strony [api.engine](https://wiki.transportfever3.com/script-doc/api/engine.html):
+From the [api.engine](https://wiki.transportfever3.com/script-doc/api/engine.html) page:
 
-| Używamy w kodzie | Stan w TF3 |
+| Used in our code | Status in TF3 |
 |---|---|
-| `api.engine.getEntitiesWithComponent(type, filters)` | ✅ istnieje, zwraca `{Entity}`. Jest też `forEachEntityWithComponent(fn, type)`. Filtry: `requireOwnedByPlayer`, `filterFn`. |
+| `api.engine.getEntitiesWithComponent(type, filters)` | ✅ exists, returns `{Entity}`. There is also `forEachEntityWithComponent(fn, type)`. Filters: `requireOwnedByPlayer`, `filterFn`. |
 | `api.engine.getComponent(entity, type)` | ✅ |
-| `api.engine.ComponentType.X` | ✅ w dokumentacji, ale **skrypty gry używają `api.type.ComponentType.X`**. Bezpieczniej przejść na `api.type`. |
-| `api.engine.util.getWorld()`, `getPlayer()` | ✅. Jest też `getEntityName(e)`, które może zastąpić komponent NAME. |
-| `GAME_TIME.gameTime` | ✅ (int). Są też `tickCount` i `dates`. |
-| `BASE_EDGE.position0/1, tangent0/1, node0/1` | ✅ **są w TF3** (w TF2 ich nie było). Do tego `distance`, `roadType`, `roadTemplate`. |
-| `BASE_EDGE.type` | ⚠️ typ `BaseEdgeType`, prawdopodobnie zwykła krawędź / most / tunel, a nie droga / tor. Komponent `BASE_EDGE_TRACK` **nie istnieje**, jest tylko `BASE_EDGE_STREET`. Drogi rozpoznamy po obecności `BASE_EDGE_STREET`, tory po braku albo po `roadType`. Wymaga sprawdzenia. |
-| `BOUNDING_VOLUME.bbox` | ✅ typ `Box3f`, nazwy pól (`min`/`max`?) do sprawdzenia przez `debugPrint`. |
-| `TOWN`: noise, pollution, developmentActive, initialLandUseCapacities, cargoNeeds | ✅ wszystkie istnieją. **`initialLandUseCapacities` to wartości startowe i nie rosną z miastem** (Szczecin: 457 wobec ~1800 w oknie miasta). Aktualne pojemności dzielnic daje `townBuildingSystem.getTown2personCapacitiesMap()` (miasto → {mieszkalne, usługowe, przemysłowe}); gra ma też `town_util.getTownSize`, ale jego źródło jest spakowane |
+| `api.engine.ComponentType.X` | ✅ in the documentation, but **the game scripts use `api.type.ComponentType.X`**. Safer to switch to `api.type`. |
+| `api.engine.util.getWorld()`, `getPlayer()` | ✅. There is also `getEntityName(e)`, which can replace the NAME component. |
+| `GAME_TIME.gameTime` | ✅ (int). There are also `tickCount` and `dates`. |
+| `BASE_EDGE.position0/1, tangent0/1, node0/1` | ✅ **present in TF3** (TF2 didn't have them). Plus `distance`, `roadType`, `roadTemplate`. |
+| `BASE_EDGE.type` | ⚠️ type `BaseEdgeType`, probably normal edge / bridge / tunnel, not street / track. A `BASE_EDGE_TRACK` component **doesn't exist**, there is only `BASE_EDGE_STREET`. We'll recognize streets by the presence of `BASE_EDGE_STREET`, tracks by its absence or by `roadType`. Needs checking. |
+| `BOUNDING_VOLUME.bbox` | ✅ type `Box3f`, field names (`min`/`max`?) to check with `debugPrint`. |
+| `TOWN`: noise, pollution, developmentActive, initialLandUseCapacities, cargoNeeds | ✅ all exist. **`initialLandUseCapacities` are the starting values and don't grow with the town** (Szczecin: 457 vs ~1800 in the town window). Current district capacities come from `townBuildingSystem.getTown2personCapacitiesMap()` (town → {residential, commercial, industrial}); the game also has `town_util.getTownSize`, but its source is packed |
 | `INDUSTRY`: level, maxLevel, upgradeProgress, manualDevelopment, construction, stockList | ✅ |
 | `STOCK_LIST`: rules (input, output, capacity, booster), stocks (cargoType, capacity), modifiers.productivity | ✅ |
-| `TRANSPORT_VEHICLE`: line, stopIndex, userStopped, carrier | ✅. Do tego state, loadState, closestTown, sectionTimes… |
+| `TRANSPORT_VEHICLE`: line, stopIndex, userStopped, carrier | ✅. Plus state, loadState, closestTown, sectionTimes… |
 | `LINE.stops[].stationGroup/station/terminal` | ✅ |
 | `COLOR.color`, `PLAYER_OWNED.player`, `NAME.name` | ✅ |
 
-### Przydatne rzeczy, których jeszcze nie używamy
+### Useful things we don't use yet
 
-- **Czas:** `GAME_SPEED.millisPerDay` (komponent na świecie) i `api.util.getDefaultDayDuration()`. Długość dnia **zależy od ustawień prędkości kalendarza**, więc `cfg.gameDay` nie powinno być stałą, tylko wartością odczytywaną z gry.
-- **Wykrywanie zmian:** `api.engine.getRevision(entity)` zwraca numer rewizji encji. To lepsze niż liczenie krawędzi (patrz known issues #7).
-- **Data w grze:** `api.engine.util.getCalendarDate(gameTime)` i `getYear()`, przydatne do wyświetlania na stronie.
-- **Statystyki gotowe w grze** (`api.engine.util.*`):
+- **Time:** `GAME_SPEED.millisPerDay` (a component on the world) and `api.util.getDefaultDayDuration()`. Day length **depends on the calendar speed settings**, so `cfg.gameDay` shouldn't be a constant but a value read from the game.
+- **Change detection:** `api.engine.getRevision(entity)` returns the entity's revision number. Better than counting edges (see known issues #7).
+- **In-game date:** `api.engine.util.getCalendarDate(gameTime)` and `getYear()`, useful for display on the website.
+- **Ready-made game statistics** (`api.engine.util.*`):
   - `finance.getPlayersBalance(player)`, `finance.calculateEarnings(player)`
   - `stock.getCargoShippedPerYear(stockList)`, `getCargoDeliveredPerYear(...)`
-  - `line.getLineCapacityUsages(line)`, `line.getLineProblems()`. Uwaga: mimo typu `{CargoTypeId : ...}` w tealdef wynik to tablica Lua od 1, więc `CargoTypeId = indeks - 1` (tak liczy `gui/main/cargo_util.tl`). Bez tego pasażerowie (id 0) wychodzą jako zboże (id 1).
+  - `line.getLineCapacityUsages(line)`, `line.getLineProblems()`. Note: despite the `{CargoTypeId : ...}` type in tealdef, the result is a 1-based Lua array, so `CargoTypeId = index - 1` (that's how `gui/main/cargo_util.tl` computes it). Without that, passengers (id 0) come out as grain (id 1).
   - `industry.getIndustryProductivityInfo(e)`
   - `headquarters.getTransportedData()`, `getCompaniesValue()`
   - `logbook.getLogValueMostRecent(e, name)`
-  - `logbook.getChart(e, names)` (potwierdzone w logu): `series[i]` to **para list** `{ czasy gry (ms), wartości }`, a nie lista punktów `{x, y}`, jak sugeruje typ `{{{number}}}`. Bez `ChartConfig` każda seria ma 50 punktów od początku gry do teraz, wartości uśrednione w przedziałach. `xRange`/`yRange` to `{min, max}`.
-- **Systemy** (`api.engine.system.*`): `getLineVehicles(line)`, `getLinesForPlayer(player)`, `getStations(town)`, `getNodeTrackSegments(node)` / `getNodeStreetSegments(node)` (to rozstrzyga, czy krawędź jest torem, czy drogą).
-- **Nazwy ładunków:** `api.res.cargoTypeRep.get(id).name` (używane w `landmarks_notification.script.tl`).
+  - `logbook.getChart(e, names)` (confirmed in the log): `series[i]` is a **pair of lists** `{ game times (ms), values }`, not a list of `{x, y}` points as the `{{{number}}}` type suggests. Without a `ChartConfig` each series has 50 points from the start of the game until now, values averaged per bucket. `xRange`/`yRange` are `{min, max}`.
+- **Systems** (`api.engine.system.*`): `getLineVehicles(line)`, `getLinesForPlayer(player)`, `getStations(town)`, `getNodeTrackSegments(node)` / `getNodeStreetSegments(node)` (this settles whether an edge is a track or a street).
+- **Cargo names:** `api.res.cargoTypeRep.get(id).name` (used in `landmarks_notification.script.tl`).
 
-### Teren (heightmapa)
+### Terrain (heightmap)
 
-Z `api/tealdef/api/engine.d.tl` (`UtilTerrain`), `type.d.tl` (`GameMap`) i `app.d.tl`:
+From `api/tealdef/api/engine.d.tl` (`UtilTerrain`), `type.d.tl` (`GameMap`) and `app.d.tl`:
 
-- `api.engine.terrain.getBaseHeightAt(Vec2f)`: wysokość z siatki 4 m, bez wyrównań (wkopów i nasypów pod tory i drogi). `getHeightAt` je uwzględnia.
-- `getBoundingBox()` zwraca zakres świata, a `getTerrainEntityRevisions()` rewizje kafli 256×256 m, z których da się wykryć terraformowanie.
-- `makeMapFromGame(withHeightmap, ...)` zwraca `GameMap` z płaską tablicą `heightmap` i polami `numTilesX/Y`, `resolution`, `offsetZ`, `waterLevel`. Używa go edytor map (`gui/map_editor/map_editor.tl`).
-- `app.writeHeightmap(map, name, writeStl, sixteenBits, biomes)` to natywny zapis obrazka heightmapy, ten sam co eksport w edytorze map. Plik trafia do `userdata\heightmaps`, a listę zwraca `app.getAllHeightmaps()`.
-- `api.gui.util.takeScreenshot(scale)` robi zrzut z bieżącej kamery w perspektywie, więc pod mapę 2D się nie nadaje.
+- `api.engine.terrain.getBaseHeightAt(Vec2f)`: height from the 4 m grid, without leveling (cuts and embankments for tracks and streets). `getHeightAt` includes them.
+- `getBoundingBox()` returns the world extent, and `getTerrainEntityRevisions()` the revisions of the 256×256 m tiles, which can be used to detect terraforming.
+- `makeMapFromGame(withHeightmap, ...)` returns a `GameMap` with a flat `heightmap` array and `numTilesX/Y`, `resolution`, `offsetZ`, `waterLevel` fields. The map editor uses it (`gui/map_editor/map_editor.tl`).
+- `app.writeHeightmap(map, name, writeStl, sixteenBits, biomes)` is the native heightmap image writer, the same as the map editor export. The file goes to `userdata\heightmaps`, and `app.getAllHeightmaps()` returns the list.
+- `api.gui.util.takeScreenshot(scale)` takes a perspective screenshot from the current camera, so it's no good for a 2D map.
 
-Eksport używa metody A (`getBaseHeightAt` co 32 m, porcjami). `terrain.bench` (`cfg.terrainBench`) raz na uruchomienie gry mierzy A, B (`makeMapFromGame` i odczyt tablicy z Lua) oraz C (`writeHeightmap`). Wyniki trafiają do logu jako `[tf3export] terrain bench ...`.
+The export uses method A (`getBaseHeightAt` every 32 m, in chunks). `terrain.bench` (`cfg.terrainBench`) measures A, B (`makeMapFromGame` and reading the array from Lua) and C (`writeHeightmap`) once per game start. The results go to the log as `[tf3export] terrain bench ...`.
 
-Pomiar w grze z 2026-10-02. Mapa miała 80×160 kafli, czyli 20,5×41 km, `waterLevel` 0, a `TERRAIN` na encji świata działa:
+Measured in the game on 2026-10-02. The map had 80×160 tiles, i.e. 20.5×41 km, `waterLevel` 0, and `TERRAIN` on the world entity works:
 
-| Metoda | Wynik | Wniosek |
+| Method | Result | Conclusion |
 |---|---|---|
-| A `getBaseHeightAt` | 1,8 µs/wywołanie (`getHeightAt` 2,25 µs). Przy kroku 32 m to 821 tys. próbek, ok. 1,5 s CPU rozłożone na klatki | **wybrana**, bo nie zacina gry |
-| B `makeMapFromGame` | samo wywołanie trwa 55 ms, ale `.heightmap` zamienia się na tabelę Lua z 52 mln liczb w 476 ms w jednej klatce i zajmuje setki MB | odpada |
-| C `writeHeightmap` (16 bit) | 5,3 s w jednej klatce, PNG ma 5121×10241 px i 38 MB | odpada |
+| A `getBaseHeightAt` | 1.8 µs/call (`getHeightAt` 2.25 µs). With a 32 m step that's 821k samples, about 1.5 s of CPU spread over frames | **chosen**, because it doesn't stutter the game |
+| B `makeMapFromGame` | the call itself takes 55 ms, but `.heightmap` turns into a Lua table of 52M numbers in 476 ms in one frame and takes hundreds of MB | out |
+| C `writeHeightmap` (16 bit) | 5.3 s in one frame, the PNG is 5121×10241 px and 38 MB | out |
 
-- Wartości z `heightmap` to metry, identyczne z `getBaseHeightAt`. Tablica ma układ `(numTiles*64+1)` × `(numTilesY*64+1)` (siatka 4 m), wiersz po wierszu od min y.
-- `getTerrainEntityRevisions()` działa w wątku GUI. Rewizje są za duże na `string.format("%d")`, więc podpis składamy przez `tostring`.
+- Values from `heightmap` are meters, identical to `getBaseHeightAt`. The array has a `(numTiles*64+1)` × `(numTilesY*64+1)` layout (4 m grid), row by row from min y.
+- `getTerrainEntityRevisions()` works on the GUI thread. The revisions are too large for `string.format("%d")`, so the signature is built with `tostring`.
 
-## 6. Lista kontrolna do konsoli (zastępuje tę z `lua_mod/README.md`)
+## 6. Console checklist (replaces the one from `lua_mod/README.md`)
 
 ```lua
-print(io, os, io and io.open, os and os.rename, os and os.clock)                  -- 1. czy mamy I/O
+print(io, os, io and io.open, os and os.rename, os and os.clock)                  -- 1. do we have I/O
 local f = io.open("C:/TF3Export/test.txt", "w"); print(f); if f then f:write("x"); f:close() end
-print(#api.engine.getEntitiesWithComponent(api.type.ComponentType.TOWN, {}))        -- 2. lista encji
+print(#api.engine.getEntitiesWithComponent(api.type.ComponentType.TOWN, {}))        -- 2. entity list
 local t = api.engine.getEntitiesWithComponent(api.type.ComponentType.TOWN, {})[1]
 debugPrint(api.engine.getComponent(t, api.type.ComponentType.BOUNDING_VOLUME))       -- 3. bbox
 debugPrint(api.engine.getComponent(api.engine.util.getWorld(), api.type.ComponentType.GAME_SPEED))  -- 4. millisPerDay
 debugPrint(api.engine.getComponent(api.engine.util.getWorld(), api.type.ComponentType.GAME_TIME))
 local e = api.engine.getEntitiesWithComponent(api.type.ComponentType.BASE_EDGE, {})[1]
 debugPrint(api.engine.getComponent(e, api.type.ComponentType.BASE_EDGE))             -- 5. type / roadType
-print(api.engine.getRevision(e))                                                    -- 6. rewizje
+print(api.engine.getRevision(e))                                                    -- 6. revisions
 ```
 
-Pozostaje też sprawdzić, czy `#lista` i indeksowanie od 1 działają na wynikach (pkt 4 starej listy). Dokumentacja typuje je jako zwykłe tablice `{Entity}` i osobne `*_native: Vector<...>`, więc **prawdopodobnie** dostajemy zwykłe tabele Lua.
+It also remains to check whether `#list` and 1-based indexing work on the results (point 4 of the old list). The documentation types them as plain `{Entity}` arrays plus separate `*_native: Vector<...>`, so we **probably** get plain Lua tables.
 
-## Build 40420 (2026-10-08): app.*Userdata tylko w wybranych folderach
+## Build 40420 (2026-10-08): app.*Userdata only in selected folders
 
-- `app.saveUserdata` / `loadUserdata` / `getAllUserdata` przyjmują już tylko katalogi `towns_industries`, `heightmaps`, `mod_presets`;
-  inne kończą się błędem „The directory you trying to access is not available or invalid” (tekst z `TransportFever3.exe`, `app_script_util.cpp`).
-- Nazwy plików gra też sprawdza („Forbidden file name … another valid version could be …”); zastrzeżone są wzorce zapisów gry
+- `app.saveUserdata` / `loadUserdata` / `getAllUserdata` now only accept the `towns_industries`, `heightmaps` and `mod_presets` folders;
+  others fail with "The directory you trying to access is not available or invalid" (text from `TransportFever3.exe`, `app_script_util.cpp`).
+- The game also checks file names ("Forbidden file name … another valid version could be …"); the game's save patterns are reserved
   (`autosave_…`, `crash_…`, `exitsave_…`).
-- Mod i Tf3Bridge piszą więc wszystko do `local\towns_industries\` z prefiksem `tf3export_`
-  (`util.USERDATA_DIR` / `util.FILE_PREFIX`, `SteamLocator.UserdataDir` / `FilePrefix`). `mod_presets` odpada,
-  bo jego zawartość widać jako presety modów w menu; `towns_industries` widać tylko w imporcie edytora map.
+- So the mod and Tf3Bridge write everything to `local\towns_industries\` with a `tf3export_` prefix
+  (`util.USERDATA_DIR` / `util.FILE_PREFIX`, `SteamLocator.UserdataDir` / `FilePrefix`). `mod_presets` is out,
+  because its contents show up as mod presets in the menu; `towns_industries` only shows up in the map editor import.

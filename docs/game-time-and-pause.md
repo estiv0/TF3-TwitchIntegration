@@ -1,68 +1,68 @@
-# Czas gry: pauza, cofnięcie daty i eksport na pauzie
+# Game time: pause, date rollback and exporting while paused
 
-**Status:** analiza i plan (2026-10-05), bez zmian w kodzie. Do decyzji: pytania na końcu.
+**Status:** analysis and plan (2026-10-05), no code changes. To decide: the questions at the end.
 
-## Jak to działa dziś
+## How it works today
 
-Mod używa dwóch zegarów:
-- **czas gry** (`gameTime`, `util.gameTime()`): eksport `dynamic` (co `dynamicEveryDays` dni gry), czas trwania efektów z nagród (`untilTime`, w miesiącach gry), statystyki miesięczne i roczne;
-- **czas rzeczywisty** (`os.time`, `wallTime()` w `tf3export.script.lua`): odczyt kolejki komend (co 1 s), limity komend (`MAX_AGE_SEC` 300 s, sprawdzanie skutku 15–45 s), `minDynamicWallSec`, okresowe porównanie sieci, teren, ustawienia.
+The mod uses two clocks:
+- **game time** (`gameTime`, `util.gameTime()`): the `dynamic` export (every `dynamicEveryDays` game days), the duration of reward effects (`untilTime`, in game months), monthly and yearly statistics;
+- **real time** (`os.time`, `wallTime()` in `tf3export.script.lua`): reading the command queue (every 1 s), command limits (`MAX_AGE_SEC` 300 s, checking the outcome 15–45 s), `minDynamicWallSec`, the periodic network comparison, terrain, settings.
 
-Tf3Bridge nie używa czasu gry do niczego poza wyświetlaniem dat. Nagrody wyłącza, gdy przez 2 min nie przyjdzie nowy eksport `dynamic` (`WhyInactive` w `RewardService.cs`).
+Tf3Bridge uses game time only to display dates. It disables rewards when no new `dynamic` export arrives for 2 min (`WhyInactive` in `RewardService.cs`).
 
-## Pauza (data stoi)
+## Pause (the date stands still)
 
-Pauzę wykrywa `guiUpdate`: `gameTime` taki sam jak w poprzedniej klatce.
+`guiUpdate` detects a pause: `gameTime` is the same as in the previous frame.
 
-- **Nagrody działają dalej.** Komendy są czytane według czasu rzeczywistego. Boost, zatrzymanie linii czy budowa wykonują się. Efekt widać dopiero po wznowieniu, bo miasto nie rośnie, a zakład nie produkuje.
-- **Efekty nie mijają.** `untilTime` jest w czasie gry, więc efekt na 3 miesiące trwa 3 miesiące gry niezależnie od pauzy. Tak to zaprojektowano (`effects.lua`). Data „do kiedy” na czacie się zgadza.
-- **Strona się nie odświeża.** Na pauzie nie ma eksportu `dynamic` ani okresowego porównania sieci. Budowa nadal wywołuje eksport sieci przez `onPostBuildProposal`.
-- **Po 2 min pauzy Bridge wyłącza nagrody na Twitchu**, bo nie dostaje danych.
-- Komendy nie wygasają przez pauzę, bo ich limity liczą się w czasie rzeczywistym. Warunek: gra przyjmuje komendy na pauzie (budowanie na pauzie działa).
+- **Rewards keep working.** Commands are read on real time. A boost, a line stop or a build is carried out. The result only shows after resuming, because the town doesn't grow and the industry doesn't produce.
+- **Effects don't run out.** `untilTime` is in game time, so a 3-month effect lasts 3 game months regardless of the pause. That's by design (`effects.lua`). The "until" date in chat is correct.
+- **The website doesn't refresh.** There is no `dynamic` export and no periodic network comparison while paused. Building still triggers a network export through `onPostBuildProposal`.
+- **After 2 min of pause the bridge disables the rewards on Twitch**, because it receives no data.
+- Commands don't expire because of the pause, since their limits count in real time. Condition: the game accepts commands while paused (building while paused works).
 
-## Cofnięcie daty
+## Date rollback
 
-Mod wykrywa `now < lastGameTime` i zaczyna nową sesję (`newSession`): pełny eksport z nowym `session`, efekty wczytane od nowa ze stanu save'a.
+The mod detects `now < lastGameTime` and starts a new session (`newSession`): a full export with a new `session`, effects reloaded from the save state.
 
-**Wczytanie starszego save'a** jest spójne:
-- efekty, miasta i zakłady kupione po zapisie znikają razem z save'em, więc lista efektów zgadza się z grą;
-- właściciele są w nazwach obiektów („Nazwa | widz”), więc zawsze pasują do wczytanego save'a, bez ryzyka pomylenia encji;
-- minus: widz traci punkty za nagrodę, której już nie ma, a Bridge ich nie zwraca.
+**Loading an older save** is consistent:
+- effects, towns and industries bought after the save disappear together with the save, so the list of effects matches the game;
+- owners are in the object names ("Name | viewer"), so they always match the loaded save, with no risk of mixing up entities;
+- downside: the viewer loses points for a reward that no longer exists, and the bridge doesn't refund them.
 
-**Cofnięcie daty w trwającej grze** (jeśli się da, np. modem albo konsolą):
-- `untilTime` to bezwzględny czas gry, więc efekty **wydłużają się o czas cofnięcia**: cofnięcie o rok zmienia efekt na 3 miesiące w około 15 miesięcy, a data podana na czacie przestaje się zgadzać;
-- pasek postępu efektu na stronie spada do 0% (`format.js` przycina wartość do 0..1);
-- statystyki „poprzedni rok” przeliczają się same.
+**Rolling the date back in a running game** (if possible at all, e.g. with a mod or the console):
+- `untilTime` is absolute game time, so effects **get longer by the rollback**: rolling back a year turns a 3-month effect into about 15 months, and the date given in chat no longer matches;
+- the effect's progress bar on the website drops to 0% (`format.js` clamps the value to 0..1);
+- "previous year" statistics recompute on their own.
 
-**Drobne ryzyko:** w `guiUpdate` `commands.poll` (razem z `effects.update`) wykonuje się **przed** sprawdzeniem nowej sesji. Jeśli stan Lua wątku GUI przetrwa wczytanie innego save'a (niesprawdzone), przez jeden odczyt efekty z poprzedniej gry działają na nowej mapie. Na przykład `maintain` boosta zakładu ustawi produktywność według starej bazy. Poprawka: sprawdzanie `newSession` przed `commands.poll`.
+**Small risk:** in `guiUpdate`, `commands.poll` (together with `effects.update`) runs **before** the new-session check. If the Lua state of the GUI thread survives loading another save (unchecked), for one read the effects of the previous game act on the new map. For example, `maintain` of an industry boost would set productivity from the old base. Fix: check `newSession` before `commands.poll`.
 
-## Opcja: efekty w czasie rzeczywistym (odłożone)
+## Option: real-time effects (postponed)
 
-Rozważaliśmy liczenie efektów w minutach zamiast miesięcy gry. Warianty zegara:
+We considered counting effects in minutes instead of game months. Clock variants:
 
-1. **Zegar ścienny** (`os.time`): efekt kończy się N minut po zakupie, nawet przy zamkniętej grze. Najprostsze, ale po wczytaniu save'a następnego dnia wszystkie efekty od razu się kończą.
-2. **Czas działania gry:** licznik `playSec` rośnie tylko wtedy, gdy gra jest uruchomiona, niezależnie od pauzy i prędkości. Między streamami zegar stoi.
-3. **Czas gry bez pauzy:** jak 2, ale pauza też zatrzymuje licznik. Prędkość gry nie ma wpływu. To wariant polecany.
+1. **Wall clock** (`os.time`): the effect ends N minutes after the purchase, even with the game closed. The simplest, but after loading the save the next day all effects end at once.
+2. **Game running time:** a `playSec` counter grows only while the game is running, regardless of pause and speed. The clock stands still between streams.
+3. **Game time without pauses:** like 2, but a pause also stops the counter. Game speed has no effect. This is the recommended variant.
 
-Wdrożenie (2 i 3): `playSec` w `guiUpdate` (przyrosty `os.time`, z pominięciem dużych skoków, np. po uśpieniu komputera) zapisywany do stanu save'a tym samym zdarzeniem co efekty. W efekcie `untilSec` zamiast `untilTime`, w eksporcie `remainingSec`. W Bridge'u `Months` zmienia się na `Minutes` (okno nagród, `{minutes}`, wiadomość na czacie). Efekty ze starych save'ów trzeba raz przeliczyć z miesięcy na minuty. Przy okazji cofnięcie daty przestaje mieć wpływ na efekty.
+Implementation (2 and 3): `playSec` in `guiUpdate` (increments of `os.time`, skipping big jumps, e.g. after the computer sleeps) saved to the save state with the same event as the effects. In the effect, `untilSec` instead of `untilTime`; in the export, `remainingSec`. In the bridge `Months` becomes `Minutes` (the rewards window, `{minutes}`, the chat message). Effects from old saves have to be converted once from months to minutes. As a bonus, a date rollback stops affecting effects.
 
-**Decyzja:** na razie nie. Ważniejsze jest odświeżanie strony na pauzie (niżej).
+**Decision:** not for now. Refreshing the website while paused (below) matters more.
 
-## Plan: eksport `dynamic` na pauzie
+## Plan: exporting `dynamic` while paused
 
-Cel: strona odświeża się także wtedy, gdy czas gry stoi, bo gracz dalej buduje i kupuje pojazdy, a widzowie wykupują nagrody.
+Goal: the website refreshes even when game time stands still, because the player keeps building and buying vehicles, and viewers keep redeeming rewards.
 
-1. **Nowe ustawienie `pausedDynamicWallSec`.** Na pauzie eksport co N sekund czasu rzeczywistego. Domyślnie 30, zakres 0–600, 0 = jak dziś (bez eksportu). `minDynamicWallSec` nadal obowiązuje.
-   - mod: `cfg` i `SETTINGS` w `tf3export.script.lua`, nowa funkcja `dynamicDue(now, wall, paused)` zamiast obecnego warunku w `guiUpdate`;
-   - Bridge: pole `PausedDynamicWallSec` w `ModSettings` (zakres, `Parse`, `ToLua`), wiersz „Na pauzie eksport co: N s (0 = bez eksportu)” w `ModSettingsDialog`, testy w `ModSettingsTests`.
-2. **Pewniejsze wykrywanie pauzy:** pauza to `gameTime` bez zmian od co najmniej 2 s (`S.gameTimeWall`, `PAUSE_AFTER_SEC = 2`), a nie jedna klatka bez zmiany. Przy klatkach GUI częstszych niż kroki symulacji obecny warunek może błędnie zgłaszać pauzę w trakcie gry. Z tej flagi korzysta też okresowe porównanie sieci.
-3. **Skutek uboczny:** dane płyną na pauzie, więc **nagrody na Twitchu zostają włączone**. Nagroda kupiona na pauzie wykona się i pojawi na stronie, a czas efektu ruszy po wznowieniu.
-4. **Dokumentacja do poprawy:** `lua_mod/README.md` („Na pauzie mod nic nie eksportuje”), tabela ustawień w `middle_app/README.md`, punkt 5 w `twitch-channel-points.md`.
+1. **A new setting `pausedDynamicWallSec`.** While paused, export every N seconds of real time. Default 30, range 0–600, 0 = as today (no export). `minDynamicWallSec` still applies.
+   - mod: `cfg` and `SETTINGS` in `tf3export.script.lua`, a new function `dynamicDue(now, wall, paused)` instead of the current condition in `guiUpdate`;
+   - bridge: a `PausedDynamicWallSec` field in `ModSettings` (range, `Parse`, `ToLua`), a row "While paused, export every: N s (0 = no export)" in `ModSettingsDialog`, tests in `ModSettingsTests`.
+2. **More reliable pause detection:** a pause is `gameTime` unchanged for at least 2 s (`S.gameTimeWall`, `PAUSE_AFTER_SEC = 2`), not one frame without a change. With GUI frames more frequent than simulation steps the current condition can wrongly report a pause during play. The periodic network comparison uses this flag too.
+3. **Side effect:** data flows while paused, so **the rewards on Twitch stay enabled**. A reward bought while paused is carried out and shows on the website, and the effect timer starts after resuming.
+4. **Documentation to fix:** `lua_mod/README.md` ("While paused the mod exports nothing"), the settings table in `middle_app/README.md`, point 5 in `twitch-channel-points.md`.
 
-Koszt: każdy eksport `dynamic` jest wysyłany do Azure. W trakcie gry to około co 10 s, więc na pauzie przy 30 s wychodzi rzadziej niż zwykle.
+Cost: every `dynamic` export is uploaded to Azure. During play that's about every 10 s, so 30 s while paused is less often than usual.
 
-### Pytania otwarte
+### Open questions
 
-- **Nagrody na pauzie:** zostawić włączone (punkt 3)? Alternatywa: flaga `paused` w eksporcie, a Bridge wyłącza nagrody po 2 min pauzy mimo napływu danych.
-- **Szybsze odświeżenie po zdarzeniu:** eksport zaraz po wykonaniu nagrody lub budowie (po `minDynamicWallSec`), żeby nowe miasto czy zakład było na stronie po około 10 s zamiast do 30 s. Pokrywa się z punktem 2 w [reactive-dynamic-export.md](reactive-dynamic-export.md).
-- **Pomijanie identycznych eksportów:** na pauzie, bez zmian, treść jest taka sama (poza `seq`). Można jej nie zapisywać i oszczędzić wysyłki, ale Bridge potrzebuje wtedy innego sygnału, że gra działa (np. mały plik heartbeat). Inaczej po 2 min wyłączy nagrody.
+- **Rewards while paused:** leave them enabled (point 3)? Alternative: a `paused` flag in the export, and the bridge disables rewards after 2 min of pause despite the data flow.
+- **Faster refresh after an event:** export right after a reward is carried out or something is built (after `minDynamicWallSec`), so a new town or industry is on the website after about 10 s instead of up to 30 s. Overlaps with point 2 in [reactive-dynamic-export.md](reactive-dynamic-export.md).
+- **Skipping identical exports:** while paused, without changes, the content is the same (apart from `seq`). We could skip writing it and save the upload, but then the bridge needs another signal that the game is running (e.g. a small heartbeat file). Otherwise it disables the rewards after 2 min.
