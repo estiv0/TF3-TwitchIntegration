@@ -1,13 +1,20 @@
 // Konfiguracja strony: skąd brać dane i jak często sprawdzać zmiany.
 //
+// Ustawienia konkretnego streamera (nazwa, logo, kanał, adres danych) są w site.json obok
+// index.html - pliku nie ma w repozytorium, wzór: site.example.json. Bez site.json strona działa
+// z domyślną nazwą, bez logo i bez streamu.
+//
 // Adres danych (pierwsze pasujące):
 //   1. parametr w adresie strony, do testów:
 //        http://localhost:5080/?data=https://<konto>.blob.core.windows.net/live/latest/
 //   2. lokalnie (localhost): data/latest/ (tu publikuje Tf3Bridge)
-//   3. strona hostowana jako "Static website" konta Storage (https://<konto>.z<N>.web.core.windows.net):
+//   3. dataUrl z site.json
+//   4. strona hostowana jako "Static website" konta Storage (https://<konto>.z<N>.web.core.windows.net):
 //        kontener "live" tego samego konta
-//   4. każdy inny adres (Static Web Apps, własna domena): AZURE_DATA_URL
-const AZURE_DATA_URL = "https://tf3liveblob.blob.core.windows.net/live/latest/";
+//   5. data/latest/ obok strony
+const site = await fetch("site.json", { cache: "no-cache" })
+  .then((r) => (r.ok ? r.json() : {}))
+  .catch(() => ({}));
 
 const dataParam = new URLSearchParams(location.search).get("data");
 const isLocal = ["localhost", "127.0.0.1", "[::1]", ""].includes(location.hostname);
@@ -16,8 +23,9 @@ const storageSite = location.hostname.match(/^([a-z0-9]{3,24})\.z\d+\.web\.core\
 function dataBaseUrl() {
   if (dataParam) return dataParam.replace(/\/?$/, "/");
   if (isLocal) return "data/latest/";
+  if (site.dataUrl) return site.dataUrl.replace(/\/?$/, "/");
   if (storageSite) return `https://${storageSite[1]}.blob.core.windows.net/live/latest/`;
-  return AZURE_DATA_URL;
+  return "data/latest/";
 }
 
 export const config = {
@@ -25,7 +33,11 @@ export const config = {
   pollMs: 5000,
   // meta.updatedAtUtc starsze niż to = gra wstrzymana albo Tf3Bridge nie działa
   staleAfterMs: 30000,
+  // Nazwa w górnym pasku i w tytule karty
+  title: site.title || "TF3 Live",
+  // Logo przed nazwą (adres obrazka względem strony, np. "img/logo.png"); puste = bez logo
+  logo: site.logo || "",
   // Kanał streamera ("https://www.twitch.tv/<kanał>"): przycisk streamu w górnym pasku z mini-playerem
   // (js/stream.js) i link w okienku budowy (js/build.js); pusty = bez linku i bez playera.
-  twitchUrl: "https://www.twitch.tv/gwizdek_and_newt",
+  twitchUrl: site.twitchUrl || "",
 };

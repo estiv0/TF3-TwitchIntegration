@@ -6,9 +6,32 @@ Statyczna strona (HTML, CSS i moduły JS, bez kroku budowania), która pokazuje 
 
 `config.js` → `dataBaseUrl`:
 - **lokalnie:** `data/latest/`. Tf3Bridge w trybie Development publikuje do `web/data/latest/` (folder w `.gitignore`);
-- **na Azure:** URL kontenera Blob, np. `https://<konto>.blob.core.windows.net/live/latest/`.
+- **na Azure:** `dataUrl` z `site.json`, czyli URL kontenera Blob, np. `https://<konto>.blob.core.windows.net/live/latest/`.
 
 Strona co `pollMs` (5 s) pobiera `meta.json` (w ukrytej karcie nie odpytuje). `dynamic.json` i `network.json` pobiera tylko wtedy, gdy zmieni się ich `seq`.
+
+## Ustawienia streamera (`site.json`)
+
+Nazwa strony, logo, kanał i adres danych są w `web/site.json`. Pliku nie ma w repozytorium (jest w `.gitignore`), skopiuj wzór `site.example.json`:
+
+| Pole | Znaczenie |
+|---|---|
+| `title` | nazwa w górnym pasku i w tytule karty; domyślnie „TF3 Live” |
+| `logo` | obrazek przed nazwą, np. `img/site/logo.png` (folder `img/site/` też jest w `.gitignore`); puste = bez logo |
+| `twitchUrl` | `https://www.twitch.tv/<kanał>`: przycisk streamu z mini-playerem i link w okienku budowy; puste = bez streamu |
+| `dataUrl` | adres danych poza localhostem (patrz wyżej) |
+
+Bez `site.json` strona działa z domyślną nazwą, bez logo i bez streamu.
+
+## Ikonki z gry
+
+Ikonki pojazdów, towarów i stacji (`web/img/vehicles`, `resources`, `stations`) to grafiki Urban Games, więc nie ma ich w repozytorium. Wyciąga je z plików gry skrypt (Python 3, bez dodatkowych pakietów), raz po sklonowaniu i po aktualizacji gry:
+
+```powershell
+python tools\extract_game_icons.py "<folder gry>"
+```
+
+Bez argumentu skrypt bierze `TF3_GAME_DIR` albo domyślną bibliotekę Steam. `infra/deploy-web.ps1` nie wgra strony bez ikonek.
 
 ## Uruchomienie lokalnie
 
@@ -29,7 +52,8 @@ Sam plik `index.html` otwarty z dysku nie zadziała, bo przeglądarka blokuje `f
 ```
 web/
   index.html        układ: górny pasek, mapa, panel boczny
-  config.js         adres danych i interwały
+  config.js         adres danych, interwały, ustawienia z site.json
+  site.example.json wzór site.json (nazwa, logo, kanał, adres danych)
   css/style.css     ciemny motyw (zmienne CSS używa też mapa)
   js/main.js        spina dane, mapę i panel
   js/api.js         DataFeed: polling meta.json, pobieranie dynamic/network przy zmianie seq
@@ -63,7 +87,7 @@ Przycisk 🏗 na mapie (`build.js`): widz klika miejsce, wybiera miasto albo zak
 - Woda i góry: Tf3Bridge z heightmapy liczy dla każdego punktu, jaka część obszaru miasta (kwadrat ±250 m) to woda, a jaka to zbocza bardziej strome niż 15%, i publikuje to jako `terrain-site.png` (R = woda, G = zbocza, B = 255 pod wodą; piksel = próbka jak w `terrain.png`). Miasto ma być na lądzie, wokół najwyżej 30% wody i 50% zboczy (te same progi co w `TownSites.cs`), inaczej gra je zakłada, ale nie stawia ani ulicy, ani domu. Przy wybieraniu miejsca takie obszary są na mapie czerwone, a strona nie daje kodu. Zakład: platforma wiertnicza, łowisko i pogłębiarka tylko na wodzie, reszta tylko na lądzie.
 - Regiony dla zakładów (`ground.js`): Tf3Bridge publikuje `terrain-zone.png` (R = góry, G = woda w promieniu ok. 1 km, B = płaska nizina) i `build-rules.json` (`{ "industries": { "coal_mine": "mountains", ... } }`, ustawienia streamera; zmiana podbija `meta.rulesVersion`). Po wybraniu rodzaju zakładu czerwone jest wszystko, gdzie go postawić nie wolno, w liście rodzajów jest dopisek „(w górach)” itd., a przy złym miejscu strona nie daje kodu i podpowiada, jak daleko i w którą stronę jest najbliższe dozwolone miejsce. Regionu, którego na mapie nie ma (np. gór na płaskiej mapie), nie sprawdzamy.
 - Kolizji z torami, drogami i budynkami strona nie sprawdza; robi to gra.
-- `twitchUrl` w `config.js` (adres kanału) dodaje w okienku link „Otwórz Twitcha”.
+- `twitchUrl` w `site.json` (adres kanału) dodaje w okienku link „Otwórz Twitcha”.
 
 ## Efekty od widzów
 
@@ -76,15 +100,15 @@ Przycisk 🏗 na mapie (`build.js`): widz klika miejsce, wybiera miasto albo zak
 
 ## Wdrożenie na Azure
 
-Strona działa na **Azure Static Web Apps** (plan Free: własna domena i HTTPS za darmo). Dane czyta z kontenera `live` konta `tf3liveblob` (`AZURE_DATA_URL` w `config.js`). Wgrywanie: [../infra/deploy-web.ps1](../infra/deploy-web.ps1), wymaga Node.js (`winget install OpenJS.NodeJS.LTS`).
+Strona działa na **Azure Static Web Apps** (plan Free: własna domena i HTTPS za darmo). Dane czyta z kontenera `live` konta Storage (`dataUrl` w `site.json`). Wgrywanie: [../infra/deploy-web.ps1](../infra/deploy-web.ps1), wymaga Node.js (`winget install OpenJS.NodeJS.LTS`).
 
 1. Portal → Static Web App → **Overview → Manage deployment token**, skopiuj token.
 2. Pierwszy raz: `.\infra\deploy-web.ps1 -DeployToken "<token>"` (token zostaje zapamiętany zaszyfrowany w `%LOCALAPPDATA%\Tf3Bridge`).
 3. Kolejne razy: `.\infra\deploy-web.ps1`. `-DryRun` tylko pokazuje listę plików.
 
-Skrypt wysyła całą stronę bez `data\`, `img_res\`, `serve.ps1` i `README.md`, przez Static Web Apps CLI (`npx @azure/static-web-apps-cli`).
+Skrypt wysyła całą stronę bez `data\`, `img_res\`, `serve.ps1`, `README.md` i `site.example.json` (`site.json` i ikonki z gry idą z dysku), przez Static Web Apps CLI (`npx @azure/static-web-apps-cli`).
 
-Zapasowo strona może też działać jako „Static website” konta Storage (kontener `$web`, adres `https://tf3liveblob.z36.web.core.windows.net/`, bez HTTPS dla własnej domeny): `.\infra\deploy-web.ps1 -Target storage -SasUrl "<Blob SAS URL kontenera $web>"` (SAS z prawami Create + Write). Ten wariant wysyła tylko zmienione pliki (`-Force` wszystkie) i sam ustawia typy plików i `Cache-Control`.
+Zapasowo strona może też działać jako „Static website” konta Storage (kontener `$web`, adres `https://<konto>.z<N>.web.core.windows.net/`, bez HTTPS dla własnej domeny): `.\infra\deploy-web.ps1 -Target storage -SasUrl "<Blob SAS URL kontenera $web>"` (SAS z prawami Create + Write). Ten wariant wysyła tylko zmienione pliki (`-Force` wszystkie) i sam ustawia typy plików i `Cache-Control`.
 
 ## Debug
 

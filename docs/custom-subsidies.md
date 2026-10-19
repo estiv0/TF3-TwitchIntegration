@@ -8,7 +8,7 @@ Powiązane: [custom-notifications.md](custom-notifications.md).
 
 ## Źródła w grze
 
-Ścieżki względem `E:/SteamLibrary/steamapps/common/Transport Fever 3`:
+Ścieżki względem `<gra>`:
 
 - `base/content/game_mechanics.zip` → `game_mechanics/subventions/`
   - `subventions.script.tl` – game script (zdarzenia `Subvention`, stan, limity)

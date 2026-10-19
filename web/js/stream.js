@@ -4,7 +4,7 @@
 // Na wąskim ekranie (telefon) player zasłoniłby mapę - tam przycisk po prostu otwiera Twitcha.
 // Player (iframe) ładuje się dopiero po otwarciu okienka i znika po zamknięciu: bez transferu i bez
 // podwójnego dźwięku u widzów, którzy oglądają już na Twitchu. Startuje wyciszony.
-// Twitch wymaga parent=<domena strony> (u nas location.hostname: gin.estfosoft.com albo localhost)
+// Twitch wymaga parent=<domena strony> (u nas location.hostname: tf3.example.com albo localhost)
 // i playera co najmniej 400x300 px (CSS .stream-frame).
 
 import { config } from "../config.js";

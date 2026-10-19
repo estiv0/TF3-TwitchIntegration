@@ -41,7 +41,7 @@ Moduły ładuje się względnie przez `ug_require "util.lua"`. Wszystkie leżą 
 Folder repo jest podlinkowany do staging area gry, więc zmiany są widoczne po restarcie gry bez kopiowania:
 
 ```powershell
-New-Item -ItemType Junction -Path "C:\Program Files (x86)\Steam\userdata\38287428\3493540\local\staging_area\estiv0_tf3export" -Target "C:\Users\kinek\Desktop\TransportFever3_Twitch\lua_mod"
+New-Item -ItemType Junction -Path "C:\Program Files (x86)\Steam\userdata\<SteamID>\3493540\local\staging_area\estiv0_tf3export" -Target "<repozytorium>\lua_mod"
 ```
 
 Mod trzeba włączyć przy tworzeniu lub wczytywaniu gry.
@@ -58,7 +58,7 @@ Zipa potrzeba tylko bez Tf3Bridge: Bridge ma moda wbudowanego i sam instaluje go
 
 ## Pliki wyjściowe
 
-Folder: `C:\Program Files (x86)\Steam\userdata\38287428\3493540\local\tf3export\`
+Folder: `C:\Program Files (x86)\Steam\userdata\<SteamID>\3493540\local\tf3export\`
 Nazwa: `<kind>_<session>_<seq>.lua`, np. `dynamic_6abfcd61d091_000001.lua`
 
 Gra zapisuje plik w formacie Lua, a JSON jest w środku jako literał stringa:
@@ -81,7 +81,7 @@ Middle app wyciąga `json = "..."`, odwraca escapowanie Lua (`\"`, `\\`, `\n`, `
   - `warehouses[]`: magazyny gracza (komponent `WAREHOUSE`) `{ id, construction, name, file, pos, capacity, amount, cargo{ładunek: ilość}, stocks[], year{unloaded, loaded} }`; `capacity` i `amount` to sumy wszystkich składów, `stocks[]` = `{ cargos[] (dozwolone ładunki), capacity, amount, cargo{ładunek: ilość} }`, `year` = przywiezione / wywiezione za ostatni rok (logbook `itemsUnloaded` / `itemsLoaded`). Nazwa może mieć właściciela („Nazwa | Widz”), jak miasta i zakłady;
   - ładunki są podawane jako nazwy zasobów, np. `"::/cargos/logs/logs.cargo"`;
   - `carrier` i `state` pojazdów to nazwy enumów (`RAIL`, `EN_ROUTE`…);
-  - szczegóły pojazdu (`collectors.vehicleDetails`, wyłącznik „Szczegóły pojazdów” w ustawieniach moda): `model` = id modelu czoła składu (w `models`: `{ "id": { name, icon } }`; `name` z `api.res.modelRep` albo nazwa zespołu trakcyjnego z `muFileNames`, `icon` = nazwa pliku `.mdl` bez rozszerzenia, obrazek strony `web/img/vehicles/<icon>.png` z `tools/extract_vehicle_icons.py`), `parts` = liczba części składu (tylko gdy > 1), `age` = wiek najstarszej części w latach kalendarza gry, `wear` = wiek / żywotność tej części (≥ 1 = po żywotności, jak procent w oknie linii), `maint` = średni stan techniczny części 0..1 (jak `vehicle_util.getAvgMaintenanceState`), `cap` = pojemność `{ [ładunek] = liczba }` z `config.capacities` (indeks - 1 = CargoTypeId, jak `gui/main/cargo_util.tl`), `load` = ile pojazd teraz wiezie, te same klucze (`simEntityAtVehicleSystem.getVehicleSimEntitiesCountForCargoType`, jedno wywołanie na ładunek z pojemnością). Bez szczegółów nie ma klucza `models` ani tych pól. **Jeszcze niesprawdzone w grze** (zwłaszcza nazwy modeli);
+  - szczegóły pojazdu (`collectors.vehicleDetails`, wyłącznik „Szczegóły pojazdów” w ustawieniach moda): `model` = id modelu czoła składu (w `models`: `{ "id": { name, icon } }`; `name` z `api.res.modelRep` albo nazwa zespołu trakcyjnego z `muFileNames`, `icon` = nazwa pliku `.mdl` bez rozszerzenia, obrazek strony `web/img/vehicles/<icon>.png` z `tools/extract_game_icons.py`), `parts` = liczba części składu (tylko gdy > 1), `age` = wiek najstarszej części w latach kalendarza gry, `wear` = wiek / żywotność tej części (≥ 1 = po żywotności, jak procent w oknie linii), `maint` = średni stan techniczny części 0..1 (jak `vehicle_util.getAvgMaintenanceState`), `cap` = pojemność `{ [ładunek] = liczba }` z `config.capacities` (indeks - 1 = CargoTypeId, jak `gui/main/cargo_util.tl`), `load` = ile pojazd teraz wiezie, te same klucze (`simEntityAtVehicleSystem.getVehicleSimEntitiesCountForCargoType`, jedno wywołanie na ładunek z pojemnością). Bez szczegółów nie ma klucza `models` ani tych pól. **Jeszcze niesprawdzone w grze** (zwłaszcza nazwy modeli);
   - `stations[]`: jeden wiersz na konstrukcję stacji `{ id, kind, industry, warehouse, carriers[], name, file, pos, owner, passengers, cargo, groups[], stations[] }`, gdzie `kind` to `RAIL`, `ROAD`, `WATER`, `AIR` (rzadko `TRAM`, `OTHER` = nierozpoznana stacja przemysłu), a `industry` / `warehouse` to id zakładu / magazynu, gdy stacja jest jego częścią, wyznaczany ze ścieżki konstrukcji, a dla stacji z modów z `carriers` (nośniki całej grupy stacji). Przystanki (bez konstrukcji, `small_stops`, `underground_station`) są pomijane;
   - przystanek linii (`lines[].stops[]`) ma `entity` = encja stacji, którą można dopasować do `stations[].stations`;
   - `carrier` linii bierze się z jej pojazdów, a gdy linia nie ma pojazdów, z rodzaju jej stacji.

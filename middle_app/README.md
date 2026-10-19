@@ -30,11 +30,11 @@ infra\publish.ps1
 
 Skrypt buduje `middle_app\dist\Tf3Bridge.exe` (folder `dist\` jest w `.gitignore`) i tworzy skrót `Tf3Bridge` na pulpicie (`-NoShortcut` pomija skrót). Przed ponowną publikacją zamknij działającą aplikację.
 
-Exe jest self-contained single-file (win-x64, ok. 55 MB): nie wymaga zainstalowanego .NET, a obok leży tylko `appsettings.json`. Dla kogoś innego wystarczy przekazać `Tf3Bridge.exe` + `appsettings.json`. Folder moda Bridge znajdzie sam (patrz `InputDir`), a poza repozytorium publikuje do `output\` obok exe.
+Exe jest self-contained single-file (win-x64, ok. 55 MB): nie wymaga zainstalowanego .NET, a obok leży `appsettings.json` (i ewentualnie `appsettings.Local.json`, patrz niżej). Dla kogoś innego wystarczy przekazać `Tf3Bridge.exe` + `appsettings.json`. Folder moda Bridge znajdzie sam (patrz `InputDir`), a poza repozytorium publikuje do `output\` obok exe.
 
 Mod jest wbudowany w exe (`lua_mod\` z chwili budowania, `ModInstaller`). Przy starcie Bridge instaluje go albo aktualizuje w `Steam\userdata\<konto>\3493540\local\staging_area\estiv0_tf3export` (nie `mods\`: stamtąd gra pokazuje tylko mody z Workshopu): zapisuje nowe i zmienione pliki, a usuwa tylko te `.lua` w `content\`, których mod już nie ma. Nowy exe aktualizuje więc też moda. Jeśli gra jest uruchomiona, nowa wersja działa dopiero po ponownym wczytaniu zapisu. Kopii deweloperskiej (junction `staging_area\estiv0_tf3export` → repozytorium) Bridge nie rusza. Test `Embedded_mod_is_complete` pilnuje, żeby `_content.json` zgadzał się z plikami `.lua` (odśwież go przez `lua_mod\pack.ps1 -ContentOnly`).
 
-Z kodu: `dotnet run` w `middle_app/src/Tf3Bridge` albo `Tf3Bridge.sln` w Riderze. SDK leży w `C:\Users\kinek\.dotnet`. Jeśli `dotnet` nie jest w `PATH`, użyj `C:\Users\kinek\.dotnet\dotnet.exe`.
+Z kodu: `dotnet run` w `middle_app/src/Tf3Bridge` albo `Tf3Bridge.sln` w Riderze. Jeśli SDK jest w katalogu użytkownika (np. instalacja z Ridera), a `dotnet` nie ma w `PATH`, użyj `%USERPROFILE%\.dotnet\dotnet.exe`.
 
 Testy:
 
@@ -44,6 +44,12 @@ dotnet test
 ```
 
 ## Konfiguracja (`src/Tf3Bridge/appsettings.json`, sekcja `Bridge`)
+
+Własne wartości (np. `Twitch:SiteUrl`, adres Twojej strony) wpisz do `src/Tf3Bridge/appsettings.Local.json` obok `appsettings.json`. Ten plik jest w `.gitignore`, nadpisuje `appsettings.json` i trafia do `dist` przy publikacji:
+
+```json
+{ "Twitch": { "SiteUrl": "https://twoja-strona.example/" } }
+```
 
 | Klucz | Domyślnie | Opis |
 |---|---|---|
@@ -189,8 +195,8 @@ Jedyna droga zmian w grze od widzów (`RewardService`). Trzynaście nagród, ka�
 - **Rozliczenie:** gdy gra potwierdzi, wykupienie dostaje FULFILLED. Gdy celu nie ma, cel jest niejednoznaczny, nagroda jest wyłączona albo gra odmówi lub nie zdąży, wykupienie dostaje CANCELED i Twitch zwraca punkty.
 - **Wykupienia z czasu, gdy Tf3Bridge był wyłączony:** świeższe niż 5 minut są wykonywane, starsze zwracane.
 - **Odpowiedź na czacie** (`RewardMessages`, `ChatApi`, Helix `POST /chat/messages` jako streamer). Wyłącznik jest w **Nagrody…**. Przykłady:
-  - „@widz boost miasta Szczecin (+50%) działa do 12 maja 1922 (data w grze). https://gin.estfosoft.com/#town=225799” Datę końca w kalendarzu gry podaje mod w wyniku komendy (`until`).
-  - „@widz miasto Kraków jest teraz Twoje! https://gin.estfosoft.com/#town=…”
+  - „@widz boost miasta Szczecin (+50%) działa do 12 maja 1922 (data w grze). https://tf3.example.com/#town=225799” Datę końca w kalendarzu gry podaje mod w wyniku komendy (`until`).
+  - „@widz miasto Kraków jest teraz Twoje! https://tf3.example.com/#town=…”
   - Link prowadzi do obiektu na stronie (`#town=`, `#industry=`, `#line=`). Adres strony: `Twitch:SiteUrl` w `appsettings.json`; pusty = bez linków.
   - Przy zwrocie: „@widz boost miasta: nie znaleziono „gdańsk”. Punkty wróciły do Ciebie.”
 - **Powiadomienie w grze:** po wykonanej nagrodzie, dopiero gdy Twitch przyjmie FULFILLED (punkty pobrane), Tf3Bridge wysyła do moda komendę `notify`: okienko z logo Twitcha, „Twitch: widz” i opisem („widz kupił(a) miasto Kraków.”), kliknięcie pokazuje obiekt. Przy zwrocie punktów go nie ma. Wyłącznik i czas wyświetlania (3–300 s, domyślnie 30 s; potem okienko znika, a wpis zostaje w dzienniku powiadomień gry) w **Nagrody…**; w symulacji z dopiskiem `[TEST]`, a w **Test akcji…** jest też przycisk „Testowe powiadomienie”. Szczegóły: [../docs/custom-notifications.md](../docs/custom-notifications.md).

@@ -1,11 +1,11 @@
 # TF3: ustalenia z dokumentacji i plików gry
 
-Stan na 2026-10-02. Źródła: script-doc na wiki TF3, strony wiki o modach oraz pliki gry z `E:/SteamLibrary/steamapps/common/Transport Fever 3`.
+Stan na 2026-10-02. Źródła: script-doc na wiki TF3, strony wiki o modach oraz pliki gry z `<gra>`.
 
 **Wniosek:** `lua_mod` miał strukturę z TF2 i w TF3 by się nie załadował. Mod został już przebudowany na strukturę TF3, a status poszczególnych punktów jest w [mod-known-issues.md](mod-known-issues.md).
 
 Lokalizacje na tym PC:
-- staging area dla modów w trakcie tworzenia: `C:\Program Files (x86)\Steam\userdata\38287428\3493540\local\staging_area\`
+- staging area dla modów w trakcie tworzenia: `C:\Program Files (x86)\Steam\userdata\<SteamID>\3493540\local\staging_area\`
 - ręcznie instalowane mody: `...\3493540\local\mods\`
 - log gry: prawdopodobnie `...\3493540\local\crash_dump\stdout.txt`
 
@@ -15,7 +15,7 @@ TF3 nie używa `mod.lua` z `function data()`. Wymagany układ ([wiki: Mod Defini
 
 ```
 mods/
-  kinek_tf3export/              nazwa folderu bez znaczenia, zalecane = modId
+  autor_tf3export/              nazwa folderu bez znaczenia, zalecane = modId
     mod.json                    techniczna definicja (modId, revision, severity, skrypty)
     _metadata/
       modinfo.json              nazwa, opis, autorzy, tagi (["Script Mod"])
@@ -106,7 +106,7 @@ Najważniejsze różnice:
   - linie: `api.engine.system.lineSystem.getLinesForPlayer(player)`;
   - krawędzie: `api.engine.system.streetSystem.getNode2SegmentMap()` (węzeł → segmenty). Są też warianty `getNode2StreetEdgeMap` i `getNode2TrackEdgeMap`.
 - **`update()` game scriptu jest wołane z wielu wątków symulacji (`Sim Pool 1..N`), a każdy ma osobny stan Lua.** Zmienne modułu (`local` na poziomie pliku) nie są współdzielone: w jednym uruchomieniu było 13 niezależnych kopii. Jedyny wspólny stan to `state:get()` / `state:set()`. Każdy eksport musi więc kończyć się w jednym wywołaniu `update()`, a harmonogram trzeba trzymać w `state`.
-- Log gry: `C:\Program Files (x86)\Steam\userdata\38287428\3493540\local\crash_dump\stdout.txt` (potwierdzone). `debugPrint` w `base/init.lua` używa `log.message`.
+- Log gry: `C:\Program Files (x86)\Steam\userdata\<SteamID>\3493540\local\crash_dump\stdout.txt` (potwierdzone). `debugPrint` w `base/init.lua` używa `log.message`.
 - **Wyniki sondy środowiska** (konsola w TF3 się nie otwiera, więc sprawdzał to mod):
   - wątki symulacji (`update`): `io=false`, `os.rename=false`, `os.remove=false`, `os.time=true`, `os.clock=true`, `app=false`;
   - wątek GUI (`guiUpdate`, „Main Thread”): to samo, ale `app=true` i **`app.saveUserdata` działa**. Zapisuje `local\<dir>\<name>.lua` w postaci `function data()\r\nreturn { \r\n\t\tjson = "...",\r\n\t}\r\nend`, czyli stringi jako escapowane literały Lua, z zachowanym UTF-8.

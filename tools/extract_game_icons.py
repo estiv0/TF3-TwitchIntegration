@@ -1,37 +1,46 @@
-"""Wyciąga ikonki pojazdów z plików gry do web/img/vehicles/ (PNG).
+"""Wyciąga ikonki z plików gry do web/img/ (PNG). Grafiki należą do Urban Games, więc nie ma ich
+w repozytorium - uruchom skrypt raz po sklonowaniu, po aktualizacji gry i przed wgraniem strony.
 
-Każdy model pojazdu ma w swojej paczce (base/content/vehicle/**.zip, dlcs/*/content/vehicle.zip)
-ikonkę z boku <model>_icon_small@2x.tga (różne wymiary, do 3032 px szerokości). Zapisujemy ją jako
-<model>.png (najwyżej MAX_WIDTH px szerokości, z zachowaniem proporcji), gdzie
-<model> to nazwa pliku .mdl bez rozszerzenia - tę samą nazwę mod wysyła w models[id].icon
-(lua_mod: collectors.vehicleDetails), więc strona składa adres img/vehicles/<icon>.png.
+- web/img/vehicles/<model>.png - z boku pojazdu: <model>_icon_small@2x.tga z paczek pojazdów
+  (base/content/vehicle/**.zip, dlcs/*/content/vehicle.zip), najwyżej MAX_WIDTH px szerokości.
+  <model> to nazwa pliku .mdl bez rozszerzenia - tę samą nazwę mod wysyła w models[id].icon
+  (lua_mod: collectors.vehicleDetails), więc strona składa adres img/vehicles/<icon>.png.
+- web/img/resources/<towar>.png - ikonki towarów: <towar>/<towar>@2x.tga z base/content/cargos/<towar>.zip.
+- web/img/stations/<nazwa>.png - ikonki interfejsu (stacje, środki transportu): gui/hud/icons/*@2x.tga
+  z base/content/gui.zip.
 
-Bez zależności (TGA i PNG obsłużone ręcznie). Uruchom ponownie po aktualizacji gry:
-    python tools/extract_vehicle_icons.py ["E:/SteamLibrary/steamapps/common/Transport Fever 3"]
+Bez zależności (TGA i PNG obsłużone ręcznie). Folder gry: argument, zmienna TF3_GAME_DIR albo
+domyślna biblioteka Steam:
+    python tools/extract_game_icons.py ["D:/SteamLibrary/steamapps/common/Transport Fever 3"]
 """
 
+import os
 import struct
 import sys
 import zipfile
 import zlib
 from pathlib import Path
 
-GAME = Path(sys.argv[1] if len(sys.argv) > 1 else "E:/SteamLibrary/steamapps/common/Transport Fever 3")
-OUT = Path(__file__).resolve().parent.parent / "web" / "img" / "vehicles"
-SUFFIX = "_icon_small@2x.tga"
+DEFAULT_GAME = "C:/Program Files (x86)/Steam/steamapps/common/Transport Fever 3"
+GAME = Path(sys.argv[1] if len(sys.argv) > 1 else os.environ.get("TF3_GAME_DIR") or DEFAULT_GAME)
+IMG = Path(__file__).resolve().parent.parent / "web" / "img"
+VEHICLE_SUFFIX = "_icon_small@2x.tga"
+GUI_ICONS = "gui/hud/icons/"
 MAX_WIDTH = 512  # szersze (długie składy, statki) zmniejszamy do tej szerokości, z zachowaniem proporcji
 
 
 def read_tga(data):
-    """TGA true-color (typ 2) albo RLE (typ 10), 24/32 bpp -> (w, h, wiersze RGBA od góry)."""
+    """TGA true-color (typ 2/10, 24/32 bpp) albo szary (typ 3/11, 8 bpp), bez albo z RLE
+    -> (w, h, wiersze RGBA od góry). Szare to maski ikonek interfejsu: biały z alfą = jasność."""
     id_len, cmap_type, img_type = data[0], data[1], data[2]
     w, h = struct.unpack("<HH", data[12:16])
     bpp, desc = data[16], data[17]
-    if cmap_type != 0 or img_type not in (2, 10) or bpp not in (24, 32):
+    gray = img_type in (3, 11)
+    if cmap_type != 0 or not ((img_type in (2, 10) and bpp in (24, 32)) or (gray and bpp == 8)):
         raise ValueError(f"nieobsługiwany TGA: typ {img_type}, {bpp} bpp")
     px = bpp // 8
     pos = 18 + id_len
-    if img_type == 2:
+    if img_type in (2, 3):
         raw = data[pos:pos + w * h * px]
     else:
         out = bytearray()
@@ -50,8 +59,12 @@ def read_tga(data):
     for y in range(h):
         src = raw[y * w * px:(y + 1) * w * px]
         row = bytearray(w * 4)
-        row[0::4], row[1::4], row[2::4] = src[2::px], src[1::px], src[0::px]  # BGR(A) -> RGB(A)
-        row[3::4] = src[3::px] if px == 4 else b"\xff" * w
+        if gray:
+            row[0::4] = row[1::4] = row[2::4] = b"\xff" * w
+            row[3::4] = src
+        else:
+            row[0::4], row[1::4], row[2::4] = src[2::px], src[1::px], src[0::px]  # BGR(A) -> RGB(A)
+            row[3::4] = src[3::px] if px == 4 else b"\xff" * w
         rows.append(bytes(row))
     if not desc & 0x20:  # początek w lewym dolnym rogu
         rows.reverse()
@@ -133,31 +146,62 @@ def write_png(path, w, h, rows):
     path.write_bytes(png)
 
 
-def vehicle_zips():
-    yield from sorted((GAME / "base" / "content" / "vehicle").rglob("*.zip"))
-    yield from sorted(GAME.glob("dlcs/*/content/vehicle.zip"))
+def vehicle_icons():
+    """(nazwa, zip, plik w zipie) ikonek pojazdów; ten sam model w kilku paczkach - pierwszy wygrywa."""
+    zips = [*sorted((GAME / "base" / "content" / "vehicle").rglob("*.zip")),
+            *sorted(GAME.glob("dlcs/*/content/vehicle.zip"))]
+    for z in zips:
+        with zipfile.ZipFile(z) as zf:
+            for name in zf.namelist():
+                if name.endswith(VEHICLE_SUFFIX):
+                    yield name.rsplit("/", 1)[-1][:-len(VEHICLE_SUFFIX)], z, name
+
+
+def cargo_icons():
+    for z in sorted((GAME / "base" / "content" / "cargos").glob("*.zip")):
+        name = f"{z.stem}/{z.stem}@2x.tga"
+        with zipfile.ZipFile(z) as zf:
+            if name in zf.namelist():  # cargos/ ma też paczki wspólne (classes, icons, ...) bez ikonki
+                yield z.stem, z, name
+
+
+def gui_icons():
+    z = GAME / "base" / "content" / "gui.zip"
+    with zipfile.ZipFile(z) as zf:
+        for name in zf.namelist():
+            rest = name[len(GUI_ICONS):]
+            if name.startswith(GUI_ICONS) and "/" not in rest and rest.endswith("@2x.tga"):
+                yield rest[:-len("@2x.tga")], z, name
+
+
+def extract(folder, icons, max_width=None):
+    out = IMG / folder
+    out.mkdir(parents=True, exist_ok=True)
+    done, failed = set(), []
+    for key, z, name in icons:
+        if key in done:
+            continue
+        try:
+            with zipfile.ZipFile(z) as zf:
+                w, h, rows = read_tga(zf.read(name))
+            if max_width:
+                w, h, rows = downscale(w, h, rows, max_width)
+            write_png(out / f"{key}.png", w, h, rows)
+            done.add(key)
+        except ValueError as e:
+            failed.append(f"{z.name}:{name}: {e}")
+    size = sum(p.stat().st_size for p in out.glob("*.png"))
+    print(f"{len(done)} ikonek w {out} ({size / 1e6:.1f} MB)")
+    for f in failed:
+        print("pominięto", f)
 
 
 def main():
-    OUT.mkdir(parents=True, exist_ok=True)
-    done, failed = set(), []
-    for z in vehicle_zips():
-        with zipfile.ZipFile(z) as zf:
-            for name in zf.namelist():
-                if not name.endswith(SUFFIX):
-                    continue
-                model = name.rsplit("/", 1)[-1][:-len(SUFFIX)]
-                if model in done:
-                    continue
-                try:
-                    write_png(OUT / f"{model}.png", *downscale(*read_tga(zf.read(name)), MAX_WIDTH))
-                    done.add(model)
-                except ValueError as e:
-                    failed.append(f"{z.name}:{name}: {e}")
-    size = sum(p.stat().st_size for p in OUT.glob("*.png"))
-    print(f"{len(done)} ikonek w {OUT} ({size / 1e6:.1f} MB)")
-    for f in failed:
-        print("pominięto", f)
+    if not (GAME / "base" / "content").is_dir():
+        sys.exit(f"Nie ma gry w {GAME} - podaj folder Transport Fever 3 jako argument albo w TF3_GAME_DIR.")
+    extract("stations", gui_icons())
+    extract("resources", cargo_icons())
+    extract("vehicles", vehicle_icons(), MAX_WIDTH)
 
 
 if __name__ == "__main__":

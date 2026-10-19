@@ -10,7 +10,7 @@ Powiązane: [custom-subsidies.md](custom-subsidies.md).
 
 ## Jak to robi gra
 
-Wzorce (ścieżki względem `E:/SteamLibrary/steamapps/common/Transport Fever 3`):
+Wzorce (ścieżki względem `<gra>`):
 
 - `base/content/landmarks/landmarks_notification*.res.lua` i `*.script.tl`
 - `mods/release/urbangames_campaign_mission_03/content/notifications.zip` (`truckdespawn.script.tl`)

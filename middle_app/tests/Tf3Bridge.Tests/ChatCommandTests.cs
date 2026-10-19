@@ -44,7 +44,7 @@ public sealed class ChatCommandTests : IDisposable
         if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true);
     }
 
-    private ChatCommandService Service(string site = "https://gin.estfosoft.com/") =>
+    private ChatCommandService Service(string site = "https://tf3.example.com/") =>
         new(new ChatApi(null!, new HttpClient()), mock: true, _dir, site, _time, NullLogger.Instance);
 
     private static ChatMessage Msg(string text, string login = "kermit33", string name = "Kermit33", string id = "7") =>
@@ -106,7 +106,7 @@ public sealed class ChatCommandTests : IDisposable
         var answer = await Service().HandleAsync(Msg("!majatek @Estiv0"));
 
         Assert.Equal("@Kermit33 estiv0: 2 miasta (Szczecin – główne, Barcin), 1 zakład (Browar), 2 linie, 16 pojazdów, "
-            + "zysk linii (12 mies.) $ 833 881. Mapa: https://gin.estfosoft.com/#owner=estiv0", answer);
+            + "zysk linii (12 mies.) $ 833 881. Mapa: https://tf3.example.com/#owner=estiv0", answer);
     }
 
     [Fact]
@@ -161,7 +161,7 @@ public sealed class ChatCommandTests : IDisposable
         Assert.StartsWith("@Kermit33 Komendy TF3: !majatek [widz], !miasto <nazwa>", help);
         Assert.True(help.Length <= 500, "limit wiadomości Twitcha");
 
-        Assert.Equal("@Kermit33 mapa na żywo: https://gin.estfosoft.com/", Service().Answer(Msg("!mapa")));
+        Assert.Equal("@Kermit33 mapa na żywo: https://tf3.example.com/", Service().Answer(Msg("!mapa")));
         Assert.Equal("@Kermit33 mapa nie jest jeszcze ustawiona.", Service(site: "").Answer(Msg("!mapa")));
     }
 
@@ -171,9 +171,9 @@ public sealed class ChatCommandTests : IDisposable
         var service = Service();
 
         Assert.Equal("@Kermit33 Szczecin (właściciel: estiv0): pojemność 900, +13% od startu gry, zaspokojenie potrzeb 90%, "
-            + "efekty: boost miasta +50% do 1 sierpnia 1922 (od ola). https://gin.estfosoft.com/#town=2",
+            + "efekty: boost miasta +50% do 1 sierpnia 1922 (od ola). https://tf3.example.com/#town=2",
             service.Answer(Msg("!miasto szczecin", id: "1")));
-        Assert.Equal("@Kermit33 Łódź (bez właściciela): pojemność 900. https://gin.estfosoft.com/#town=3",
+        Assert.Equal("@Kermit33 Łódź (bez właściciela): pojemność 900. https://tf3.example.com/#town=3",
             service.Answer(Msg("!miasto lodz", id: "2")));
         Assert.Equal("@Kermit33 nie znaleziono „Gdańsk”.", service.Answer(Msg("!miasto Gdańsk", id: "3")));
         Assert.Equal("@Kermit33 podaj nazwę, np. !miasto Szczecin", service.Answer(Msg("!miasto", id: "4")));
@@ -185,9 +185,9 @@ public sealed class ChatCommandTests : IDisposable
         var service = Service();
 
         Assert.Equal("@Kermit33 Browar (właściciel: estiv0): poziom 2/4, produktywność 120%, produkcja (rok) 1 234. "
-            + "https://gin.estfosoft.com/#industry=10", service.Answer(Msg("!zakład browar", id: "1")));
+            + "https://tf3.example.com/#industry=10", service.Answer(Msg("!zakład browar", id: "1")));
         Assert.Equal("@Kermit33 Linia 1 (właściciel: estiv0): 10 pojazdów (zatrzymane: 1), zysk (12 mies.) $ 653 957, "
-            + "efekty: chrzczone paliwo -30% do 3 czerwca 1922 (od ola). https://gin.estfosoft.com/#line=30",
+            + "efekty: chrzczone paliwo -30% do 3 czerwca 1922 (od ola). https://tf3.example.com/#line=30",
             service.Answer(Msg("!linia linia 1", id: "2")));
         Assert.Equal("@Kermit33 „linia” pasuje do kilku: Linia 1, Linia 2, Linia 3, Linia 4.", service.Answer(Msg("!linia linia", id: "3")));
     }
@@ -195,7 +195,7 @@ public sealed class ChatCommandTests : IDisposable
     [Fact]
     public void Ranking_orders_viewers_by_score()
     {
-        Assert.Equal("@Kermit33 ranking: 1. estiv0 (2 miasta, 1 zakład, 2 linie), 2. ala (1 linia). Wszyscy: https://gin.estfosoft.com/",
+        Assert.Equal("@Kermit33 ranking: 1. estiv0 (2 miasta, 1 zakład, 2 linie), 2. ala (1 linia). Wszyscy: https://tf3.example.com/",
             Service().Answer(Msg("!ranking")));
     }
 
@@ -235,13 +235,13 @@ public sealed class ChatCommandTests : IDisposable
     {
         var service = Service();
 
-        Assert.Equal("@Kermit33 najlepsza linia: Linia 1 (estiv0), zysk (12 mies.) $ 653 957. https://gin.estfosoft.com/#line=30",
+        Assert.Equal("@Kermit33 najlepsza linia: Linia 1 (estiv0), zysk (12 mies.) $ 653 957. https://tf3.example.com/#line=30",
             service.Answer(Msg("!najlepsza", id: "1")));
-        Assert.Equal("@Kermit33 najgorsza linia: Linia 3, zysk (12 mies.) $ -457 279. https://gin.estfosoft.com/#line=32",
+        Assert.Equal("@Kermit33 najgorsza linia: Linia 3, zysk (12 mies.) $ -457 279. https://tf3.example.com/#line=32",
             service.Answer(Msg("!najgorsza linia", id: "2")));
-        Assert.Equal("@Kermit33 najlepsza firma widza: estiv0, zysk linii (12 mies.) $ 833 881 (2 linie). https://gin.estfosoft.com/#owner=estiv0",
+        Assert.Equal("@Kermit33 najlepsza firma widza: estiv0, zysk linii (12 mies.) $ 833 881 (2 linie). https://tf3.example.com/#owner=estiv0",
             service.Answer(Msg("!najlepsza firma", id: "3")));
-        Assert.Equal("@Kermit33 najgorsza firma widza: ala, zysk linii (12 mies.) $ 1 000 (1 linia). https://gin.estfosoft.com/#owner=ala",
+        Assert.Equal("@Kermit33 najgorsza firma widza: ala, zysk linii (12 mies.) $ 1 000 (1 linia). https://tf3.example.com/#owner=ala",
             service.Answer(Msg("!najgorszy firma", id: "4")));
         Assert.Equal("@Kermit33 użyj: !najlepsza [linia|firma]", service.Answer(Msg("!najlepsza miasto", id: "5")));
     }

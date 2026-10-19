@@ -32,7 +32,7 @@ $manifestFile = Join-Path $stateDir "web-deploy-manifest.json"
 
 # Nie wysyłamy danych z gry (idą przez Tf3Bridge do kontenera "live"), źródeł ikon ani plików roboczych.
 $excludeDirs = @("data", "img_res")
-$excludeFiles = @("serve.ps1", "README.md")
+$excludeFiles = @("serve.ps1", "README.md", "site.example.json")
 
 $contentTypes = @{
     ".html" = "text/html; charset=utf-8"
@@ -62,6 +62,13 @@ function Read-Secret([string]$path) {
 }
 
 # ---------------------------------------------------------------- lista plików
+# Ikonki z gry nie są w repozytorium (prawa Urban Games) - generuje je tools\extract_game_icons.py.
+foreach ($dir in "vehicles", "stations", "resources") {
+    if (-not (Get-ChildItem (Join-Path $webDir "img\$dir") -Filter *.png -ErrorAction SilentlyContinue)) {
+        throw "Brak ikonek w web\img\$dir. Uruchom najpierw: python tools\extract_game_icons.py `"<folder gry>`""
+    }
+}
+
 $files = Get-ChildItem $webDir -Recurse -File | Where-Object {
     $rel = $_.FullName.Substring($webDir.Length + 1)
     $top = $rel.Split([IO.Path]::DirectorySeparatorChar)[0]

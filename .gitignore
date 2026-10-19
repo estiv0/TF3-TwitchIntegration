@@ -3,6 +3,7 @@ bin/
 obj/
 TestResults/
 *.user
+appsettings.Local.json
 
 # IDE
 .idea/
@@ -16,6 +17,10 @@ middle_app/src/Tf3Bridge/output/*
 !middle_app/src/Tf3Bridge/output/*.cs
 web/data/
 
+# Ustawienia i grafiki konkretnego streamera (wzór: web/site.example.json)
+web/site.json
+web/img/site/
+
 # Web
 node_modules/
 dist/
@@ -24,8 +29,16 @@ dist/
 Thumbs.db
 .DS_Store
 
-# Źródłowe ikonki z gry (TGA) - na stronie są ich wersje PNG w web/img/
+# Grafiki z gry (prawa Urban Games) - nie wrzucamy, generuje je tools/extract_game_icons.py
 web/img_res/
+web/img/vehicles/
+web/img/stations/
+web/img/resources/
 
-# Sekrety (token SAS do Azure Blob)
+# Sekrety (token SAS do Azure Blob, certyfikaty, zmienne środowiskowe)
 docs/blob_sas
+.env
+*.env
+*.pfx
+*.pem
+*.key

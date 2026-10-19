@@ -53,7 +53,7 @@ export function cargoImg(res) {
 }
 
 /**
- * Obrazek modelu pojazdu z boku (web/img/vehicles, z plików gry przez tools/extract_vehicle_icons.py).
+ * Obrazek modelu pojazdu z boku (web/img/vehicles, z plików gry przez tools/extract_game_icons.py).
  * model = dynamic.models[id] ({ name, icon }); brak ikonki albo pliku -> nic.
  */
 export function vehicleImgHtml(model, cls = "veh-img") {

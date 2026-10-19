@@ -70,6 +70,13 @@ const map = new MapView($("#map"), {
 const pins = new PinController(map, { form: $("#pin-form"), button: $("#pin"), wrap: $(".map-wrap") });
 const build = new BuildController(map, { form: $("#build-form"), button: $("#build"), getDynamic: () => lastDynamic });
 
+$("#brand-title").textContent = config.title;
+document.title = config.title;
+if (config.logo) {
+  $("#brand-logo").src = config.logo;
+  $("#brand-logo").hidden = false;
+}
+
 const stream = new StreamPlayer({ button: $("#stream-btn"), layer: $("#stream"), wrap: $(".map-wrap") });
 
 const sidebar = new Sidebar($("#sidebar"), $("#detail"), {

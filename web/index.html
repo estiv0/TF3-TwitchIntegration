@@ -13,9 +13,10 @@
   <!-- Napisy z data-i18n* podmienia js/i18n.js (PL / EN); tekst w HTML to wersja polska. -->
   <header class="topbar">
     <div class="brand">
-      <img class="brand-logo" src="img/logo_gn.png" alt="" width="82" height="34">
+      <!-- Nazwa i logo z site.json (config.js), ustawia js/main.js -->
+      <img id="brand-logo" class="brand-logo" alt="" hidden>
       <div>
-        <h1>Gwizdkoniutolandia</h1>
+        <h1 id="brand-title">TF3 Live</h1>
         <p class="brand-sub" data-i18n="brand.sub">Transport Fever 3</p>
       </div>
     </div>

@@ -2,7 +2,7 @@
 // #pin=120_-340_0.25&note=Port&line=429883. Części zmieniamy jako napisy "klucz=wartość",
 // żeby nie przekodować opisu pinezki.
 
-// owner = majątek widza, id to klucz tekstowy (owners.js), zakodowany: #owner=kinek
+// owner = majątek widza, id to klucz tekstowy (owners.js), zakodowany: #owner=ala
 const SEL_KINDS = ["town", "industry", "warehouse", "station", "line", "owner"];
 
 const parts = () => location.hash.replace(/^#/, "").split("&").filter(Boolean);

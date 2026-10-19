@@ -31,6 +31,9 @@ internal static class Program
             Args = args,
             ContentRootPath = AppContext.BaseDirectory,
         });
+        // Ustawienia konkretnego streamera (np. Twitch:SiteUrl) poza repozytorium; argumenty dalej wygrywają.
+        builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true);
+        builder.Configuration.AddCommandLine(args);
 
         var uiLog = new UiLogProvider();
         builder.Logging.ClearProviders();

@@ -611,7 +611,7 @@ local function modelInfo(modelId)
 			info.lifespan = md.maintenance.lifespan * 1000
 		end)
 		-- "vehicle/bus/mb_o405g.mdl" -> "mb_o405g": nazwa ikonki na stronie (web/img/vehicles/<icon>.png,
-		-- wyciągane z plików gry przez tools/extract_vehicle_icons.py)
+		-- wyciągane z plików gry przez tools/extract_game_icons.py)
 		local okF, file = pcall(function() return api.res.modelRep.getName(modelId) end)
 		if okF and type(file) == "string" then info.icon = file:match("([^/\\]+)%.mdl$") end
 		modelCache[key] = info

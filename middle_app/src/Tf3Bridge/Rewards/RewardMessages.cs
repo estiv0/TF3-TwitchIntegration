@@ -137,7 +137,7 @@ public static class RewardMessages
             $"{siteUrl.Trim().TrimEnd('/')}/#pin={Math.Round(x)}_{Math.Round(y)}&note={Uri.EscapeDataString(name)}");
     }
 
-    /// <summary>"gin.estfosoft.com" from "https://gin.estfosoft.com/" (for {site} in reward prompts).</summary>
+    /// <summary>"tf3.example.com" from "https://tf3.example.com/" (for {site} in reward prompts).</summary>
     public static string SiteHost(string siteUrl) =>
         Uri.TryCreate(siteUrl.Trim(), UriKind.Absolute, out var u) ? u.Host + u.AbsolutePath.TrimEnd('/') : siteUrl.Trim();
 

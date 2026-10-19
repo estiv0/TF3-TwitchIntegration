@@ -24,7 +24,7 @@ z `dynamic.json` (`web/js/owners.js`, `ownersIndex`). **Mod i Tf3Bridge bez zmia
 
 Decyzje:
 - **Główne miasto = największe miasto widza** (`townSize`). Może się zmienić, gdy inne jego miasto urośnie.
-- **Tożsamość:** grupujemy bez rozróżniania wielkości liter (`Kinek` = `kinek`); na liście jest najczęstszy
+- **Tożsamość:** grupujemy bez rozróżniania wielkości liter (`Ala` = `ala`); na liście jest najczęstszy
   zapis. Tf3Bridge zapisuje nazwę wyświetlaną widza, więc po zmianie nazwy na Twitchu stare obiekty
   zostają pod starą nazwą. To znane ograniczenie, świadomie go nie rozwiązujemy.
 
@@ -55,8 +55,8 @@ zaznaczenie mapy (`main.js`, `onPick`). Potrzebne:
 
 ## Etap 2: komenda na czacie (Tf3Bridge) — zrobione, opis w `middle_app/README.md`
 
-`!majatek [widz]` odpowiada np. „kinek: 2 miasta (Gdańsk, Sopot), 1 zakład, 3 linie, zysk linii
-$1,2 mln, mapa: <link #owner=kinek>”. Bez argumentu pokazuje majątek pytającego. Komenda tylko czyta
+`!majatek [widz]` odpowiada np. „ala: 2 miasta (Gdańsk, Sopot), 1 zakład, 3 linie, zysk linii
+$1,2 mln, mapa: <link #owner=ala>”. Bez argumentu pokazuje majątek pytającego. Komenda tylko czyta
 ostatni `dynamic.json` (`OwnerName.Split` w `GameObjects.cs`, grupowanie jak w `owners.js`) i **nic nie
 wysyła do gry**, zgodnie z zasadą, że grę zmieniają tylko punkty kanału (`CommandSource`). Wymaga czytania
 czatu (`user:read:chat`, `user:write:chat`), patrz `twitch-channel-points.md`, punkt 4.

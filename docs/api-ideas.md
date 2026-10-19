@@ -4,7 +4,7 @@ Stan: **zbadane tylko w plikach gry, nic nie przetestowane w grze.** Lista uzupe
 [twitch-channel-points.md](twitch-channel-points.md) (już zrobione nagrody) oraz
 [custom-notifications.md](custom-notifications.md) i [custom-subsidies.md](custom-subsidies.md).
 
-Źródła (ścieżki względem `E:/SteamLibrary/steamapps/common/Transport Fever 3`):
+Źródła (ścieżki względem `<gra>`):
 - `api/tealdef/api/cmd.d.tl`, `api/gui.d.tl`, `api/engine/util.d.tl`, `api/engine/system.d.tl`
 - `base/content/game_mechanics.zip` (towns, company, fun_elements, celebrations), `base/content/gui.zip`
 - `base/tealdef/scripts/gamescript.d.tl` (typy zdarzeń game scriptu)

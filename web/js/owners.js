@@ -1,5 +1,5 @@
 // Majątek widzów: miasta, zakłady, stacje i linie z właścicielem w nazwie ("Nazwa | Widz", splitAllOwners).
-// Ten sam widz bywa zapisany różną wielkością liter ("Kinek" / "kinek") - grupujemy bez jej rozróżniania.
+// Ten sam widz bywa zapisany różną wielkością liter ("Ala" / "ala") - grupujemy bez jej rozróżniania.
 
 import { industryOfStation, townGrowth, townSize } from "./format.js";
 

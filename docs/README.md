@@ -22,5 +22,6 @@ Kod:
 Źródła:
 - Dokumentacja API: https://wiki.transportfever3.com/script-doc/api/cmd.html (oraz `engine`, `engine/util`, `engine/system`, `type`)
 - Wiki moddingu: https://wiki.transportfever3.com/doku.php?id=modding
-- Definicje Teal w instalacji gry: `E:/SteamLibrary/steamapps/common/Transport Fever 3/api/tealdef/` i `base/tealdef/`
+- `<gra>` w dokumentach to folder instalacji gry, np. `C:/Program Files (x86)/Steam/steamapps/common/Transport Fever 3`.
+- Definicje Teal w instalacji gry: `<gra>/api/tealdef/` i `base/tealdef/`
 - Przykładowe game scripty z gry: `base/content/terrain/reforestation.gs.lua` + `reforestation.script.tl`

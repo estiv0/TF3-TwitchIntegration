@@ -41,7 +41,7 @@ public sealed class RewardTests : IDisposable
         TwitchAccountStore.Save(new TwitchAccount("42", "streamer", broadcasterType, TwitchAuthClient.Scopes, "ACCESS", "REFRESH", DateTimeOffset.UtcNow.AddHours(3)), store);
         var session = new TwitchSession(new TwitchAuthClient(new HttpClient(), "cid"), store, NullLogger.Instance);
         var service = new RewardService(session, new ChannelPointsApi(session, new HttpClient(_helix)), new ChatApi(session, new HttpClient(_helix)), _queue, mock,
-            Path.Combine(_dir, "out"), Path.Combine(_dir, "rewards.json"), () => _whyInactive, NullLogger.Instance, "https://gin.estfosoft.com/");
+            Path.Combine(_dir, "out"), Path.Combine(_dir, "rewards.json"), () => _whyInactive, NullLogger.Instance, "https://tf3.example.com/");
         service.Finished += _outcomes.Enqueue;
         return service;
     }
@@ -145,11 +145,11 @@ public sealed class RewardTests : IDisposable
     }
 
     [Theory]
-    [InlineData(RewardKind.AdoptTown, 10, "https://gin.estfosoft.com/#town=10")]
-    [InlineData(RewardKind.BoostIndustry, 20, "https://gin.estfosoft.com/#industry=20")]
-    [InlineData(RewardKind.HoldLine, 30, "https://gin.estfosoft.com/#line=30")]
+    [InlineData(RewardKind.AdoptTown, 10, "https://tf3.example.com/#town=10")]
+    [InlineData(RewardKind.BoostIndustry, 20, "https://tf3.example.com/#industry=20")]
+    [InlineData(RewardKind.HoldLine, 30, "https://tf3.example.com/#line=30")]
     public void Links_open_the_object_on_the_site(RewardKind kind, long entity, string link) =>
-        Assert.Equal(link, RewardMessages.Link("https://gin.estfosoft.com", kind, entity));
+        Assert.Equal(link, RewardMessages.Link("https://tf3.example.com", kind, entity));
 
     [Fact]
     public async Task Buying_a_town_links_to_it_in_chat()
@@ -160,7 +160,7 @@ public sealed class RewardTests : IDisposable
         ModReports("ok");
 
         var chat = await _helix.WaitFor(r => r.Url.EndsWith("/chat/messages"));
-        Assert.Equal("@widz miasto Łódź jest teraz Twoje! https://gin.estfosoft.com/#town=10", Message(chat));
+        Assert.Equal("@widz miasto Łódź jest teraz Twoje! https://tf3.example.com/#town=10", Message(chat));
     }
 
     [Fact]
@@ -190,9 +190,9 @@ public sealed class RewardTests : IDisposable
     {
         var c = RewardKinds.Defaults.Single(d => d.Kind == RewardKind.CreateTown);
 
-        var prompt = (string)RewardService.Body(c, active: true, RewardMessages.SiteHost("https://gin.estfosoft.com/"))["prompt"]!;
+        var prompt = (string)RewardService.Body(c, active: true, RewardMessages.SiteHost("https://tf3.example.com/"))["prompt"]!;
 
-        Assert.StartsWith("Na mapie gin.estfosoft.com kliknij", prompt);
+        Assert.StartsWith("Na mapie tf3.example.com kliknij", prompt);
     }
 
     // ------------------------------------------------------------------ wykupienia (symulacja)
@@ -219,7 +219,7 @@ public sealed class RewardTests : IDisposable
 
         var o = Assert.Single(_outcomes);
         Assert.True(o.Ok);
-        Assert.EndsWith("https://gin.estfosoft.com/#industry=4321", o.ChatText);
+        Assert.EndsWith("https://tf3.example.com/#industry=4321", o.ChatText);
     }
 
     [Fact]
@@ -230,7 +230,7 @@ public sealed class RewardTests : IDisposable
 
         ModReports("ok"); // starsza wersja moda: bez entity
 
-        Assert.EndsWith("https://gin.estfosoft.com/#pin=3000_-2000&note=Nowa%20Wie%C5%9B", Assert.Single(_outcomes).ChatText);
+        Assert.EndsWith("https://tf3.example.com/#pin=3000_-2000&note=Nowa%20Wie%C5%9B", Assert.Single(_outcomes).ChatText);
     }
 
     [Fact]
@@ -279,7 +279,7 @@ public sealed class RewardTests : IDisposable
         ModReports("ok");
 
         var chat = await _helix.WaitFor(r => r.Url.EndsWith("/chat/messages"));
-        Assert.Equal("@widz zakład Kopalnia węgla Bytom jest teraz Twój! https://gin.estfosoft.com/#industry=20", Message(chat));
+        Assert.Equal("@widz zakład Kopalnia węgla Bytom jest teraz Twój! https://tf3.example.com/#industry=20", Message(chat));
     }
 
     [Fact]
@@ -374,7 +374,7 @@ public sealed class RewardTests : IDisposable
         ModReports("ok", until: """{"year":1922,"month":5,"day":12}""");
 
         var o = Assert.Single(_outcomes);
-        Assert.Equal("@widz nalot skarbówki na zakłady widza ola (1) (-50% produkcji) trwa do 12 maja 1922 (data w grze). https://gin.estfosoft.com/#owner=ola",
+        Assert.Equal("@widz nalot skarbówki na zakłady widza ola (1) (-50% produkcji) trwa do 12 maja 1922 (data w grze). https://tf3.example.com/#owner=ola",
             o.ChatText);
         var queue = await WaitForNotify();
         Assert.Contains("text = \"widz nasłał(a) skarbówkę na zakłady widza ola (1): produkcja -50% do 12 maja 1922.\"", queue);
@@ -389,7 +389,7 @@ public sealed class RewardTests : IDisposable
         ModReports("ok", count: 2, total: 5);
 
         var o = Assert.Single(_outcomes);
-        Assert.Equal("@widz sabotaż hamulców na linii Tramwaj: zniszczone pojazdy: 2 z 5. https://gin.estfosoft.com/#line=31", o.ChatText);
+        Assert.Equal("@widz sabotaż hamulców na linii Tramwaj: zniszczone pojazdy: 2 z 5. https://tf3.example.com/#line=31", o.ChatText);
         var queue = await WaitForNotify();
         Assert.Contains("text = \"Problemy techniczne na linii Tramwaj: zniszczone pojazdy: 2 z 5 (sabotaż: widz).\"", queue);
         Assert.Contains("entity = 31", queue); // kliknięcie w powiadomienie pokazuje linię
@@ -956,7 +956,7 @@ public sealed class RewardTests : IDisposable
         var chat = await _helix.WaitFor(r => r.Url.EndsWith("/chat/messages"));
         Assert.Contains("\"broadcaster_id\":\"42\"", chat.Body);
         Assert.Contains("\"sender_id\":\"42\"", chat.Body);
-        Assert.Equal("@widz linia Linia 1 stoi do 12 maja 1922 (data w grze). https://gin.estfosoft.com/#line=30", Message(chat));
+        Assert.Equal("@widz linia Linia 1 stoi do 12 maja 1922 (data w grze). https://tf3.example.com/#line=30", Message(chat));
         Assert.Equal(new GameDate(1922, 5, 12), _outcomes.Last().Until);
     }
 

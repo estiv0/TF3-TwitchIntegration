@@ -65,8 +65,9 @@ button { font: inherit; color: inherit; }
 }
 
 .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
-/* logo_gn.png: białe na przezroczystym, ok. 2.4:1 */
+/* logo z site.json (config.logo); bez niego zostaje ukryte */
 .brand-logo { height: 34px; width: auto; flex: none; display: block; }
+.brand-logo[hidden] { display: none; }
 .brand h1 { font-size: 17px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .brand-sub { color: var(--muted); font-size: 12px; }
 
