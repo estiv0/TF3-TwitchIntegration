@@ -789,6 +789,18 @@ public sealed class RewardTests : IDisposable
     }
 
     [Fact]
+    public void Prompts_with_the_old_days_placeholder_switch_to_months()
+    {
+        var path = Path.Combine(_dir, "days.json");
+        var boost = RewardSettings.Default.Get(RewardKind.BoostTown) with { Prompt = "Przez {days} dni gry miasto rośnie o {percent}%." };
+        RewardSettingsStore.Save(RewardSettings.Default with { Rewards = [boost] }, path);
+
+        var loaded = RewardSettingsStore.Load(path).Get(RewardKind.BoostTown);
+        Assert.Equal("Przez {months} mies. gry miasto rośnie o {percent}%.", loaded.Prompt);
+        Assert.DoesNotContain("{", loaded.TwitchPrompt);
+    }
+
+    [Fact]
     public async Task No_game_notification_when_turned_off()
     {
         var service = Service();

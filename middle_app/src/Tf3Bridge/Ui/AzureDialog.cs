@@ -31,14 +31,6 @@ public sealed class AzureDialog : Form
         _url.Text = current.ContainerUrl;
         _sas.Text = current.Sas;
 
-        var hint = new Label
-        {
-            AutoSize = true, MaximumSize = new Size(520, 0), ForeColor = SystemColors.GrayText,
-            Text = "Adres kontenera i token SAS wypisuje skrypt infra\\azure-setup.ps1. "
-                 + "Token jest zapisywany zaszyfrowany (DPAPI) tylko na tym koncie Windows, nie w repozytorium. "
-                 + "Można też wkleić cały „SAS URL” w pole adresu.",
-        };
-
         var form = new TableLayoutPanel { AutoSize = true, ColumnCount = 3, Dock = DockStyle.Fill };
         form.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         form.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 380));
@@ -53,13 +45,11 @@ public sealed class AzureDialog : Form
 
         var ok = new Button { Text = "Zapisz", DialogResult = DialogResult.OK, AutoSize = true, MinimumSize = new Size(90, 28) };
         var cancel = new Button { Text = "Anuluj", DialogResult = DialogResult.Cancel, AutoSize = true, MinimumSize = new Size(90, 28) };
-        var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, Margin = new Padding(0, 10, 0, 0) };
-        buttons.Controls.AddRange([cancel, ok, _test]);
+        var buttons = HelpDialog.ButtonRow(HelpDialog.Button(this, "Azure: jak to działa", HelpSections), cancel, ok, _test);
         AcceptButton = ok;
         CancelButton = cancel;
 
         var root = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, Padding = new Padding(14), Dock = DockStyle.Fill };
-        root.Controls.Add(hint);
         root.Controls.Add(form);
         root.Controls.Add(_result);
         root.Controls.Add(buttons);
@@ -85,6 +75,23 @@ public sealed class AzureDialog : Form
             : $"Nie działa: {error}";
         _test.Enabled = true;
     }
+
+    // Explanations behind the "How does it work?" button.
+    private static readonly (string Heading, string Text)[] HelpSections =
+    [
+        ("Po co Azure",
+            "Tf3Bridge zawsze zapisuje dane lokalnie (web\\data). Gdy wysyłka jest włączona, zmienione pliki trafiają też do kontenera "
+            + "Azure Blob Storage, z którego czyta strona dostępna dla widzów."),
+        ("Skąd wziąć adres i token",
+            "Adres kontenera i token SAS wypisuje skrypt infra\\azure-setup.ps1 (token trafia też do schowka). "
+            + "Nowy token, np. gdy stary wygasa: infra\\azure-setup.ps1 -Name <konto> -SasOnly. "
+            + "Można też wkleić cały „SAS URL” w pole adresu, a pole tokenu zostawić puste."),
+        ("Bezpieczeństwo",
+            "Token jest zapisywany zaszyfrowany (DPAPI) tylko na tym koncie Windows, w %LOCALAPPDATA%\\Tf3Bridge, nigdy w repozytorium "
+            + "ani w appsettings.json. Wystarczy mu prawo tworzenia i zapisu plików (create + write)."),
+        ("Testuj połączenie",
+            "Wysyła mały plik bridge-test.txt i pokazuje adres, z którego ma czytać strona (dataUrl w web/site.json)."),
+    ];
 
     private static Label RowLabel(string text) =>
         new() { Text = text, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 6, 8, 0) };

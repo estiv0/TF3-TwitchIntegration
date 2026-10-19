@@ -26,13 +26,6 @@ public sealed class ModSettingsDialog : Form
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
 
-        var hint = new Label
-        {
-            AutoSize = true, MaximumSize = new Size(480, 0), ForeColor = SystemColors.GrayText,
-            Text = "Mod wczytuje zmiany w ciągu kilku sekund, bez restartu gry. "
-                 + "Jeśli gra zacina się przy eksporcie, zmniejsz czas pracy na klatkę albo wyłącz pojazdy.",
-        };
-
         var form = new TableLayoutPanel { AutoSize = true, ColumnCount = 3, Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 0) };
         form.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         form.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -48,13 +41,11 @@ public sealed class ModSettingsDialog : Form
         var ok = new Button { Text = "Zapisz", DialogResult = DialogResult.OK, AutoSize = true, MinimumSize = new Size(90, 28) };
         var cancel = new Button { Text = "Anuluj", DialogResult = DialogResult.Cancel, AutoSize = true, MinimumSize = new Size(90, 28) };
         var defaults = new Button { Text = "Domyślne", AutoSize = true, MinimumSize = new Size(90, 28) };
-        var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, Margin = new Padding(0, 10, 0, 0) };
-        buttons.Controls.AddRange([cancel, ok, defaults]);
+        var buttons = HelpDialog.ButtonRow(HelpDialog.Button(this, "Ustawienia moda: jak to działa", HelpSections), cancel, ok, defaults);
         AcceptButton = ok;
         CancelButton = cancel;
 
         var root = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, Padding = new Padding(14), Dock = DockStyle.Fill };
-        root.Controls.Add(hint);
         root.Controls.Add(form);
         root.Controls.Add(buttons);
         Controls.Add(root);
@@ -80,6 +71,25 @@ public sealed class ModSettingsDialog : Form
         _terrainStep.Value = s.TerrainStepM;
         _terrainStep.Enabled = s.Terrain;
     }
+
+    // Explanations behind the "How does it work?" button.
+    private static readonly (string Heading, string Text)[] HelpSections =
+    [
+        ("Kiedy zmiany działają",
+            "Mod wczytuje ustawienia co kilka sekund, więc zmiany działają bez restartu gry. Bez Tf3Bridge mod używa wartości domyślnych."),
+        ("Eksport danych",
+            "Mod wysyła stan gry (miasta, zakłady, linie, pojazdy) co podaną liczbę dni gry, ale nie częściej niż co podaną liczbę sekund. "
+            + "Na pauzie eksportu nie ma."),
+        ("Czas pracy na klatkę",
+            "Eksport jest rozłożony na wiele klatek, żeby gra się nie zacinała. Jeśli gra mimo to przycina przy eksporcie, "
+            + "zmniejsz ten czas albo wyłącz pojazdy."),
+        ("Pojazdy i ich szczegóły",
+            "Pojazdy dają ruch na mapie, flotę i liczbę pojazdów na liniach. Szczegóły (model, wiek, stan techniczny, pojemność) "
+            + "są dodatkowym kosztem przy dużej liczbie pojazdów."),
+        ("Teren",
+            "Teren to tło mapy na stronie, a Tf3Bridge sprawdza na nim, gdzie widzowie mogą budować. Mniejszy odstęp między próbkami "
+            + "daje dokładniejszą mapę, ale większy plik i dłuższy eksport (robiony w tle)."),
+    ];
 
     private static NumericUpDown Number((int Min, int Max) range) =>
         new() { Minimum = range.Min, Maximum = range.Max, Width = 70, TextAlign = HorizontalAlignment.Right };

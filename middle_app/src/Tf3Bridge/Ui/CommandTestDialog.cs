@@ -59,14 +59,6 @@ public sealed class CommandTestDialog : Form
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
 
-        var hint = new Label
-        {
-            AutoSize = true, MaximumSize = new Size(520, 0), ForeColor = SystemColors.GrayText,
-            Text = "Wysyła komendę do gry tą samą drogą, której później użyją czat i punkty kanału. "
-                 + "TF3 musi działać z włączonym modem; wynik przychodzi zwykle po 1–3 s. "
-                 + "Lista obiektów pochodzi z ostatniego eksportu.",
-        };
-
         foreach (var (_, label) in Kinds) _kind.Items.Add(label);
         var refresh = new Button { Text = "Odśwież listę", AutoSize = true, MinimumSize = new Size(0, 26) };
 
@@ -83,8 +75,7 @@ public sealed class CommandTestDialog : Form
         form.Controls.Add(actions, 1, 2);
 
         var close = new Button { Text = "Zamknij", DialogResult = DialogResult.Cancel, AutoSize = true, MinimumSize = new Size(90, 28) };
-        var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, Margin = new Padding(0, 10, 0, 0) };
-        buttons.Controls.AddRange([close, _send, _notify]);
+        var buttons = HelpDialog.ButtonRow(HelpDialog.Button(this, "Test akcji: jak to działa", HelpSections), close, _send, _notify);
         CancelButton = close;
 
         foreach (var kind in Simulated) _reward.Items.Add(RewardsDialog.KindLabel(kind));
@@ -109,7 +100,7 @@ public sealed class CommandTestDialog : Form
         renameBox.Controls.Add(renameInner);
 
         var root = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, Padding = new Padding(14), Dock = DockStyle.Fill };
-        root.Controls.AddRange([hint, simBox, renameBox, buttons]);
+        root.Controls.AddRange([simBox, renameBox, buttons]);
         Controls.Add(root);
 
         _kind.SelectedIndexChanged += (_, _) => FillObjects();
@@ -139,6 +130,23 @@ public sealed class CommandTestDialog : Form
         }
         base.Dispose(disposing);
     }
+
+    // Explanations behind the "How does it work?" button.
+    private static readonly (string Heading, string Text)[] HelpSections =
+    [
+        ("Do czego to okno",
+            "Testy bez Twitcha. Komendy idą do gry tą samą drogą, której używają nagrody za punkty kanału. "
+            + "TF3 musi działać z włączonym modem i wczytanym zapisem; wynik przychodzi zwykle po 1–3 s."),
+        ("Symulacja nagrody",
+            "Przechodzi całą drogę prawdziwego wykupienia: dopasowanie tekstu widza do obiektu, komenda dla gry, wynik "
+            + "i informacja, czy punkty by wróciły. Na Twitchu nic się nie dzieje, chyba że zaznaczysz wysłanie odpowiedzi na czat: "
+            + "wtedy odpowiedź naprawdę trafia na czat Twojego kanału. Powiadomienie w grze dostaje dopisek [TEST]."),
+        ("Zmiana nazwy",
+            "Ustawia albo usuwa właściciela obiektu („Nazwa | widz”) albo nadaje nową nazwę, bez sprawdzania, czy obiekt ma już właściciela. "
+            + "Lista obiektów pochodzi z ostatniego eksportu; „Odśwież listę” wczytuje ją ponownie."),
+        ("Testowe powiadomienie",
+            "Pokazuje w grze powiadomienie z logo Twitcha, tak jak po wykonanej nagrodzie. Kliknięcie w nie przenosi kamerę do wybranego obiektu."),
+    ];
 
     private GameObject? Selected => _object.SelectedItem is Item item ? item.Object : null;
 

@@ -29,20 +29,11 @@ public sealed class TwitchDialog : Form
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
 
-        var hint = new Label
-        {
-            AutoSize = true, MaximumSize = new Size(480, 0), ForeColor = SystemColors.GrayText,
-            Text = "Zaloguj się kontem kanału, na którym streamujesz. Tf3Bridge dostaje tylko uprawnienia do nagród "
-                 + "za punkty kanału. Token jest zapisywany zaszyfrowany (DPAPI) tylko na tym koncie Windows.",
-        };
-
         var close = new Button { Text = "Zamknij", DialogResult = DialogResult.Cancel, AutoSize = true, MinimumSize = new Size(90, 28) };
-        var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, Margin = new Padding(0, 10, 0, 0) };
-        buttons.Controls.AddRange([close, _logout, _login]);
+        var buttons = HelpDialog.ButtonRow(HelpDialog.Button(this, "Twitch: jak to działa", HelpSections), close, _logout, _login);
         CancelButton = close;
 
-        var root = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, Padding = new Padding(14), Dock = DockStyle.Fill };
-        root.Controls.Add(hint);
+        var root = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, Padding = new Padding(14), Dock = DockStyle.Fill, MinimumSize = new Size(480, 0) };
         root.Controls.Add(_status);
         root.Controls.Add(_code);
         root.Controls.Add(_link);
@@ -116,6 +107,24 @@ public sealed class TwitchDialog : Form
         _login.Enabled = _session.IsConfigured && !_session.IsLoggedIn;
         _logout.Enabled = _session.IsLoggedIn;
     }
+
+    // Explanations behind the "How does it work?" button.
+    private static readonly (string Heading, string Text)[] HelpSections =
+    [
+        ("Którym kontem się logować",
+            "Kontem kanału, na którym streamujesz: nagrody za punkty kanału powstają na tym kanale, a odpowiedzi na czacie idą od tego konta."),
+        ("Jak przebiega logowanie",
+            "Tf3Bridge pokazuje krótki kod i otwiera twitch.tv/activate. Sprawdź tam, czy kod się zgadza, i zatwierdź dostęp. "
+            + "Hasło wpisujesz tylko na stronie Twitcha, Tf3Bridge go nie widzi."),
+        ("Uprawnienia",
+            "Tf3Bridge prosi tylko o odczyt i zarządzanie nagrodami za punkty kanału oraz o czytanie i pisanie na czacie (odpowiedzi dla widzów). "
+            + "Gdy nowa wersja potrzebuje kolejnego uprawnienia, trzeba zalogować się ponownie."),
+        ("Bezpieczeństwo",
+            "Token jest zapisywany zaszyfrowany (DPAPI) tylko na tym koncie Windows, w %LOCALAPPDATA%\\Tf3Bridge. "
+            + "Wylogowanie unieważnia go na Twitchu. Dostęp można też odebrać na Twitchu: Ustawienia → Połączenia."),
+        ("Nagrody za punkty kanału",
+            "Wymagają kanału ze statusem Affiliate albo Partner. Bez niego logowanie działa (czat, komendy), ale nagród nie da się utworzyć."),
+    ];
 
     private static void OpenBrowser(string url)
     {

@@ -87,20 +87,7 @@ public sealed class RewardsDialog : Form
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
 
-        var hint = new Label
-        {
-            AutoSize = true, MaximumSize = new Size(1060, 0), ForeColor = SystemColors.GrayText,
-            Text = "Tylko te nagrody mogą zmieniać grę (czat jest wyłącznie informacyjny). Tf3Bridge tworzy je na Twitchu sam "
-                 + "i pauzuje, gdy gra nie wysyła danych. Widz wpisuje nazwę miasta, zakładu albo linii (przy nowym mieście i zakładzie: wkleja kod z mapy); "
-                 + "gdy jej nie ma, cel jest niejednoznaczny, miejsce się nie nadaje albo gra nie wykona akcji, punkty wracają. W opisie można użyć {months}, {percent} i {site} (adres mapy). "
-                 + "Sabotaże (strajk, skarbówka, chrzczone paliwo, hamulce) działają tylko na obiekty innych widzów; przy skarbówce widz wpisuje nick ofiary. "
-                 + "Mnożnik poniżej 1 to spadek (0,5 = -50%), a przy sabotażu hamulców to największa część pojazdów linii, która zniknie (0,5 = do 50%, zawsze co najmniej 1). "
-                 + "Dotacja i kredyt dają firmie „Kwotę” bez wpisywania tekstu ({amount} w opisie). Kredyt trafia do zakładki Kredyty w grze: gra spłaca go co miesiąc przez podane miesiące gry, "
-                 + "a w kolumnie mnożnika jest jego oprocentowanie w % (2 = 2%; odsetki w TF3 to kwota × %, rozłożone na raty). Gra pozwala mieć najwyżej 4 kredyty naraz (razem z Twoimi). "
-                 + "Bomba, linia, natura i pojazdy nie robią nic w grze: Tf3Bridge tylko je tworzy i włącza razem z grą, a wykupienia zostają w kolejce Twitcha, "
-                 + "gdzie sam je wykonujesz i akceptujesz albo zwracasz (przy nich wybierasz też, czy widz wpisuje tekst). "
-                 + "Limit 0 = bez limitu. Czas efektów jest w miesiącach gry (miesiąc to ok. 1–1,5 min przy prędkości 1×; na pauzie efekt stoi).\n\nStan: " + status,
-        };
+        var statusLabel = new Label { AutoSize = true, MaximumSize = new Size(1060, 0), ForeColor = SystemColors.GrayText, Text = "Stan: " + status };
 
         AddText("title", "Tytuł (max 45)", 170);
         AddText("prompt", "Opis dla widza (max 200)", 330);
@@ -113,7 +100,10 @@ public sealed class RewardsDialog : Form
         AddText("months", "Miesiące gry", 75);
         AddText("factor", "Mnożnik / %", 65);
         AddText("amount", "Kwota ($)", 95);
-        _grid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "input", HeaderText = "Widz wpisuje tekst", Width = 70 });
+        _grid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "input", HeaderText = "Tekst od widza", Width = 80 });
+        // Long headers ("Limit / stream", "Tekst od widza") wrap instead of being cut off.
+        _grid.ColumnHeadersDefaultCellStyle.WrapMode = DataGridViewTriState.True;
+        _grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
         _grid.Columns.Insert(1, new DataGridViewTextBoxColumn { Name = "kind", HeaderText = "Akcja", Width = 140, ReadOnly = true });
 
         foreach (var r in rewards)
@@ -144,24 +134,9 @@ public sealed class RewardsDialog : Form
             var i = _zonesGrid.Rows.Add(IndustryZones.Name(type), ZoneLabel(Zones.GetValueOrDefault(type)));
             _zonesGrid.Rows[i].Tag = type;
         }
-        var zonesHint = new Label
-        {
-            AutoSize = true, MaximumSize = new Size(620, 0), ForeColor = SystemColors.GrayText,
-            Text = "Nowy zakład (kod z mapy): gdzie wolno go postawić. Platformy, łowiska i pogłębiarki i tak tylko na wodzie, reszta tylko na lądzie. "
-                 + "Regiony Tf3Bridge liczy z terenu gry w promieniu ok. 1 km: góry to najbardziej pofałdowany ląd mapy (najwyżej 15%), "
-                 + "nizina to prawie płaski teren. Gdy danego regionu na mapie nie ma (np. płaska mapa bez gór), ograniczenie nie działa. "
-                 + "Na stronie zakazany teren jest czerwony, a kod z takiego miejsca jest odrzucany (punkty wracają). Ile mapy zajmuje każdy region: log Tf3Bridge po eksporcie terenu.",
-        };
-        var zonesRow = new FlowLayoutPanel { AutoSize = true, Margin = new Padding(0, 10, 0, 0) };
-        zonesRow.Controls.AddRange([_zonesGrid, zonesHint]);
+        var zonesTitle = SectionTitle("Gdzie widzowie mogą budować nowe zakłady");
 
-        var extrasHint = new Label
-        {
-            AutoSize = true, MaximumSize = new Size(1060, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 10, 0, 0),
-            Text = $"Twoje nagrody z tytułem zaczynającym się od „{ExtraReward.Prefix}” (bez akcji w grze; wykupienia zostają w kolejce Twitcha dla Ciebie). "
-                 + "Zaznaczone Tf3Bridge włącza razem z grą i wyłącza, gdy gra nie wysyła danych albo Tf3Bridge się zamyka. "
-                 + "Lista jest odczytywana przy połączeniu z Twitchem (start Tf3Bridge) i po zapisaniu tego okna.",
-        };
+        var extrasTitle = SectionTitle($"Twoje nagrody „{ExtraReward.Prefix}…” włączane razem z grą");
         _extrasGrid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "enabled", HeaderText = "Wł.", Width = 36 });
         _extrasGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "title", HeaderText = "Tytuł", Width = 300, ReadOnly = true });
         _extrasGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "cost", HeaderText = "Koszt", Width = 70, ReadOnly = true });
@@ -172,14 +147,14 @@ public sealed class RewardsDialog : Form
                 e.Switchable ? "Tf3Bridge włącza i wyłącza ją z grą" : "Twitch nie pozwala Tf3Bridge jej zmieniać (dodana ręcznie w panelu)");
             if (!e.Switchable) _extrasGrid.Rows[i].Cells["state"].Style.ForeColor = Color.DarkOrange;
         }
-        if (extras.Count == 0) extrasHint.Text += "\nNa kanale nie ma takich nagród.";
-        _extrasGrid.Visible = extras.Count > 0;
+        // The section only matters when the channel has such rewards; an empty one just confuses.
+        extrasTitle.Visible = _extrasGrid.Visible = extras.Count > 0;
 
         var ok = new Button { Text = "Zapisz i wyślij na Twitcha", AutoSize = true, MinimumSize = new Size(90, 28) };
         var cancel = new Button { Text = "Anuluj", DialogResult = DialogResult.Cancel, AutoSize = true, MinimumSize = new Size(90, 28) };
         var defaults = new Button { Text = "Przywróć domyślne", AutoSize = true, MinimumSize = new Size(90, 28) };
-        var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, Margin = new Padding(0, 10, 0, 0) };
-        buttons.Controls.AddRange([cancel, ok, defaults]);
+        var help = HelpDialog.Button(this, "Nagrody za punkty kanału: jak to działa", HelpSections);
+        var buttons = HelpDialog.ButtonRow(help, cancel, ok, defaults);
         CancelButton = cancel;
 
         var notifyRow = new FlowLayoutPanel { AutoSize = true, Margin = Padding.Empty, WrapContents = false };
@@ -188,7 +163,7 @@ public sealed class RewardsDialog : Form
         _notify.Margin = new Padding(0, 3, 0, 0);
 
         var root = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, Padding = new Padding(14), Dock = DockStyle.Fill };
-        root.Controls.AddRange([hint, _grid, _chat, notifyRow, zonesRow, extrasHint, _extrasGrid, _error, buttons]);
+        root.Controls.AddRange([statusLabel, _grid, _chat, notifyRow, zonesTitle, _zonesGrid, extrasTitle, _extrasGrid, _error, buttons]);
         Controls.Add(root);
 
         ok.Click += (_, _) =>
@@ -215,6 +190,45 @@ public sealed class RewardsDialog : Form
             DialogResult = DialogResult.OK;
         };
     }
+
+    private static Label SectionTitle(string text) =>
+        new() { AutoSize = true, Text = text, Font = new Font("Segoe UI", 9f, FontStyle.Bold), Margin = new Padding(0, 14, 0, 4) };
+
+    // Explanations behind the "How does it work?" button (they used to fill the dialog itself).
+    private static readonly (string Heading, string Text)[] HelpSections =
+    [
+        ("Nagrody za punkty kanału",
+            "Tylko te nagrody mogą zmieniać grę; czat jest wyłącznie informacyjny. Tf3Bridge sam tworzy je na Twitchu, "
+            + "włącza, gdy gra wysyła dane, i wyłącza, gdy gra stoi, jest zatrzymana albo Tf3Bridge się zamyka."),
+        ("Tekst od widza i zwrot punktów",
+            "Widz wpisuje nazwę miasta, zakładu albo linii (przy nowym mieście i zakładzie wkleja kod z mapy na stronie). "
+            + "Gdy celu nie ma, jest niejednoznaczny, miejsce się nie nadaje albo gra nie wykona akcji, punkty wracają do widza."),
+        ("Opis dla widza",
+            "W opisie można użyć: {months} (czas efektu), {percent} (siła efektu), {site} (adres mapy) i {amount} (kwota dotacji albo kredytu)."),
+        ("Sabotaże",
+            "Strajk, skarbówka, chrzczone paliwo i sabotaż hamulców działają tylko na obiekty innych widzów. Przy skarbówce widz wpisuje nick ofiary."),
+        ("Mnożnik / %",
+            "Mnożnik powyżej 1 to wzrost (1,5 = +50%), poniżej 1 spadek (0,5 = -50%). Przy sabotażu hamulców to największa część pojazdów linii, "
+            + "która zniknie (0,5 = do 50%, zawsze co najmniej 1 pojazd). Przy kredycie ta kolumna to oprocentowanie w % (2 = 2%)."),
+        ("Dotacja i kredyt",
+            "Dają firmie „Kwotę”, widz nic nie wpisuje. Kredyt trafia do zakładki Kredyty w grze: gra spłaca go co miesiąc przez podane miesiące gry, "
+            + "a odsetki w TF3 to kwota × %, rozłożone na raty. Gra pozwala mieć najwyżej 4 kredyty naraz (razem z Twoimi)."),
+        ("Nagrody wykonywane przez streamera",
+            "Bomba, linia, natura i pojazdy nie robią nic w grze. Tf3Bridge tylko je tworzy i włącza razem z grą, a wykupienia zostają w kolejce Twitcha, "
+            + "gdzie sam je wykonujesz i akceptujesz albo zwracasz. Przy nich wybierasz też, czy widz wpisuje tekst."),
+        ("Limity i czas",
+            "Limit 0 = bez limitu. Czas efektów jest w miesiącach gry (miesiąc to ok. 1–1,5 min przy prędkości 1×; na pauzie efekt stoi)."),
+        ("Gdzie widzowie mogą budować nowe zakłady",
+            "Platformy, łowiska i pogłębiarki i tak stają tylko na wodzie, reszta tylko na lądzie. Regiony Tf3Bridge liczy z terenu gry w promieniu ok. 1 km: "
+            + "góry to najbardziej pofałdowany ląd mapy (najwyżej 15%), nizina to prawie płaski teren. Gdy danego regionu na mapie nie ma "
+            + "(np. płaska mapa bez gór), ograniczenie nie działa. Na stronie zakazany teren jest czerwony, a kod z takiego miejsca jest odrzucany "
+            + "(punkty wracają). Ile mapy zajmuje każdy region, Tf3Bridge pisze w logu po eksporcie terenu."),
+        ($"Twoje nagrody „{ExtraReward.Prefix}…”",
+            $"Nagrody z tytułem zaczynającym się od „{ExtraReward.Prefix}”, które nie są żadną z akcji Tf3Bridge. Nie robią nic w grze, a wykupienia zostają "
+            + "w kolejce Twitcha dla Ciebie. Zaznaczone Tf3Bridge włącza razem z grą i wyłącza, gdy gra nie wysyła danych albo Tf3Bridge się zamyka. "
+            + "Lista jest odczytywana przy połączeniu z Twitchem (start Tf3Bridge) i po zapisaniu tego okna. "
+            + "Nagrody dodanej ręcznie w panelu Twitcha Tf3Bridge nie może zmieniać (Twitch na to nie pozwala)."),
+    ];
 
     private void AddText(string name, string header, int width) =>
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = name, HeaderText = header, Width = width, SortMode = DataGridViewColumnSortMode.NotSortable });

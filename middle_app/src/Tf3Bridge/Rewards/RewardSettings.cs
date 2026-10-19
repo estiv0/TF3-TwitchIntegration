@@ -42,7 +42,7 @@ public sealed record RewardConfig(
     public const int MaxPrompt = 200;
     public static readonly (int Min, int Max) MonthsRange = (1, 60);
 
-    /// <summary>Money the dotacja / kredyt gives the streamer's company (<see cref="RewardKinds.HasAmount"/>).</summary>
+    /// <summary>Money the subsidy / loan gives the streamer's company (<see cref="RewardKinds.HasAmount"/>).</summary>
     public long Amount { get; init; }
 
     public static readonly (long Min, long Max) AmountRange = (1_000, 100_000_000_000);
@@ -279,8 +279,12 @@ public sealed record RewardSettings(IReadOnlyList<RewardConfig> Rewards, string 
     {
         Amount = r.Amount > 0 ? r.Amount : d.Amount,
         Title = r.Title == OldAdoptTitle ? d.Title : r.Title,
-        Prompt = r.Prompt == OldAdoptPrompt ? d.Prompt : r.Prompt,
+        Prompt = r.Prompt == OldAdoptPrompt ? d.Prompt : MigrateDays(r.Prompt),
     };
+
+    // Prompts saved before days -> months still say {days}, which nothing replaces any more.
+    private static string MigrateDays(string prompt) =>
+        prompt.Replace("{days} dni gry", "{months} mies. gry", StringComparison.Ordinal).Replace("{days}", "{months}", StringComparison.Ordinal);
 }
 
 /// <summary>%LOCALAPPDATA%\Tf3Bridge\rewards.json (per streamer, not in git).</summary>
