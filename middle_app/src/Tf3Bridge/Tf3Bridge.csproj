@@ -15,7 +15,7 @@
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.12" />
   </ItemGroup>
 
-  <!-- Te same globalne usingi, które dawał wcześniej Microsoft.NET.Sdk.Worker -->
+  <!-- The same global usings that Microsoft.NET.Sdk.Worker used to provide -->
   <ItemGroup>
     <Using Include="Microsoft.Extensions.Configuration" />
     <Using Include="Microsoft.Extensions.DependencyInjection" />
@@ -27,8 +27,8 @@
     <None Update="appsettings*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <!-- Mod wbudowany w exe: ModInstaller instaluje/aktualizuje go w Steam\userdata\<konto>\3493540\local\mods.
-       Nazwa zasobu = "mod/" + ścieżka względem lua_mod\ (jak w zipie z pack.ps1). -->
+  <!-- The mod built into the exe: ModInstaller installs/updates it in Steam\userdata\<account>\3493540\local\staging_area.
+       Resource name = "mod/" + path relative to lua_mod\ (as in the zip from pack.ps1). -->
   <PropertyGroup>
     <LuaModDir>$(MSBuildThisFileDirectory)..\..\..\lua_mod\</LuaModDir>
   </PropertyGroup>

@@ -1,19 +1,19 @@
-﻿# Wgrywa stronę (folder web\) na Azure. Dwa cele:
+﻿# Uploads the website (the web\ folder) to Azure. Two targets:
 #
-#   swa      (domyślny) Azure Static Web Apps: własna domena + darmowy HTTPS.
+#   swa      (default) Azure Static Web Apps: custom domain + free HTTPS.
 #            Token: portal -> Static Web App -> Overview -> Manage deployment token.
-#            Wysyła narzędziem "swa" (Node.js: winget install OpenJS.NodeJS.LTS), zawsze całą stronę.
-#   storage  "Static website" konta Storage (kontener $web), bez Node i bez Azure CLI.
-#            Token: konto Storage -> Containers -> $web -> ... -> Generate SAS, Create + Write,
-#            HTTPS only, kopiujesz "Blob SAS URL". Wysyła tylko pliki zmienione od ostatniego razu.
+#            Uploads with the "swa" tool (Node.js: winget install OpenJS.NodeJS.LTS), always the whole site.
+#   storage  Storage account "Static website" (the $web container), no Node and no Azure CLI.
+#            Token: Storage account -> Containers -> $web -> ... -> Generate SAS, Create + Write,
+#            HTTPS only, copy the "Blob SAS URL". Uploads only the files changed since the last time.
 #
-#   .\infra\deploy-web.ps1 -DeployToken "<token>"          # SWA, pierwszy raz
-#   .\infra\deploy-web.ps1                                 # SWA, kolejne razy (token zapamiętany)
-#   .\infra\deploy-web.ps1 -Target storage -SasUrl "<Blob SAS URL `$web>"   # Storage, pierwszy raz
-#   .\infra\deploy-web.ps1 -Target storage                 # Storage, kolejne razy
-#   -DryRun  tylko pokaż listę plików,  -Force  (storage) wyślij wszystko, nie tylko zmienione
+#   .\infra\deploy-web.ps1 -DeployToken "<token>"          # SWA, the first time
+#   .\infra\deploy-web.ps1                                 # SWA, next times (token remembered)
+#   .\infra\deploy-web.ps1 -Target storage -SasUrl "<Blob SAS URL `$web>"   # Storage, the first time
+#   .\infra\deploy-web.ps1 -Target storage                 # Storage, next times
+#   -DryRun  only show the file list,  -Force  (storage) upload everything, not just the changed files
 #
-# Tokeny są zapamiętywane w %LOCALAPPDATA%\Tf3Bridge, zaszyfrowane dla Twojego konta Windows (DPAPI).
+# Tokens are remembered in %LOCALAPPDATA%\Tf3Bridge, encrypted for your Windows account (DPAPI).
 param(
     [ValidateSet("swa", "storage")][string]$Target = "swa",
     [string]$DeployToken,
@@ -30,7 +30,7 @@ $sasFile = Join-Path $stateDir "web-deploy-sas.txt"
 $swaTokenFile = Join-Path $stateDir "web-deploy-swa-token.txt"
 $manifestFile = Join-Path $stateDir "web-deploy-manifest.json"
 
-# Nie wysyłamy danych z gry (idą przez Tf3Bridge do kontenera "live"), źródeł ikon ani plików roboczych.
+# We don't upload game data (it goes through Tf3Bridge to the "live" container), icon sources or working files.
 $excludeDirs = @("data", "img_res")
 $excludeFiles = @("serve.ps1", "README.md", "site.example.json")
 
@@ -48,10 +48,10 @@ $contentTypes = @{
     ".txt"  = "text/plain; charset=utf-8"
 }
 
-# ---------------------------------------------------------------- sekrety (DPAPI)
+# ---------------------------------------------------------------- secrets (DPAPI)
 function Save-Secret([string]$path, [string]$value) {
     New-Item -ItemType Directory -Force $stateDir | Out-Null
-    # ConvertFrom-SecureString bez klucza = DPAPI: odczyta to tylko to konto Windows na tym komputerze
+    # ConvertFrom-SecureString without a key = DPAPI: only this Windows account on this computer can read it
     ConvertTo-SecureString $value -AsPlainText -Force | ConvertFrom-SecureString | Set-Content $path
 }
 
@@ -61,11 +61,11 @@ function Read-Secret([string]$path) {
     [System.Net.NetworkCredential]::new("", $secure).Password
 }
 
-# ---------------------------------------------------------------- lista plików
-# Ikonki z gry nie są w repozytorium (prawa Urban Games) - generuje je tools\extract_game_icons.py.
+# ---------------------------------------------------------------- file list
+# The game icons aren't in the repository (Urban Games' rights) - tools\extract_game_icons.py generates them.
 foreach ($dir in "vehicles", "stations", "resources") {
     if (-not (Get-ChildItem (Join-Path $webDir "img\$dir") -Filter *.png -ErrorAction SilentlyContinue)) {
-        throw "Brak ikonek w web\img\$dir. Uruchom najpierw: python tools\extract_game_icons.py `"<folder gry>`""
+        throw "No icons in web\img\$dir. Run first: python tools\extract_game_icons.py `"<game folder>`""
     }
 }
 
@@ -83,7 +83,7 @@ $files = Get-ChildItem $webDir -Recurse -File | Where-Object {
     }
 }
 
-Write-Host "Strona: $webDir ($($files.Count) plików), cel: $Target"
+Write-Host "Website: $webDir ($($files.Count) files), target: $Target"
 
 # ================================================================ Static Web Apps
 if ($Target -eq "swa") {
@@ -97,18 +97,18 @@ if ($Target -eq "swa") {
         return
     }
     if (-not $DeployToken) {
-        throw "Brak tokenu. Uruchom raz z -DeployToken `"<token>`" (portal: Static Web App -> Overview -> Manage deployment token)."
+        throw "No token. Run once with -DeployToken `"<token>`" (portal: Static Web App -> Overview -> Manage deployment token)."
     }
 
-    # Node mógł być właśnie zainstalowany i nie być jeszcze w PATH tego okna
+    # Node may have just been installed and not be on this window's PATH yet
     $npx = (Get-Command npx.cmd -ErrorAction SilentlyContinue).Source
     if (-not $npx -and (Test-Path "$env:ProgramFiles\nodejs\npx.cmd")) {
         $npx = "$env:ProgramFiles\nodejs\npx.cmd"
         $env:Path = "$env:ProgramFiles\nodejs;$env:Path"
     }
-    if (-not $npx) { throw "Brak Node.js. Zainstaluj: winget install OpenJS.NodeJS.LTS, potem otwórz nowe okno." }
+    if (-not $npx) { throw "Node.js not found. Install it: winget install OpenJS.NodeJS.LTS, then open a new window." }
 
-    # swa wysyła cały folder, więc składamy kopię tylko z plikami strony
+    # swa uploads the whole folder, so we assemble a copy with only the website files
     $stage = Join-Path ([IO.Path]::GetTempPath()) "tf3-web-deploy"
     Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
     foreach ($f in $files) {
@@ -117,12 +117,12 @@ if ($Target -eq "swa") {
         Copy-Item $f.File $dest
     }
 
-    Write-Host "Wysyłam przez Static Web Apps CLI (pierwszy raz pobiera narzędzie, chwilę to trwa)..."
-    # token przez zmienną środowiskową, a nie w linii poleceń (nie widać go na liście procesów)
+    Write-Host "Uploading with the Static Web Apps CLI (the first time it downloads the tool, which takes a moment)..."
+    # the token through an environment variable, not the command line (it isn't visible in the process list)
     $env:SWA_CLI_DEPLOYMENT_TOKEN = $DeployToken
     try {
         & $npx --yes "@azure/static-web-apps-cli@latest" deploy $stage --env production
-        if ($LASTEXITCODE -ne 0) { throw "swa deploy zakończył się błędem ($LASTEXITCODE). Sprawdź token (Manage deployment token -> Reset, jeśli trzeba)." }
+        if ($LASTEXITCODE -ne 0) { throw "swa deploy failed ($LASTEXITCODE). Check the token (Manage deployment token -> Reset, if needed)." }
     }
     finally {
         Remove-Item Env:SWA_CLI_DEPLOYMENT_TOKEN -ErrorAction SilentlyContinue
@@ -130,22 +130,22 @@ if ($Target -eq "swa") {
     }
 
     Write-Host ""
-    Write-Host "Gotowe. Adres: portal -> Static Web App -> Overview -> URL (albo Twoja domena). Odśwież przez Ctrl+F5." -ForegroundColor Green
+    Write-Host "Done. Address: portal -> Static Web App -> Overview -> URL (or your domain). Refresh with Ctrl+F5." -ForegroundColor Green
     return
 }
 
 # ================================================================ Storage ($web)
 if ($SasUrl) {
     if ($SasUrl -notmatch '^https://[^/]+/\$web\?.*sig=') {
-        throw "To nie wygląda na SAS URL kontenera `$web (oczekiwane: https://<konto>.blob.core.windows.net/`$web?sv=...&sig=...)."
+        throw "This doesn't look like a SAS URL of the `$web container (expected: https://<account>.blob.core.windows.net/`$web?sv=...&sig=...)."
     }
     Save-Secret $sasFile $SasUrl
-    Remove-Item $manifestFile -ErrorAction SilentlyContinue  # nowy cel = wyślij wszystko
+    Remove-Item $manifestFile -ErrorAction SilentlyContinue  # a new target = upload everything
 } else {
     $SasUrl = Read-Secret $sasFile
 }
 if (-not $SasUrl -and -not $DryRun) {
-    throw "Brak tokenu. Uruchom raz z -Target storage -SasUrl `"<Blob SAS URL kontenera `$web>`"."
+    throw "No token. Run once with -Target storage -SasUrl `"<Blob SAS URL of the `$web container>`"."
 }
 
 $previous = @{}
@@ -155,13 +155,13 @@ if (-not $Force -and (Test-Path $manifestFile)) {
 $changed = @($files | Where-Object { $previous[$_.Path] -ne $_.Hash })
 $removed = @($previous.Keys | Where-Object { $_ -notin $files.Path })
 
-Write-Host "Do wysłania: $($changed.Count)"
+Write-Host "To upload: $($changed.Count)"
 if ($DryRun) {
     $changed | Format-Table Path, Type -AutoSize | Out-String | Write-Host
     return
 }
 if ($changed.Count -eq 0) {
-    Write-Host "Nic się nie zmieniło. (-Force wysyła wszystko)" -ForegroundColor Green
+    Write-Host "Nothing has changed. (-Force uploads everything)" -ForegroundColor Green
 }
 
 $base, $query = $SasUrl.Split('?', 2)
@@ -172,7 +172,7 @@ try {
         $segments = $f.Path.Split('/') | ForEach-Object { [Uri]::EscapeDataString($_) }
         $uri = "$base/$($segments -join '/')?$query"
 
-        # HTML, JS i CSS bez cache, żeby nowa wersja była widoczna od razu; obrazki mogą poleżeć dobę
+        # HTML, JS and CSS without caching, so a new version shows right away; images may stay cached for a day
         $cache = if ($f.Type -like "image/*") { "public, max-age=86400" } else { "no-cache" }
 
         $request = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Put, $uri)
@@ -186,11 +186,11 @@ try {
         $response = $client.SendAsync($request).GetAwaiter().GetResult()
         if (-not $response.IsSuccessStatusCode) {
             $hint = switch ([int]$response.StatusCode) {
-                403 { " (token SAS nieprawidłowy, wygasł albo bez prawa Create/Write)" }
-                404 { " (nie ma kontenera `$web - czy Static website jest włączone?)" }
+                403 { " (the SAS token is invalid, expired or lacks the Create/Write right)" }
+                404 { " (there's no `$web container - is Static website enabled?)" }
                 default { "" }
             }
-            throw "Błąd przy $($f.Path): $([int]$response.StatusCode) $($response.ReasonPhrase)$hint"
+            throw "Error for $($f.Path): $([int]$response.StatusCode) $($response.ReasonPhrase)$hint"
         }
         $sent[$f.Path] = $f.Hash
         Write-Host "  ↑ $($f.Path)"
@@ -198,19 +198,19 @@ try {
 }
 finally {
     $client.Dispose()
-    # zapisujemy także po błędzie: następne uruchomienie dośle tylko to, czego brakuje
+    # we save also after an error: the next run uploads only what's missing
     New-Item -ItemType Directory -Force $stateDir | Out-Null
     $sent | ConvertTo-Json | Set-Content $manifestFile
 }
 
 if ($removed.Count) {
     Write-Host ""
-    Write-Host "Tych plików nie ma już lokalnie, ale zostały na Azure (usuń w portalu, jeśli trzeba):" -ForegroundColor Yellow
+    Write-Host "These files no longer exist locally, but stayed on Azure (delete them in the portal if needed):" -ForegroundColor Yellow
     $removed | ForEach-Object { Write-Host "  $_" }
     $removed | ForEach-Object { $sent.Remove($_) }
     $sent | ConvertTo-Json | Set-Content $manifestFile
 }
 
-$site = if ($base -match '^https://([^.]+)\.blob\.') { "konto $($Matches[1]), Static website (Primary endpoint w portalu)" } else { $base }
+$site = if ($base -match '^https://([^.]+)\.blob\.') { "account $($Matches[1]), Static website (Primary endpoint in the portal)" } else { $base }
 Write-Host ""
-Write-Host "Gotowe: $site. Odśwież stronę przez Ctrl+F5." -ForegroundColor Green
+Write-Host "Done: $site. Refresh the page with Ctrl+F5." -ForegroundColor Green

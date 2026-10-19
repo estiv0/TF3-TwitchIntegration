@@ -1,15 +1,15 @@
-# Lokalny podgląd strony: serwuje folder web/ na http://localhost:5080
-# .NET SDK jest w katalogu użytkownika (instalacja z Ridera), więc narzędzie dotnet-serve
-# potrzebuje DOTNET_ROOT - ustawiamy go tylko dla tego procesu.
+# Local website preview: serves the web/ folder at http://localhost:5080
+# The .NET SDK is in the user folder (installed by Rider), so the dotnet-serve tool
+# needs DOTNET_ROOT - we set it for this process only.
 param([int]$Port = 5080)
 
 $dotnetRoot = Join-Path $env:USERPROFILE ".dotnet"
 $serve = Join-Path $dotnetRoot "tools\dotnet-serve.exe"
 if (-not (Test-Path $serve)) {
-    Write-Host "Instaluję dotnet-serve..."
+    Write-Host "Installing dotnet-serve..."
     & (Join-Path $dotnetRoot "dotnet.exe") tool install -g dotnet-serve
 }
 
 $env:DOTNET_ROOT = $dotnetRoot
-Write-Host "Strona: http://localhost:$Port  (Ctrl+C kończy)"
+Write-Host "Website: http://localhost:$Port  (Ctrl+C stops it)"
 & $serve -d $PSScriptRoot -p $Port -h "Cache-Control: no-store"

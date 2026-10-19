@@ -1,7 +1,7 @@
-# Ikona powiadomienia w grze z logo (infra\twitch_logo.png) -> lua_mod\content\tf3export\icons\twitch*.tga.
-# Ikony powiadomień gry to maski: TGA typ 3 (8-bit grayscale, wiersze od dołu), biały glif na czarnym,
-# kolor nadaje gra według guiType. Dwa rozmiary jak w grze: nazwa@2x.tga 48×48 i nazwa_32@2x.tga 64×64.
-# Glif = piksele logo wyraźnie ciemniejsze od białego tła (fiolet), oczy i wnętrze dymka zostają dziurami.
+# The in-game notification icon from the logo (infra\twitch_logo.png) -> lua_mod\content\tf3export\icons\twitch*.tga.
+# Game notification icons are masks: TGA type 3 (8-bit grayscale, rows bottom-up), a white glyph on black,
+# the game adds the color by guiType. Two sizes as in the game: name@2x.tga 48×48 and name_32@2x.tga 64×64.
+# Glyph = logo pixels clearly darker than the white background (purple); the eyes and the inside of the bubble stay holes.
 param(
     [string]$Source = (Join-Path $PSScriptRoot "twitch_logo.png"),
     [string]$OutDir = (Join-Path $PSScriptRoot "..\lua_mod\content\tf3export\icons"),
@@ -10,8 +10,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# System.Drawing kompiluje się w Add-Type bez kłopotów tylko w Windows PowerShell 5.1 (.NET Framework);
-# w PowerShell 7 typy GDI+ są rozrzucone po zestawach zależnych od wersji .NET.
+# System.Drawing compiles in Add-Type without trouble only in Windows PowerShell 5.1 (.NET Framework);
+# in PowerShell 7 the GDI+ types are spread over assemblies that depend on the .NET version.
 if ($PSVersionTable.PSEdition -eq "Core") {
     & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath `
         -Source $Source -OutDir $OutDir -Name $Name
@@ -29,7 +29,7 @@ using System.Runtime.InteropServices;
 
 public static class Tf3Icon
 {
-    // Maska logo (255 = glif) przycięta do glifu.
+    // The logo mask (255 = glyph) cropped to the glyph.
     public static Bitmap Mask(string path)
     {
         int w, h;
@@ -42,7 +42,7 @@ public static class Tf3Icon
         {
             int i = (y * w + x) * 4;
             int b = px[i], g = px[i + 1], r = px[i + 2], a = px[i + 3];
-            // fiolet: kanał zielony dużo niższy niż czerwony/niebieski; tło i środek są jasne
+            // purple: the green channel much lower than red/blue; the background and the middle are bright
             bool glyph = a > 128 && g < 160 && (r + b) / 2 - g > 40;
             if (!glyph) continue;
             mask[y * w + x] = 255;
@@ -64,7 +64,7 @@ public static class Tf3Icon
         return outBmp;
     }
 
-    // Glif wpisany w kwadrat size×size z marginesem, wygładzony; TGA typ 3, wiersze od dołu.
+    // The glyph fitted into a size×size square with a margin, smoothed; TGA type 3, rows bottom-up.
     public static void SaveTga(Bitmap mask, int size, int margin, string path)
     {
         using (var dst = new Bitmap(size, size, PixelFormat.Format32bppArgb))
@@ -79,7 +79,7 @@ public static class Tf3Icon
             float dw = mask.Width * scale, dh = mask.Height * scale;
             using (var attrs = new ImageAttributes())
             {
-                attrs.SetWrapMode(System.Drawing.Drawing2D.WrapMode.TileFlipXY); // bez ciemnej obwódki na brzegach
+                attrs.SetWrapMode(System.Drawing.Drawing2D.WrapMode.TileFlipXY); // no dark rim at the edges
                 g.DrawImage(mask, new Rectangle((int)Math.Round((size - dw) / 2), (int)Math.Round((size - dh) / 2),
                     (int)Math.Round(dw), (int)Math.Round(dh)), 0, 0, mask.Width, mask.Height, GraphicsUnit.Pixel, attrs);
             }
@@ -88,7 +88,7 @@ public static class Tf3Icon
         using (var fs = File.Create(path))
         {
         var header = new byte[18];
-        header[2] = 3; // grayscale, bez kompresji
+        header[2] = 3; // grayscale, uncompressed
         header[12] = (byte)size; header[13] = (byte)(size >> 8);
         header[14] = (byte)size; header[15] = (byte)(size >> 8);
         header[16] = 8;
@@ -129,9 +129,9 @@ public static class Tf3Icon
 New-Item -ItemType Directory -Force $OutDir | Out-Null
 $mask = [Tf3Icon]::Mask((Resolve-Path $Source).Path)
 try {
-    # marginesy jak w ikonach gry (building_town_arrow_up: ~6 px przy 48, ~7 px przy 64)
+    # margins as in the game icons (building_town_arrow_up: ~6 px at 48, ~7 px at 64)
     [Tf3Icon]::SaveTga($mask, 48, 6, (Join-Path $OutDir "$Name@2x.tga"))
     [Tf3Icon]::SaveTga($mask, 64, 8, (Join-Path $OutDir "${Name}_32@2x.tga"))
 }
 finally { $mask.Dispose() }
-Write-Host "Gotowe: $OutDir\$Name@2x.tga, ${Name}_32@2x.tga"
+Write-Host "Done: $OutDir\$Name@2x.tga, ${Name}_32@2x.tga"

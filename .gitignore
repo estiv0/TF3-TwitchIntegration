@@ -11,13 +11,13 @@ appsettings.Local.json
 .vscode/
 .claude/
 
-# Lokalne wyniki middle app (Development publikuje do web/data)
-# Windows nie rozróżnia wielkości liter: "output/" łapałoby też źródła w Output/, stąd wyjątek dla *.cs
+# Local middle app output (Development publishes to web/data)
+# Windows is case-insensitive: "output/" would also catch the sources in Output/, hence the exception for *.cs
 middle_app/src/Tf3Bridge/output/*
 !middle_app/src/Tf3Bridge/output/*.cs
 web/data/
 
-# Ustawienia i grafiki konkretnego streamera (wzór: web/site.example.json)
+# Settings and artwork of a specific streamer (template: web/site.example.json)
 web/site.json
 web/img/site/
 
@@ -29,13 +29,13 @@ dist/
 Thumbs.db
 .DS_Store
 
-# Grafiki z gry (prawa Urban Games) - nie wrzucamy, generuje je tools/extract_game_icons.py
+# Game artwork (Urban Games' rights) - not committed, tools/extract_game_icons.py generates it
 web/img_res/
 web/img/vehicles/
 web/img/stations/
 web/img/resources/
 
-# Sekrety (token SAS do Azure Blob, certyfikaty, zmienne środowiskowe)
+# Secrets (Azure Blob SAS token, certificates, environment variables)
 docs/blob_sas
 .env
 *.env
@@ -43,6 +43,6 @@ docs/blob_sas
 *.pem
 *.key
 
-# Robocze notatki i plany (tylko lokalnie)
+# Working notes and plans (local only)
 docs/api-ideas.md
 docs/own-points-economy.md

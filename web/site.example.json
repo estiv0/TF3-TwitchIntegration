@@ -1,6 +1,6 @@
 {
   "title": "TF3 Live",
   "logo": "img/site/logo.png",
-  "twitchUrl": "https://www.twitch.tv/<kanał>",
+  "twitchUrl": "https://www.twitch.tv/<channel>",
   "dataUrl": "https://<konto>.blob.core.windows.net/live/latest/"
 }

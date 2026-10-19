@@ -1,8 +1,8 @@
-# Buduje Tf3Bridge.exe do middle_app\dist\ i tworzy skrót na pulpicie.
-# Exe jest self-contained single-file (win-x64): nie wymaga zainstalowanego .NET, obok leży tylko
-# appsettings.json. Można go więc przekazać komuś innemu (folder moda sam znajdzie w Steam).
-# Exe szuka web\data w górę od swojego folderu, więc u Ciebie dist\ musi zostać w repozytorium;
-# poza repozytorium publikuje do output\ obok siebie.
+# Builds Tf3Bridge.exe into middle_app\dist\ and creates a desktop shortcut.
+# The exe is self-contained single-file (win-x64): it needs no installed .NET, next to it there's only
+# appsettings.json (and an optional appsettings.Local.json). So it can be given to someone else (it finds the mod folder in Steam itself).
+# The exe looks for web\data upwards from its folder, so in your checkout dist\ has to stay in the repository;
+# outside the repository it publishes to output\ next to itself.
 param([switch]$NoShortcut)
 
 $ErrorActionPreference = "Stop"
@@ -15,19 +15,19 @@ $project = Join-Path $appDir "src\Tf3Bridge\Tf3Bridge.csproj"
 $dist = Join-Path $appDir "dist"
 
 $running = Get-Process Tf3Bridge -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$dist*" }
-if ($running) { throw "Tf3Bridge z dist\ jest uruchomiony - zamknij go przed publikacją." }
+if ($running) { throw "Tf3Bridge from dist\ is running - close it before publishing." }
 
-# stare DLL-ki z publikacji framework-dependent nie mogą zostać obok single-file
+# old DLLs from a framework-dependent publish must not stay next to the single file
 if (Test-Path $dist) { Remove-Item (Join-Path $dist "*") -Recurse -Force }
 
 & $dotnet publish $project -c Release -o $dist --nologo -v q `
     -r win-x64 --self-contained true `
     -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true `
     -p:DebugType=None
-if ($LASTEXITCODE -ne 0) { throw "Publikacja nie powiodła się." }
+if ($LASTEXITCODE -ne 0) { throw "Publishing failed." }
 
 $exe = Join-Path $dist "Tf3Bridge.exe"
-Write-Host "Gotowe: $exe"
+Write-Host "Done: $exe"
 
 if (-not $NoShortcut) {
     $lnk = Join-Path ([Environment]::GetFolderPath("Desktop")) "Tf3Bridge.lnk"
@@ -35,7 +35,7 @@ if (-not $NoShortcut) {
     $s = $shell.CreateShortcut($lnk)
     $s.TargetPath = $exe
     $s.WorkingDirectory = $dist
-    $s.Description = "TF3 -> strona: most danych"
+    $s.Description = "TF3 -> website: data bridge"
     $s.Save()
-    Write-Host "Skrót: $lnk"
+    Write-Host "Shortcut: $lnk"
 }

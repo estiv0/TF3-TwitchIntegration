@@ -1,16 +1,16 @@
-"""Wyciąga ikonki z plików gry do web/img/ (PNG). Grafiki należą do Urban Games, więc nie ma ich
-w repozytorium - uruchom skrypt raz po sklonowaniu, po aktualizacji gry i przed wgraniem strony.
+"""Extracts the icons from the game files into web/img/ (PNG). The artwork belongs to Urban Games, so it isn't
+in the repository - run the script once after cloning, after game updates and before deploying the website.
 
-- web/img/vehicles/<model>.png - z boku pojazdu: <model>_icon_small@2x.tga z paczek pojazdów
-  (base/content/vehicle/**.zip, dlcs/*/content/vehicle.zip), najwyżej MAX_WIDTH px szerokości.
-  <model> to nazwa pliku .mdl bez rozszerzenia - tę samą nazwę mod wysyła w models[id].icon
-  (lua_mod: collectors.vehicleDetails), więc strona składa adres img/vehicles/<icon>.png.
-- web/img/resources/<towar>.png - ikonki towarów: <towar>/<towar>@2x.tga z base/content/cargos/<towar>.zip.
-- web/img/stations/<nazwa>.png - ikonki interfejsu (stacje, środki transportu): gui/hud/icons/*@2x.tga
-  z base/content/gui.zip.
+- web/img/vehicles/<model>.png - vehicle side view: <model>_icon_small@2x.tga from the vehicle packages
+  (base/content/vehicle/**.zip, dlcs/*/content/vehicle.zip), at most MAX_WIDTH px wide.
+  <model> is the .mdl file name without extension - the mod sends the same name in models[id].icon
+  (lua_mod: collectors.vehicleDetails), so the website builds the address img/vehicles/<icon>.png.
+- web/img/resources/<cargo>.png - cargo icons: <cargo>/<cargo>@2x.tga from base/content/cargos/<cargo>.zip.
+- web/img/stations/<name>.png - interface icons (stations, carriers): gui/hud/icons/*@2x.tga
+  from base/content/gui.zip.
 
-Bez zależności (TGA i PNG obsłużone ręcznie). Folder gry: argument, zmienna TF3_GAME_DIR albo
-domyślna biblioteka Steam:
+No dependencies (TGA and PNG handled by hand). Game folder: an argument, the TF3_GAME_DIR variable or
+the default Steam library:
     python tools/extract_game_icons.py ["D:/SteamLibrary/steamapps/common/Transport Fever 3"]
 """
 
@@ -26,18 +26,18 @@ GAME = Path(sys.argv[1] if len(sys.argv) > 1 else os.environ.get("TF3_GAME_DIR")
 IMG = Path(__file__).resolve().parent.parent / "web" / "img"
 VEHICLE_SUFFIX = "_icon_small@2x.tga"
 GUI_ICONS = "gui/hud/icons/"
-MAX_WIDTH = 512  # szersze (długie składy, statki) zmniejszamy do tej szerokości, z zachowaniem proporcji
+MAX_WIDTH = 512  # wider ones (long consists, ships) are scaled down to this width, keeping the aspect ratio
 
 
 def read_tga(data):
-    """TGA true-color (typ 2/10, 24/32 bpp) albo szary (typ 3/11, 8 bpp), bez albo z RLE
-    -> (w, h, wiersze RGBA od góry). Szare to maski ikonek interfejsu: biały z alfą = jasność."""
+    """True-color TGA (type 2/10, 24/32 bpp) or grayscale (type 3/11, 8 bpp), with or without RLE
+    -> (w, h, RGBA rows top-down). Grayscale ones are interface icon masks: white with alpha = brightness."""
     id_len, cmap_type, img_type = data[0], data[1], data[2]
     w, h = struct.unpack("<HH", data[12:16])
     bpp, desc = data[16], data[17]
     gray = img_type in (3, 11)
     if cmap_type != 0 or not ((img_type in (2, 10) and bpp in (24, 32)) or (gray and bpp == 8)):
-        raise ValueError(f"nieobsługiwany TGA: typ {img_type}, {bpp} bpp")
+        raise ValueError(f"unsupported TGA: type {img_type}, {bpp} bpp")
     px = bpp // 8
     pos = 18 + id_len
     if img_type in (2, 3):
@@ -66,16 +66,16 @@ def read_tga(data):
             row[0::4], row[1::4], row[2::4] = src[2::px], src[1::px], src[0::px]  # BGR(A) -> RGB(A)
             row[3::4] = src[3::px] if px == 4 else b"\xff" * w
         rows.append(bytes(row))
-    if not desc & 0x20:  # początek w lewym dolnym rogu
+    if not desc & 0x20:  # origin in the bottom left corner
         rows.reverse()
     return w, h, rows
 
 
 def resample_axis(lines, n_in, n_out):
-    """Zmniejsza każdą linię (listę pikseli [r, g, b, a] z alfą przemnożoną) z n_in do n_out
-    pikseli: średnia ważona pokryciem (filtr pudełkowy), bez ciemnych obwódek na krawędziach."""
+    """Shrinks each line (a list of [r, g, b, a] pixels with premultiplied alpha) from n_in to n_out
+    pixels: an average weighted by coverage (box filter), without dark rims at the edges."""
     scale = n_in / n_out
-    spans = []  # dla piksela wyjściowego: [(indeks wejściowy, waga)]
+    spans = []  # for each output pixel: [(input index, weight)]
     for o in range(n_out):
         lo, hi = o * scale, (o + 1) * scale
         span, i = [], int(lo)
@@ -89,15 +89,15 @@ def resample_axis(lines, n_in, n_out):
 
 
 def downscale(w, h, rows, max_w):
-    """Zmniejsza obrazek szerszy niż max_w do tej szerokości z zachowaniem proporcji."""
+    """Shrinks an image wider than max_w to that width, keeping the aspect ratio."""
     if w <= max_w:
         return w, h, rows
     nw, nh = max_w, max(1, round(h * max_w / w))
-    # alfa przemnożona: przezroczyste piksele nie wnoszą koloru
+    # premultiplied alpha: transparent pixels contribute no color
     px = [[[row[i] * row[i + 3] / 255, row[i + 1] * row[i + 3] / 255, row[i + 2] * row[i + 3] / 255, row[i + 3]]
            for i in range(0, w * 4, 4)] for row in rows]
-    px = resample_axis(px, w, nw)                                   # w poziomie
-    cols = resample_axis([list(c) for c in zip(*px)], h, nh)        # w pionie (na kolumnach)
+    px = resample_axis(px, w, nw)                                   # horizontally
+    cols = resample_axis([list(c) for c in zip(*px)], h, nh)        # vertically (on columns)
     out = []
     for y in range(nh):
         row = bytearray(nw * 4)
@@ -116,7 +116,7 @@ def paeth(a, b, c):
 
 
 def filter_row(kind, row, prev):
-    """Filtr PNG dla wiersza RGBA (4 bajty na piksel)."""
+    """PNG filter for an RGBA row (4 bytes per pixel)."""
     out = bytearray(len(row))
     for i, x in enumerate(row):
         a = row[i - 4] if i >= 4 else 0
@@ -128,7 +128,7 @@ def filter_row(kind, row, prev):
 
 
 def write_png(path, w, h, rows):
-    # filtr wybierany per wiersz (najmniejsza suma wartości bezwzględnych) - jak libpng, mniejsze pliki
+    # the filter chosen per row (smallest sum of absolute values) - like libpng, smaller files
     prev = bytes(w * 4)
     raw = bytearray()
     for row in rows:
@@ -147,7 +147,7 @@ def write_png(path, w, h, rows):
 
 
 def vehicle_icons():
-    """(nazwa, zip, plik w zipie) ikonek pojazdów; ten sam model w kilku paczkach - pierwszy wygrywa."""
+    """(name, zip, file in the zip) of vehicle icons; the same model in several packages - the first one wins."""
     zips = [*sorted((GAME / "base" / "content" / "vehicle").rglob("*.zip")),
             *sorted(GAME.glob("dlcs/*/content/vehicle.zip"))]
     for z in zips:
@@ -161,7 +161,7 @@ def cargo_icons():
     for z in sorted((GAME / "base" / "content" / "cargos").glob("*.zip")):
         name = f"{z.stem}/{z.stem}@2x.tga"
         with zipfile.ZipFile(z) as zf:
-            if name in zf.namelist():  # cargos/ ma też paczki wspólne (classes, icons, ...) bez ikonki
+            if name in zf.namelist():  # cargos/ also has shared packages (classes, icons, ...) without an icon
                 yield z.stem, z, name
 
 
@@ -191,14 +191,14 @@ def extract(folder, icons, max_width=None):
         except ValueError as e:
             failed.append(f"{z.name}:{name}: {e}")
     size = sum(p.stat().st_size for p in out.glob("*.png"))
-    print(f"{len(done)} ikonek w {out} ({size / 1e6:.1f} MB)")
+    print(f"{len(done)} icons in {out} ({size / 1e6:.1f} MB)")
     for f in failed:
-        print("pominięto", f)
+        print("skipped", f)
 
 
 def main():
     if not (GAME / "base" / "content").is_dir():
-        sys.exit(f"Nie ma gry w {GAME} - podaj folder Transport Fever 3 jako argument albo w TF3_GAME_DIR.")
+        sys.exit(f"No game in {GAME} - give the Transport Fever 3 folder as an argument or in TF3_GAME_DIR.")
     extract("stations", gui_icons())
     extract("resources", cargo_icons())
     extract("vehicles", vehicle_icons(), MAX_WIDTH)
