@@ -628,9 +628,9 @@ export const lang = () => current;
 export const dict = () => DICT[current];
 export const locale = () => DICT[current].locale;
 
-/** Napis interfejsu; {nazwa} zastępowane wartościami z vars. Brak klucza -> polski -> sam klucz. */
+/** UI text; {name} is replaced with values from vars. Missing key -> English -> the key itself. */
 export function t(key, vars) {
-  const s = DICT[current].ui[key] ?? DICT.pl.ui[key] ?? key;
+  const s = DICT[current].ui[key] ?? DICT.en.ui[key] ?? key;
   return vars ? s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m)) : s;
 }
 

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pl">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,10 +10,10 @@
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <!-- Napisy z data-i18n* podmienia js/i18n.js (PL / EN); tekst w HTML to wersja polska. -->
+  <!-- js/i18n.js replaces texts marked with data-i18n* (EN / PL); the text in the HTML is the English version. -->
   <header class="topbar">
     <div class="brand">
-      <!-- Nazwa i logo z site.json (config.js), ustawia js/main.js -->
+      <!-- Name and logo from site.json (config.js), set by js/main.js -->
       <img id="brand-logo" class="brand-logo" alt="" hidden>
       <div>
         <h1 id="brand-title">TF3 Live</h1>
@@ -21,137 +21,137 @@
       </div>
     </div>
     <dl class="kpis">
-      <div><dt data-i18n="kpi.date">Data</dt><dd id="date">–</dd></div>
-      <div><dt data-i18n="kpi.balance">Saldo</dt><dd id="balance" class="kpi-link" role="button" tabindex="0">–</dd></div>
-      <div><dt data-i18n="kpi.fleet">Flota</dt><dd id="fleet" class="fleet">–</dd></div>
-      <div class="kpi-edges"><dt data-i18n="kpi.edges">Odcinki sieci</dt><dd id="edges">–</dd></div>
+      <div><dt data-i18n="kpi.date">Date</dt><dd id="date">–</dd></div>
+      <div><dt data-i18n="kpi.balance">Balance</dt><dd id="balance" class="kpi-link" role="button" tabindex="0">–</dd></div>
+      <div><dt data-i18n="kpi.fleet">Fleet</dt><dd id="fleet" class="fleet">–</dd></div>
+      <div class="kpi-edges"><dt data-i18n="kpi.edges">Network segments</dt><dd id="edges">–</dd></div>
     </dl>
-    <!-- Stream na Twitchu: link, a na szerokim ekranie przełącznik mini-playera nad mapą (js/stream.js). -->
+    <!-- Twitch stream: a link, and on wide screens a toggle for the mini player over the map (js/stream.js). -->
     <a id="stream-btn" class="stream-btn" target="_blank" rel="noopener" aria-controls="stream" aria-expanded="false" data-live="false">
       <span class="stream-dot" aria-hidden="true"></span><span data-i18n="stream.label">Stream</span>
     </a>
-    <!-- Ściągawka: które surowce idą do których zakładów (strona zewnętrzna). -->
+    <!-- Cheat sheet: which cargo goes to which industry (external site). -->
     <a class="chains-btn" href="https://www.gamewatcher.com/transport-fever-3/cargo-production-chain" target="_blank" rel="noopener"
-      title="Łańcuchy produkcji towarów (gamewatcher.com)" data-i18n-title="chains.title">
+      title="Cargo production chains (gamewatcher.com)" data-i18n-title="chains.title">
       <svg class="chains-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>
-      <span data-i18n="chains.label">Łańcuchy produkcji</span>
+      <span data-i18n="chains.label">Production chains</span>
     </a>
-    <span id="status" class="status" data-state="waiting">Czekam na dane…</span>
-    <div id="lang" class="lang-switch" role="group" aria-label="Język" data-i18n-aria="lang.label"></div>
+    <span id="status" class="status" data-state="waiting">Waiting for data…</span>
+    <div id="lang" class="lang-switch" role="group" aria-label="Language" data-i18n-aria="lang.label"></div>
   </header>
 
   <main class="layout">
-    <section class="map-wrap" aria-label="Mapa" data-i18n-aria="map.label">
+    <section class="map-wrap" aria-label="Map" data-i18n-aria="map.label">
       <canvas id="map"></canvas>
       <div id="tooltip" class="tooltip" hidden></div>
-      <!-- Szczegóły zaznaczonego obiektu: pływające okienko nad mapą (js/float.js), treść z js/sidebar.js. -->
+      <!-- Details of the selected object: a floating window over the map (js/float.js), content from js/sidebar.js. -->
       <section id="detail" class="detail" data-detail hidden></section>
-      <!-- Mini-player streamu: pływające okienko (js/float.js), iframe wstawia js/stream.js po otwarciu. -->
+      <!-- Stream mini player: a floating window (js/float.js); js/stream.js inserts the iframe when it opens. -->
       <section id="stream" class="detail stream-layer" hidden>
         <div class="detail-card stream-card" data-card="stream">
           <div class="detail-tools">
-            <a class="detail-tool" data-stream-link target="_blank" rel="noopener" title="Otwórz na Twitchu" data-i18n-title="stream.open" aria-label="Otwórz na Twitchu" data-i18n-aria="stream.open">↗</a>
-            <button type="button" class="detail-tool detail-close" data-stream-close title="Zamknij" data-i18n-title="stream.hide" aria-label="Zamknij" data-i18n-aria="stream.hide">×</button>
+            <a class="detail-tool" data-stream-link target="_blank" rel="noopener" title="Open the stream on Twitch" data-i18n-title="stream.open" aria-label="Open the stream on Twitch" data-i18n-aria="stream.open">↗</a>
+            <button type="button" class="detail-tool detail-close" data-stream-close title="Close the stream" data-i18n-title="stream.hide" aria-label="Close the stream" data-i18n-aria="stream.hide">×</button>
           </div>
           <h2><span class="stream-dot" aria-hidden="true"></span> <span data-stream-name>Twitch</span></h2>
           <div class="stream-frame" data-stream-frame></div>
         </div>
       </section>
       <div class="map-tools">
-        <button id="fit" type="button" title="Pokaż całą mapę" data-i18n-title="map.fit">⤢</button>
-        <button id="terrain" type="button" title="Teren (rzeźba)" data-i18n-title="map.terrain" aria-pressed="true">⛰</button>
-        <button id="stations" type="button" title="Stacje (dworce, porty, lotniska)" data-i18n-title="map.stations" aria-pressed="true"><span class="ico" style="-webkit-mask-image:url('img/stations/vehicle_train_front_32.png');mask-image:url('img/stations/vehicle_train_front_32.png')"></span></button>
-        <button id="industries" type="button" title="Zakłady przemysłowe" data-i18n-title="map.industries" aria-pressed="true">🏭</button>
-        <button id="warehouses" type="button" title="Magazyny" data-i18n-title="map.warehouses" aria-pressed="true">📦</button>
-        <button id="vehicles" type="button" title="Pojazdy (przybliżone położenie: na przystanku albo w drodze do niego)" data-i18n-title="map.vehicles" aria-pressed="true"><span class="ico" style="-webkit-mask-image:url('img/stations/vehicle_bus_front_32.png');mask-image:url('img/stations/vehicle_bus_front_32.png')"></span></button>
-        <button id="pin" type="button" title="Pinezka z linkiem – kliknij miejsce na mapie (albo prawy przycisk myszy)" data-i18n-title="map.pin" aria-pressed="false">📍</button>
-        <button id="build" type="button" title="Zbuduj na streamie: nowe miasto albo zakład (za punkty kanału na Twitchu)" data-i18n-title="map.build" aria-pressed="false">🏗</button>
+        <button id="fit" type="button" title="Show the whole map" data-i18n-title="map.fit">⤢</button>
+        <button id="terrain" type="button" title="Terrain (relief)" data-i18n-title="map.terrain" aria-pressed="true">⛰</button>
+        <button id="stations" type="button" title="Stations (train stations, harbors, airports)" data-i18n-title="map.stations" aria-pressed="true"><span class="ico" style="-webkit-mask-image:url('img/stations/vehicle_train_front_32.png');mask-image:url('img/stations/vehicle_train_front_32.png')"></span></button>
+        <button id="industries" type="button" title="Industries" data-i18n-title="map.industries" aria-pressed="true">🏭</button>
+        <button id="warehouses" type="button" title="Warehouses (stock and capacity)" data-i18n-title="map.warehouses" aria-pressed="true">📦</button>
+        <button id="vehicles" type="button" title="Vehicles (approximate position: at a stop or on the way to it)" data-i18n-title="map.vehicles" aria-pressed="true"><span class="ico" style="-webkit-mask-image:url('img/stations/vehicle_bus_front_32.png');mask-image:url('img/stations/vehicle_bus_front_32.png')"></span></button>
+        <button id="pin" type="button" title="Pin with a link – click a spot on the map (or right-click)" data-i18n-title="map.pin" aria-pressed="false">📍</button>
+        <button id="build" type="button" title="Build on stream: a new town or industry (for Twitch channel points)" data-i18n-title="map.build" aria-pressed="false">🏗</button>
       </div>
-      <!-- Budowa za punkty kanału (js/build.js): kod do wklejenia w nagrodę na Twitchu. -->
+      <!-- Building for channel points (js/build.js): a code to paste into the Twitch reward. -->
       <form id="build-form" class="pin-form build-form" hidden>
-        <strong data-i18n="build.title">Zbuduj za punkty kanału</strong>
+        <strong data-i18n="build.title">Build for channel points</strong>
         <div class="build-kind" role="radiogroup">
-          <label><input type="radio" name="build-kind" value="town" checked> <span data-i18n="build.town">Miasto</span></label>
-          <label><input type="radio" name="build-kind" value="industry"> <span data-i18n="build.industry">Zakład</span></label>
+          <label><input type="radio" name="build-kind" value="town" checked> <span data-i18n="build.town">Town</span></label>
+          <label><input type="radio" name="build-kind" value="industry"> <span data-i18n="build.industry">Industry</span></label>
         </div>
         <div class="build-field" data-build-type hidden>
-          <label for="build-type" data-i18n="build.type">Rodzaj zakładu</label>
+          <label for="build-type" data-i18n="build.type">Industry type</label>
           <select id="build-type"></select>
         </div>
         <div class="build-field">
-          <label for="build-name" data-i18n="build.name">Nazwa</label>
+          <label for="build-name" data-i18n="build.name">Name</label>
           <input id="build-name" type="text" maxlength="40" autocomplete="off">
         </div>
         <p class="build-check" data-build-check></p>
         <div class="build-field">
-          <label for="build-code" data-i18n="build.code">Kod do nagrody</label>
+          <label for="build-code" data-i18n="build.code">Code for the reward</label>
           <div class="pin-link">
             <input id="build-code" type="text" readonly>
-            <button type="submit" class="primary" data-build-copy data-i18n="build.copy">Kopiuj kod</button>
+            <button type="submit" class="primary" data-build-copy data-i18n="build.copy">Copy code</button>
           </div>
         </div>
         <p class="build-how" data-build-how></p>
         <div class="pin-actions">
-          <a class="build-twitch" data-build-twitch target="_blank" rel="noopener" data-i18n="build.twitch">Otwórz Twitcha</a>
-          <button type="button" data-build-close data-i18n="build.close">Zamknij</button>
+          <a class="build-twitch" data-build-twitch target="_blank" rel="noopener" data-i18n="build.twitch">Open Twitch</a>
+          <button type="button" data-build-close data-i18n="build.close">Close</button>
         </div>
       </form>
       <form id="pin-form" class="pin-form" hidden>
         <div class="pin-note-head">
-          <label for="pin-note" data-i18n="pin.note">Opis pinezki</label>
+          <label for="pin-note" data-i18n="pin.note">Pin description</label>
           <span class="pin-count" data-pin-count></span>
         </div>
-        <textarea id="pin-note" maxlength="120" rows="3" placeholder="np. Tu powstanie nowy port" data-i18n-placeholder="pin.placeholder"></textarea>
+        <textarea id="pin-note" maxlength="120" rows="3" placeholder="e.g. A new harbor goes here" data-i18n-placeholder="pin.placeholder"></textarea>
         <div class="pin-actions">
-          <button type="submit" class="primary" data-i18n="pin.create">Utwórz link</button>
-          <button type="button" data-pin-cancel data-i18n="pin.cancel">Anuluj</button>
+          <button type="submit" class="primary" data-i18n="pin.create">Create link</button>
+          <button type="button" data-pin-cancel data-i18n="pin.cancel">Cancel</button>
         </div>
         <div class="pin-link" data-pin-link hidden>
-          <input id="pin-url" type="text" readonly aria-label="Link do pinezki" data-i18n-aria="pin.link">
-          <button type="button" data-pin-copy data-i18n="pin.copy">Kopiuj</button>
+          <input id="pin-url" type="text" readonly aria-label="Link to the pin" data-i18n-aria="pin.link">
+          <button type="button" data-pin-copy data-i18n="pin.copy">Copy</button>
         </div>
       </form>
-      <ul class="legend" aria-label="Legenda" data-i18n-aria="legend.label">
-        <li><span class="lg-line lg-track"></span><span data-i18n="legend.track">Tory</span></li>
-        <li><span class="lg-line lg-street"></span><span data-i18n="legend.street">Drogi</span></li>
-        <li><span class="dot dot-town"></span><span data-i18n="legend.town">Miasto</span></li>
-        <li><span class="dot dot-raw"></span><span data-i18n="legend.raw">Surowce</span></li>
-        <li><span class="dot dot-processing"></span><span data-i18n="legend.processing">Przetwórstwo</span></li>
-        <li><span class="dot dot-warehouse"></span><span data-i18n="legend.warehouse">Magazyn</span></li>
-        <li><span class="dot dot-vehicle"></span><span data-i18n="legend.vehicle">Pojazd</span></li>
-        <li><span class="ico ico-rail" style="-webkit-mask-image:url('img/stations/vehicle_train_front_32.png');mask-image:url('img/stations/vehicle_train_front_32.png')"></span><span data-i18n="legend.rail">Dworzec</span></li>
-        <li><span class="ico ico-road" style="-webkit-mask-image:url('img/stations/vehicle_bus_front_32.png');mask-image:url('img/stations/vehicle_bus_front_32.png')"></span><span data-i18n="legend.road">Dworzec drogowy</span></li>
-        <li><span class="ico ico-water" style="-webkit-mask-image:url('img/stations/vehicle_ship_front_32.png');mask-image:url('img/stations/vehicle_ship_front_32.png')"></span><span data-i18n="legend.water">Port</span></li>
-        <li><span class="ico ico-air" style="-webkit-mask-image:url('img/stations/vehicle_airplane_front_32.png');mask-image:url('img/stations/vehicle_airplane_front_32.png')"></span><span data-i18n="legend.air">Lotnisko</span></li>
+      <ul class="legend" aria-label="Legend" data-i18n-aria="legend.label">
+        <li><span class="lg-line lg-track"></span><span data-i18n="legend.track">Tracks</span></li>
+        <li><span class="lg-line lg-street"></span><span data-i18n="legend.street">Roads</span></li>
+        <li><span class="dot dot-town"></span><span data-i18n="legend.town">Town</span></li>
+        <li><span class="dot dot-raw"></span><span data-i18n="legend.raw">Raw materials</span></li>
+        <li><span class="dot dot-processing"></span><span data-i18n="legend.processing">Processing</span></li>
+        <li><span class="dot dot-warehouse"></span><span data-i18n="legend.warehouse">Warehouse</span></li>
+        <li><span class="dot dot-vehicle"></span><span data-i18n="legend.vehicle">Vehicle</span></li>
+        <li><span class="ico ico-rail" style="-webkit-mask-image:url('img/stations/vehicle_train_front_32.png');mask-image:url('img/stations/vehicle_train_front_32.png')"></span><span data-i18n="legend.rail">Train station</span></li>
+        <li><span class="ico ico-road" style="-webkit-mask-image:url('img/stations/vehicle_bus_front_32.png');mask-image:url('img/stations/vehicle_bus_front_32.png')"></span><span data-i18n="legend.road">Road station</span></li>
+        <li><span class="ico ico-water" style="-webkit-mask-image:url('img/stations/vehicle_ship_front_32.png');mask-image:url('img/stations/vehicle_ship_front_32.png')"></span><span data-i18n="legend.water">Harbor</span></li>
+        <li><span class="ico ico-air" style="-webkit-mask-image:url('img/stations/vehicle_airplane_front_32.png');mask-image:url('img/stations/vehicle_airplane_front_32.png')"></span><span data-i18n="legend.air">Airport</span></li>
       </ul>
     </section>
 
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-resize" role="separator" aria-orientation="vertical" tabindex="0"
-        title="Przeciągnij, żeby zmienić szerokość panelu (dwuklik: domyślna)" data-i18n-title="sidebar.resize"
-        aria-label="Szerokość panelu" data-i18n-aria="sidebar.resizeLabel"></div>
+        title="Drag to change the panel width (double-click: default)" data-i18n-title="sidebar.resize"
+        aria-label="Panel width" data-i18n-aria="sidebar.resizeLabel"></div>
       <div class="tabs" role="tablist">
-        <button role="tab" data-tab="towns" aria-selected="true"><span data-i18n="tab.towns">Miasta</span> <span data-count="towns">0</span></button>
-        <button role="tab" data-tab="industries" aria-selected="false"><span data-i18n="tab.industries">Przemysł</span> <span data-count="industries">0</span></button>
-        <button role="tab" data-tab="stations" aria-selected="false"><span data-i18n="tab.stations">Stacje</span> <span data-count="stations">0</span></button>
-        <button role="tab" data-tab="lines" aria-selected="false"><span data-i18n="tab.lines">Linie</span> <span data-count="lines">0</span></button>
-        <button role="tab" data-tab="owners" aria-selected="false"><span data-i18n="tab.owners">Właściciele</span> <span data-count="owners">0</span></button>
-        <button role="tab" data-tab="company" aria-selected="false"><span data-i18n="tab.company">Firma</span></button>
+        <button role="tab" data-tab="towns" aria-selected="true"><span data-i18n="tab.towns">Towns</span> <span data-count="towns">0</span></button>
+        <button role="tab" data-tab="industries" aria-selected="false"><span data-i18n="tab.industries">Industry</span> <span data-count="industries">0</span></button>
+        <button role="tab" data-tab="stations" aria-selected="false"><span data-i18n="tab.stations">Stations</span> <span data-count="stations">0</span></button>
+        <button role="tab" data-tab="lines" aria-selected="false"><span data-i18n="tab.lines">Lines</span> <span data-count="lines">0</span></button>
+        <button role="tab" data-tab="owners" aria-selected="false"><span data-i18n="tab.owners">Owners</span> <span data-count="owners">0</span></button>
+        <button role="tab" data-tab="company" aria-selected="false"><span data-i18n="tab.company">Company</span></button>
       </div>
       <div class="search-row">
-        <input class="search" data-search type="search" placeholder="Szukaj…" aria-label="Szukaj" data-i18n-aria="search">
-        <button class="eye" data-viewport type="button" aria-pressed="true" aria-label="Tylko linie z widoku mapy" data-i18n-aria="lines.viewport" hidden>
+        <input class="search" data-search type="search" placeholder="Search…" aria-label="Search…" data-i18n-aria="search">
+        <button class="eye" data-viewport type="button" aria-pressed="true" aria-label="Only lines in the map view" data-i18n-aria="lines.viewport" hidden>
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>
             <path class="eye-slash" d="M4 4l16 16"/>
           </svg>
         </button>
       </div>
-      <div class="filters" data-carriers role="group" aria-label="Filtr typu" data-i18n-aria="filter.label" hidden></div>
+      <div class="filters" data-carriers role="group" aria-label="Type filter" data-i18n-aria="filter.label" hidden></div>
       <ul class="list" data-list></ul>
       <section class="company" data-company hidden></section>
     </aside>
-    <!-- Telefon: lista jako arkusz zasłaniający mapę, otwierany tym przyciskiem (na szerokim ekranie ukryty). -->
+    <!-- Phone: the list is a sheet covering the map, opened with this button (hidden on wide screens). -->
     <button id="sheet-toggle" class="sheet-toggle" type="button" aria-controls="sidebar" aria-expanded="false"></button>
   </main>
 
