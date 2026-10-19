@@ -1,10 +1,10 @@
--- Minimalny, poprawny enkoder JSON.
--- Zasady:
---   * wszystko trafia do bufora i jest łączone raz przez table.concat (liniowo, nie kwadratowo)
---   * stringi są escapowane (cudzysłowy, backslash, znaki sterujące)
---   * NaN / inf / nil / userdata / funkcje -> null
---   * pusta tabela -> [] (jeśli potrzebujesz {}, użyj json.EMPTY_OBJECT)
---   * tabela z kluczami 1..n bez dziur -> tablica, wszystko inne -> obiekt
+-- A minimal, correct JSON encoder.
+-- Rules:
+--   * everything goes into a buffer and is joined once with table.concat (linear, not quadratic)
+--   * strings are escaped (quotes, backslash, control characters)
+--   * NaN / inf / nil / userdata / functions -> null
+--   * an empty table -> [] (if you need {}, use json.EMPTY_OBJECT)
+--   * a table with keys 1..n without gaps -> an array, everything else -> an object
 
 local json = {}
 
@@ -77,11 +77,11 @@ encodeValue = function(v, buf, depth)
 		elseif v == math.floor(v) and math.abs(v) < 2^31 then
 			buf[#buf + 1] = string.format("%d", v)
 		elseif v == math.floor(v) and math.abs(v) < 2^53 then
-			-- %d w Lua 5.2 na Windows bierze tylko 32-bitowy long ("not a number in proper range"),
-			-- a %.0f wypisuje liczby całkowite do 2^53 dokładnie
+			-- %d in Lua 5.2 on Windows only takes a 32-bit long ("not a number in proper range"),
+			-- while %.0f prints integers up to 2^53 exactly
 			buf[#buf + 1] = string.format("%.0f", v)
 		else
-			-- %.14g zachowuje precyzję i daje poprawny JSON także dla 1.5e-05
+			-- %.14g keeps the precision and gives valid JSON also for 1.5e-05
 			buf[#buf + 1] = string.format("%.14g", v)
 		end
 	elseif t == "string" then
@@ -93,8 +93,8 @@ encodeValue = function(v, buf, depth)
 			encodeTable(v, buf, depth)
 		end
 	else
-		-- userdata z API gry nie serializuje się automatycznie:
-		-- kolektory muszą przepisać potrzebne pola do zwykłych tabel
+		-- userdata from the game API doesn't serialize automatically:
+		-- collectors have to copy the needed fields into plain tables
 		buf[#buf + 1] = "null"
 	end
 end

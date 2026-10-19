@@ -1,10 +1,10 @@
--- Bezpieczne opakowania na api.engine.
--- Wartości z API bywają userdata (wektory, enumy), więc wszystko,
--- co ma trafić do JSON-a, przepisujemy na zwykłe tabele Lua.
+-- Safe wrappers around api.engine.
+-- Values from the API are often userdata (vectors, enums), so everything
+-- that goes into the JSON is copied into plain Lua tables.
 
 local util = {}
 
--- Skrypty gry używają api.type.ComponentType; api.engine.ComponentType jako zapas.
+-- The game scripts use api.type.ComponentType; api.engine.ComponentType as a fallback.
 local ct = (api.type and api.type.ComponentType) or api.engine.ComponentType
 util.ct = ct
 
@@ -15,7 +15,7 @@ local function field(obj, key)
 end
 util.field = field
 
--- Wypisuje linię do logu gry (debugPrint w base/init.lua też używa log.message).
+-- Writes a line to the game log (debugPrint in base/init.lua also uses log.message).
 function util.print(line)
 	if log and log.message then log.message(line) else print(line) end
 end
@@ -24,7 +24,7 @@ function util.log(msg)
 	util.print("[tf3export] " .. msg)
 end
 
--- Czas ścienny w sekundach; os może być niedostępne w TF3.
+-- Wall time in seconds; os may be unavailable in TF3.
 function util.clock()
 	if os and os.clock then return os.clock() end
 	return 0
@@ -52,8 +52,8 @@ function util.round(x, decimals)
 	return math.floor(x * m + 0.5) / m
 end
 
--- Zamienia listę (tabelę lub natywny wektor) na zwykłą tablicę Lua.
--- Dokumentacja TF3 typuje listy jako zwykłe tablice {T} (natywne mają sufiks _native).
+-- Turns a list (a table or a native vector) into a plain Lua array.
+-- The TF3 documentation types lists as plain {T} arrays (native ones have the _native suffix).
 function util.list(v)
 	if v == nil then return {} end
 	if type(v) == "table" then return v end
@@ -66,7 +66,7 @@ function util.list(v)
 	return out
 end
 
--- Pojazdy linii (kopia jako zwykła tablica); {} przy błędzie.
+-- A line's vehicles (a copy as a plain array); {} on error.
 function util.lineVehicles(line)
 	local ok, vs = pcall(function() return api.engine.system.transportVehicleSystem.getLineVehicles(line) end)
 	if not ok then return {} end
@@ -75,7 +75,7 @@ function util.lineVehicles(line)
 	return out
 end
 
--- Iteracja po mapie (tabela Lua albo natywna mapa, jeśli wspiera pairs).
+-- Iterating over a map (a Lua table or a native map, if it supports pairs).
 function util.pairs(v)
 	if v == nil then return function() return nil end end
 	local ok, f, st, init = pcall(pairs, v)
@@ -83,7 +83,7 @@ function util.pairs(v)
 	return function() return nil end
 end
 
--- Vec3f -> { x, y, z } zaokrąglone do 2 miejsc.
+-- Vec3f -> { x, y, z } rounded to 2 decimal places.
 function util.vec3(v)
 	if v == nil then return nil end
 	local x = field(v, "x") or field(v, 1)
@@ -93,16 +93,16 @@ function util.vec3(v)
 	return { util.round(x), util.round(y), util.round(z) }
 end
 
--- Folder userdata dla wszystkich plików moda. Od builda 40420 gra pozwala app.*Userdata tylko na
--- towns_industries, heightmaps i mod_presets ("The directory you trying to access is not available
--- or invalid"), więc piszemy do towns_industries (widać go tylko w imporcie edytora map),
--- a nasze pliki odróżnia prefiks nazwy. Tf3Bridge: SteamLocator.UserdataDir / FilePrefix.
+-- The userdata folder for all mod files. Since build 40420 the game only allows app.*Userdata on
+-- towns_industries, heightmaps and mod_presets ("The directory you trying to access is not available
+-- or invalid"), so we write to towns_industries (it only shows up in the map editor import),
+-- and a name prefix tells our files apart. Tf3Bridge: SteamLocator.UserdataDir / FilePrefix.
 util.USERDATA_DIR = "towns_industries"
 util.FILE_PREFIX = "tf3export_"
 
--- Czy plik userdata istnieje? app.loadUserdata na brakującym pliku zgłasza błąd gry
--- ("Failed to load userdata", z oknem błędu) mimo pcall, więc najpierw sprawdzamy listę plików.
--- getAllUserdata zwraca nazwy; na wszelki wypadek akceptujemy też wariant z ".lua". Tylko wątek GUI.
+-- Does the userdata file exist? app.loadUserdata on a missing file raises a game error
+-- ("Failed to load userdata", with an error window) despite pcall, so we check the file list first.
+-- getAllUserdata returns names; just in case we also accept the variant with ".lua". GUI thread only.
 function util.userdataExists(dir, name)
 	local ok, names = pcall(function() return app.getAllUserdata(dir) end)
 	if not ok then return false end
@@ -120,7 +120,7 @@ function util.name(entity)
 	return c and c.name or nil
 end
 
--- Środek bounding boxa encji (Box3f ma pola min/max - potwierdzone w type.d.tl).
+-- The center of an entity's bounding box (Box3f has min/max fields - confirmed in type.d.tl).
 function util.center(entity)
 	local bv = util.comp(entity, ct.BOUNDING_VOLUME)
 	if not bv then return nil end
@@ -136,13 +136,13 @@ function util.center(entity)
 	}
 end
 
--- ID firmy-właściciela albo nil dla obiektów miejskich / świata.
+-- The owner company ID, or nil for town / world objects.
 function util.owner(entity)
 	local po = util.comp(entity, ct.PLAYER_OWNED)
 	return po and po.player or nil
 end
 
--- Zwraca wartość liczbową albo tekstową (dla ResName itp.).
+-- Returns a numeric or a text value (for ResName etc.).
 function util.scalar(v)
 	local t = type(v)
 	if t == "number" or t == "string" or t == "boolean" then return v end
@@ -152,7 +152,7 @@ function util.scalar(v)
 	return tostring(v)
 end
 
--- Enum -> nazwa (np. Carrier.RAIL -> "RAIL"). Skrypty gry porównują enumy przez ==.
+-- Enum -> name (e.g. Carrier.RAIL -> "RAIL"). The game scripts compare enums with ==.
 function util.enumName(enumType, value, names)
 	if value == nil then return nil end
 	local enums = api.type and api.type["enum"]
@@ -171,14 +171,14 @@ util.VEHICLE_STATES = { "IN_DEPOT", "EN_ROUTE", "AT_TERMINAL", "GOING_TO_DEPOT" 
 util.EDGE_TYPES = { "NORMAL", "BRIDGE", "TUNNEL" }
 util.ROAD_TYPES = { "STREET", "TRACK" }
 
----------------------------------------------------------------- czas gry
+---------------------------------------------------------------- game time
 function util.gameTime()
 	local gt = util.comp(api.engine.util.getWorld(), ct.GAME_TIME)
 	return gt and gt.gameTime or nil
 end
 
--- Długość dnia w jednostkach gameTime. Zależy od ustawionej prędkości kalendarza.
--- DO SPRAWDZENIA: czy GAME_SPEED wisi na encji świata.
+-- Day length in gameTime units. Depends on the calendar speed setting.
+-- TO CHECK: whether GAME_SPEED sits on the world entity.
 function util.dayLength()
 	local gs = util.comp(api.engine.util.getWorld(), ct.GAME_SPEED)
 	if gs and type(gs.millisPerDay) == "number" and gs.millisPerDay > 0 then
@@ -196,10 +196,10 @@ function util.date(gameTime)
 	return { year = field(d, "year"), month = field(d, "month"), day = field(d, "day") }
 end
 
--- gameTime początku roku kalendarzowego, w którym leży t. Odwrotności getCalendarDate
--- w API nie ma, więc szukamy binarnie (~30 wywołań); tak jak getCalendarDate zakłada
--- obecną prędkość kalendarza. 0, gdy rok zaczął się przed startem gry (albo kalendarz
--- stoi), nil przy błędzie API.
+-- The gameTime of the start of the calendar year t falls in. The API has no inverse of getCalendarDate,
+-- so we search binarily (~30 calls); like getCalendarDate it assumes
+-- the current calendar speed. 0 when the year started before the game did (or the calendar
+-- stands still), nil on an API error.
 function util.yearStart(t)
 	local d = util.date(t)
 	if not d or type(d.year) ~= "number" then return nil end
@@ -212,7 +212,7 @@ function util.yearStart(t)
 		if t - span <= 0 then return 0 end
 		span = span * 2
 	end
-	local lo, hi = math.max(t - span, 0), t -- lo: poprzedni rok, hi: ten rok
+	local lo, hi = math.max(t - span, 0), t -- lo: the previous year, hi: this year
 	while hi - lo > 1 do
 		local mid = math.floor((lo + hi) / 2)
 		if sameYear(mid) then hi = mid else lo = mid end

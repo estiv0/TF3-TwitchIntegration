@@ -1,18 +1,18 @@
--- Game script eksportu danych.
+-- Data export game script.
 --
--- Ustalenia z gry (2026-10-02, szczegóły w docs/tf3-api-findings.md):
---   * update()/handleEvent() działają w wielu wątkach symulacji ("Sim Pool 1..N"), każdy
---     z osobnym stanem Lua; nie ma tam io ani app. Wspólny jest tylko state:get()/set().
---   * guiUpdate() działa w JEDNYM wątku GUI (zmienne modułu są trwałe między klatkami),
---     a app.saveUserdata zapisuje pliki do ...\local\tf3export\.
+-- Findings from the game (2026-10-02, details in docs/tf3-api-findings.md):
+--   * update()/handleEvent() run on many simulation threads ("Sim Pool 1..N"), each
+--     with its own Lua state; there's no io or app there. Only state:get()/set() is shared.
+--   * guiUpdate() runs on ONE GUI thread (module variables persist between frames),
+--     and app.saveUserdata writes files to ...\local\tf3export\.
 --
--- Podział pracy:
---   * handleEvent (symulacja): po każdej budowie/wyburzeniu (onPostBuildProposal) podbija
---     licznik netVersion we wspólnym stanie.
---   * guiUpdate (GUI): eksport dynamiczny porcjami (dynamicBudgetMs na klatkę); sieć przebudowywana porcjami
---     po zmianie netVersion (z debounce) i zapisywana jako pełny zrzut (raz na sesję)
---     albo różnica względem poprzedniej wersji; teren (terrain.lua) porcjami po sieci
---     i ponownie po zmianie rewizji kafli terenu.
+-- Division of work:
+--   * handleEvent (simulation): after every build/demolition (onPostBuildProposal) bumps
+--     the netVersion counter in the shared state.
+--   * guiUpdate (GUI): the dynamic export in chunks (dynamicBudgetMs per frame); the network rebuilt in chunks
+--     after netVersion changes (with debounce) and written as a full dump (once per session)
+--     or a diff against the previous version; the terrain (terrain.lua) in chunks after the network
+--     and again after the terrain tile revisions change.
 
 local json = ug_require "json.lua"
 local util = ug_require "util.lua"
@@ -24,37 +24,37 @@ local commands = ug_require "commands.lua"
 local effects = ug_require "effects.lua"
 
 local cfg = {
-	dynamicEveryDays = 2,          -- eksport miast, przemysłu, stacji, linii i pojazdów (czas gry)...
-	minDynamicWallSec = 10,        -- ...ale nie częściej niż co tyle sekund czasu rzeczywistego
-	dynamicBudgetMs = 3,           -- czas pracy nad eksportem dynamicznym na klatkę (pojedynczy kolektor,
-	                               -- np. miasta, nie jest dzielony - czasy kroków są w logu "dynamic #N")
-	networkDebounceSec = 2,        -- po zdarzeniu budowy czekamy, aż gracz skończy klikać
-	networkSafetyEveryWallSec = 300, -- pełne porównanie sieci także bez zdarzeń (zabezpieczenie)
-	networkBudgetMs = 2,           -- czas pracy nad siecią na klatkę
+	dynamicEveryDays = 2,          -- export of towns, industry, stations, lines and vehicles (game time)...
+	minDynamicWallSec = 10,        -- ...but no more often than every this many seconds of real time
+	dynamicBudgetMs = 3,           -- work time on the dynamic export per frame (a single collector,
+	                               -- e.g. towns, isn't split - step times are in the "dynamic #N" log line)
+	networkDebounceSec = 2,        -- after a build event we wait for the player to stop clicking
+	networkSafetyEveryWallSec = 300, -- a full network comparison even without events (safety net)
+	networkBudgetMs = 2,           -- work time on the network per frame
 	formatVersion = 5,
-	financeYears = 5,              -- kolumny tabeli finansów (lata, jak w oknie Finanse)
-	historyMaxPoints = 300,        -- najwyżej tyle punktów na serię historii (saldo, wartość firmy, mieszkańcy)
-	vehicles = true,               -- pojazdy (lista, pozycje, liczba na linii); false = bez pojazdów w eksporcie
-	vehiclePositions = true,       -- pozycja i prędkość pojazdów (płynny ruch na stronie); false = wyłączone
-	vehicleDetails = true,         -- model, wiek, stan techniczny i pojemność pojazdów; false = wyłączone
-	vehiclePositionsMaxMs = 30,    -- pozycje liczone porcjami w budżecie klatki; jeśli łącznie trwają dłużej
-	                               -- (średnio z 3 eksportów), wyłączamy je do końca sesji (log: "vehicle positions")
-	benchmark = false,             -- jednorazowy pomiar formatu zapisu (bench.lua), wyniki w docs
-	terrainStepM = 20,             -- odstęp próbek heightmapy (m)
-	terrainMaxSide = 2048,         -- najwyżej tyle próbek na bok (większa mapa -> większy krok);
-	                               -- mapa 20x41 km -> krok 21 m, 976 x 1951 (~2 mln próbek, ~4 s CPU w porcjach)
-	terrainBudgetMs = 4,           -- czas pracy nad terenem na klatkę
-	terrainCheckEveryWallSec = 30, -- jak często sprawdzać rewizje kafli terenu (terraformowanie)
-	terrainBench = false,          -- jednorazowy pomiar metod odczytu terenu (terrain.lua); zacina grę na ~6 s, wyniki w docs
-	terrain = true,                -- eksport terenu; false = wyłączony
-	settingsEveryWallSec = 5,      -- jak często czytać ustawienia z Tf3Bridge (patrz SETTINGS)
-	commandsEveryWallSec = 1,      -- jak często czytać kolejkę komend z Tf3Bridge (commands.lua)
+	financeYears = 5,              -- columns of the finance table (years, as in the Finances window)
+	historyMaxPoints = 300,        -- at most this many points per history series (balance, company value, residents)
+	vehicles = true,               -- vehicles (list, positions, count per line); false = no vehicles in the export
+	vehiclePositions = true,       -- vehicle position and speed (smooth movement on the website); false = off
+	vehicleDetails = true,         -- vehicle model, age, maintenance state and capacity; false = off
+	vehiclePositionsMaxMs = 30,    -- positions are collected in chunks within the frame budget; if together they take longer
+	                               -- (averaged over 3 exports), they're turned off until the end of the session (log: "vehicle positions")
+	benchmark = false,             -- a one-off measurement of the write format (bench.lua), results in docs
+	terrainStepM = 20,             -- heightmap sample spacing (m)
+	terrainMaxSide = 2048,         -- at most this many samples per side (a bigger map -> a bigger step);
+	                               -- a 20x41 km map -> a 21 m step, 976 x 1951 (~2M samples, ~4 s of CPU in chunks)
+	terrainBudgetMs = 4,           -- work time on the terrain per frame
+	terrainCheckEveryWallSec = 30, -- how often to check the terrain tile revisions (terraforming)
+	terrainBench = false,          -- a one-off measurement of terrain read methods (terrain.lua); stutters the game for ~6 s, results in docs
+	terrain = true,                -- terrain export; false = off
+	settingsEveryWallSec = 5,      -- how often to read the settings from Tf3Bridge (see SETTINGS)
+	commandsEveryWallSec = 1,      -- how often to read the command queue from Tf3Bridge (commands.lua)
 }
 
--- Ustawienia z okna "Ustawienia moda" w Tf3Bridge: local\towns_industries\tf3export_settings.lua
--- (format jak z app.saveUserdata). Czytane przez app.loadUserdata co settingsEveryWallSec, więc
--- zmiany działają bez restartu gry. Klucz -> { typ, min, max }; zakresy jak w ModSettings.cs.
--- Brak pliku albo złej wartości = domyślna z cfg powyżej.
+-- Settings from the "Mod settings" window in Tf3Bridge: local\towns_industries\tf3export_settings.lua
+-- (the app.saveUserdata format). Read with app.loadUserdata every settingsEveryWallSec, so
+-- changes apply without restarting the game. Key -> { type, min, max }; ranges as in ModSettings.cs.
+-- A missing file or a bad value = the default from cfg above.
 local SETTINGS_DIR, SETTINGS_FILE = util.USERDATA_DIR, util.FILE_PREFIX .. "settings"
 local SETTINGS = {
 	dynamicEveryDays = { "number", 1, 30 },
@@ -68,38 +68,38 @@ local SETTINGS = {
 local DEFAULTS = {}
 for key in pairs(SETTINGS) do DEFAULTS[key] = cfg[key] end
 
----------------------------------------------------------------- stan GUI
--- Trwały między klatkami wątku GUI, nie trafia do save'a.
+---------------------------------------------------------------- GUI state
+-- Persistent between frames of the GUI thread, not stored in the save.
 local S = {
 	session = nil,
 	seqDynamic = 0,
-	seqNetwork = 0,          -- wspólny licznik dla "network" i "networkDelta"
+	seqNetwork = 0,          -- a shared counter for "network" and "networkDelta"
 	lastGameTime = nil,
 	lastDynamicTime = nil,
 	lastDynamicWall = nil,
-	rows = nil,              -- id -> zakodowany wiersz krawędzi z ostatniego zapisu
-	net = nil,               -- bieżące zadanie budowy sieci
-	netVersionSeen = nil,    -- ostatnio obsłużona wartość netVersion ze stanu wspólnego
-	netDirtyWall = nil,      -- kiedy zauważyliśmy zmianę (debounce)
-	lastNetworkWall = nil,   -- kiedy ostatnio startowała przebudowa
+	rows = nil,              -- id -> encoded edge row from the last write
+	net = nil,               -- the current network build task
+	netVersionSeen = nil,    -- the last handled netVersion value from the shared state
+	netDirtyWall = nil,      -- when we noticed the change (debounce)
+	lastNetworkWall = nil,   -- when the last rebuild started
 	seqTerrain = 0,
-	terrain = nil,           -- bieżące zadanie eksportu terenu
-	terrainSig = nil,        -- podpis rewizji terenu z ostatniego eksportu
+	terrain = nil,           -- the current terrain export task
+	terrainSig = nil,        -- the terrain revision signature from the last export
 	lastTerrainCheckWall = nil,
-	lineStats = {},          -- id linii -> statystyki (collectors.lineStats), odświeżane co miesiąc gry
-	lineStatsKey = nil,      -- miesiąc kalendarza, z którego pochodzi cache
-	prevYear = nil,          -- { year, from, to } poprzedniego roku kalendarzowego albo nil
-	profitTotals = {},       -- id linii -> zysk z zakończonych lat (collectors.lineProfitTotal), raz na rok gry
-	profitTotalsYear = nil,  -- prevYear.year, z którego pochodzi cache
-	vehiclePos = true,       -- pozycje pojazdów w tej sesji (wyłączane po przekroczeniu budżetu)
-	vehiclePosMs = {},       -- czasy zbierania pozycji z ostatnich eksportów (ms)
-	dyn = nil,               -- bieżące zadanie eksportu dynamicznego
-	company = nil,           -- finanse i historia (collectors.financeTable / worldHistory), co miesiąc gry
-	companyKey = nil,        -- miesiąc, z którego pochodzi company
-	settingsWall = nil,      -- kiedy ostatnio czytaliśmy ustawienia (nie zależy od sesji)
-	commandsWall = nil,      -- kiedy ostatnio czytaliśmy kolejkę komend
+	lineStats = {},          -- line id -> statistics (collectors.lineStats), refreshed every game month
+	lineStatsKey = nil,      -- the calendar month the cache comes from
+	prevYear = nil,          -- { year, from, to } of the previous calendar year, or nil
+	profitTotals = {},       -- line id -> profit over finished years (collectors.lineProfitTotal), once per game year
+	profitTotalsYear = nil,  -- the prevYear.year the cache comes from
+	vehiclePos = true,       -- vehicle positions in this session (turned off when over budget)
+	vehiclePosMs = {},       -- position collection times from the last exports (ms)
+	dyn = nil,               -- the current dynamic export task
+	company = nil,           -- finances and history (collectors.financeTable / worldHistory), every game month
+	companyKey = nil,        -- the month company comes from
+	settingsWall = nil,      -- when we last read the settings (doesn't depend on the session)
+	commandsWall = nil,      -- when we last read the command queue
 }
-local terrainBenchDone = false -- raz na uruchomienie gry, nie na sesję
+local terrainBenchDone = false -- once per game start, not per session
 
 local function wallTime()
 	return (os and os.time) and os.time() or nil
@@ -120,9 +120,9 @@ local function newSession(now)
 	util.log(string.format("new session %s (writer mode '%s')", S.session, writer.mode()))
 end
 
----------------------------------------------------------------- ustawienia
--- Wczytuje SETTINGS do cfg; zwraca listę zmienionych kluczy ("klucz=wartość").
--- Brak pliku = wartości domyślne; nieudany odczyt (np. plik w trakcie zapisu) = bez zmian.
+---------------------------------------------------------------- settings
+-- Loads SETTINGS into cfg; returns a list of changed keys ("key=value").
+-- No file = defaults; a failed read (e.g. the file is being written) = no change.
 local function loadSettings()
 	local t = {}
 	if util.userdataExists(SETTINGS_DIR, SETTINGS_FILE) then
@@ -133,7 +133,7 @@ local function loadSettings()
 	local changed = {}
 	for key, spec in pairs(SETTINGS) do
 		local v = t[key]
-		if type(v) ~= spec[1] or v ~= v then -- zły typ albo NaN
+		if type(v) ~= spec[1] or v ~= v then -- wrong type or NaN
 			v = DEFAULTS[key]
 		elseif spec[1] == "number" then
 			v = math.max(spec[2], math.min(spec[3], math.floor(v)))
@@ -154,20 +154,20 @@ local function applySettings()
 	for _, c in ipairs(changed) do
 		local key = c:match("^(%w+)=")
 		if key == "vehicles" then
-			S.vehiclePos, S.vehiclePosMs = cfg.vehiclePositions, {} -- po włączeniu pozycje od nowa
+			S.vehiclePos, S.vehiclePosMs = cfg.vehiclePositions, {} -- after turning on, positions start over
 		elseif key == "terrain" or key == "terrainStepM" then
-			S.terrain, S.terrainSig = nil, nil -- przerwij bieżący eksport; przy włączonym zacznie się od nowa
+			S.terrain, S.terrainSig = nil, nil -- abort the current export; when on, it starts over
 		end
 	end
 end
 
----------------------------------------------------------------- statystyki linii
--- Finanse i przewozy zmieniają się wolno, więc liczymy je raz na miesiąc kalendarza gry
--- (nowa linia dostaje statystyki od razu), a w pozostałych eksportach wysyłamy cache.
+---------------------------------------------------------------- line statistics
+-- Finances and transport change slowly, so we compute them once per game calendar month
+-- (a new line gets its statistics right away), and the other exports send the cache.
 local function lineStatsMonth(now)
 	local d = util.date(now)
 	local key = d and d.year and d.month and (d.year * 12 + d.month)
-		or math.floor(now / (30 * util.dayLength())) -- bez kalendarza: co ~30 dni
+		or math.floor(now / (30 * util.dayLength())) -- without a calendar: every ~30 days
 	if key ~= S.lineStatsKey then
 		S.lineStatsKey, S.lineStats, S.prevYear = key, {}, nil
 		local okY, ys = pcall(util.yearStart, now)
@@ -180,7 +180,7 @@ local function lineStatsMonth(now)
 	end
 end
 
--- Statystyki jednej linii (z cache albo policzone); true = liczone teraz.
+-- Statistics of one line (from the cache or computed); true = computed now.
 local function attachLineStats(l, now)
 	local fresh = S.lineStats[l.id] == nil
 	if fresh then
@@ -189,7 +189,7 @@ local function attachLineStats(l, now)
 		if not ok then util.log("lineStats failed for " .. tostring(l.id) .. ": " .. tostring(st)) end
 	end
 	l.stats = S.lineStats[l.id] or nil
-	-- zysk z zakończonych lat: cała historia księgowa linii, więc tylko raz na rok gry
+	-- profit over finished years: the line's whole accounting history, so only once per game year
 	if l.stats and S.prevYear then
 		if S.profitTotals[l.id] == nil then
 			S.profitTotals[l.id] = collectors.lineProfitTotal(l.id, S.prevYear.to) or false
@@ -200,9 +200,9 @@ local function attachLineStats(l, now)
 	return fresh
 end
 
----------------------------------------------------------------- pozycje pojazdów
--- Średnio z 3 ostatnich eksportów dłużej niż vehiclePositionsMaxMs -> wyłączamy je do końca sesji
--- (strona wraca do zgadywania z przystanków).
+---------------------------------------------------------------- vehicle positions
+-- Averaged over the last 3 exports longer than vehiclePositionsMaxMs -> turned off until the end of the session
+-- (the website goes back to guessing from the stops).
 local function trackVehiclePositions(count, ms)
 	local h = S.vehiclePosMs
 	h[#h + 1] = ms
@@ -216,17 +216,17 @@ local function trackVehiclePositions(count, ms)
 	end
 end
 
----------------------------------------------------------------- eksport dynamiczny
--- Rozłożony na klatki tak jak sieć: zadanie S.dyn przechodzi po kolei kroki z DYN_STEPS, najwyżej
--- dynamicBudgetMs pracy na klatkę. Pętle (pozycje pojazdów, statystyki linii, kodowanie JSON
--- element po elemencie) przerywamy w połowie; pojedynczy kolektor (np. miasta) idzie w całości.
--- Snapshot powstaje przez kilka-kilkanaście klatek (ułamek sekundy czasu gry) - dla strony bez znaczenia.
--- Krok: function(job, deadline) -> true, gdy skończony; job.i to licznik pętli kroku (od 1 w każdym kroku).
+---------------------------------------------------------------- dynamic export
+-- Spread over frames like the network: the S.dyn task goes through the steps in DYN_STEPS in order, at most
+-- dynamicBudgetMs of work per frame. Loops (vehicle positions, line statistics, JSON encoding
+-- item by item) are interrupted midway; a single collector (e.g. towns) runs in one piece.
+-- The snapshot is built over several to a dozen frames (a fraction of a second of game time) - irrelevant for the website.
+-- Step: function(job, deadline) -> true when finished; job.i is the step's loop counter (from 1 in every step).
 
 local DYN_ARRAYS = { "towns", "industries", "warehouses", "stations", "lines", "vehicles" }
-local CHECK_EVERY = 20 -- co tyle elementów pętli sprawdzamy zegar
+local CHECK_EVERY = 20 -- check the clock every this many loop items
 
--- Następny element pętli; true = koniec budżetu na tę klatkę.
+-- The next loop item; true = the budget for this frame is used up.
 local function nextItem(job, deadline)
 	job.i = job.i + 1
 	return job.i % CHECK_EVERY == 0 and util.clock() >= deadline
@@ -234,7 +234,7 @@ end
 
 local DYN_STEPS = {
 	{ "vehicles", function(job)
-		-- bez pojazdów snap.vehicles zostaje nil: brak klucza w JSON i vehicleCount linii (strona pokazuje "–")
+		-- without vehicles snap.vehicles stays nil: no key in the JSON and no vehicleCount for lines (the website shows "–")
 		if cfg.vehicles then job.snap.vehicles = collectors.vehicles() end
 		return true
 	end },
@@ -256,7 +256,7 @@ local DYN_STEPS = {
 		if not vs or not cfg.vehicleDetails then return true end
 		if job.i == 1 then job.models, job.nowYear = {}, collectors.fracYear(job.now) end
 		while job.i <= #vs do
-			-- nowe API: błąd jednego pojazdu nie blokuje eksportu
+			-- new API: an error with one vehicle doesn't block the export
 			local ok, err = pcall(collectors.vehicleDetails, vs[job.i], job.now, job.nowYear, job.models)
 			if not ok and not job.detailsError then
 				job.detailsError = true
@@ -267,7 +267,7 @@ local DYN_STEPS = {
 		return true
 	end },
 	{ "stations", function(job)
-		-- stacje to nowe, niesprawdzone API: błąd nie może zablokować reszty eksportu
+		-- stations are a new, unverified API: an error must not block the rest of the export
 		local ok, stations, kinds = pcall(collectors.stations)
 		if not ok then
 			util.log("stations failed: " .. tostring(stations))
@@ -284,12 +284,12 @@ local DYN_STEPS = {
 	{ "lineStats", function(job, deadline)
 		local lines = job.snap.lines
 		while job.i <= #lines do
-			-- nowe API: błąd nie blokuje eksportu
+			-- new API: an error doesn't block the export
 			local ok, fresh = pcall(attachLineStats, lines[job.i], job.now)
 			job.i = job.i + 1
 			if ok and fresh then
 				job.statsCount = job.statsCount + 1
-				if util.clock() >= deadline then return false end -- liczenie jest drogie, cache nie
+				if util.clock() >= deadline then return false end -- computing is expensive, the cache isn't
 			end
 		end
 		return true
@@ -303,7 +303,7 @@ local DYN_STEPS = {
 		return true
 	end },
 	{ "warehouses", function(job)
-		-- nowe API: błąd nie blokuje reszty eksportu
+		-- new API: an error doesn't block the rest of the export
 		local ok, list = pcall(collectors.warehouses)
 		if not ok then
 			util.log("warehouses failed: " .. tostring(list))
@@ -316,8 +316,8 @@ local DYN_STEPS = {
 		job.snap.player = collectors.player()
 		return true
 	end },
-	-- Firma: tabela finansów (lata) i historia z logbooka świata. Zmienia się wolno, a liczenie
-	-- (cała historia księgowa) może być drogie, więc raz na miesiąc gry (klucz z kroku "lines").
+	-- Company: the finance table (years) and the history from the world logbook. It changes slowly, and computing it
+	-- (the whole accounting history) may be expensive, so once per game month (the key from the "lines" step).
 	{ "company", function(job)
 		if S.company == nil or S.companyKey ~= S.lineStatsKey then
 			S.companyKey = S.lineStatsKey
@@ -355,12 +355,12 @@ local DYN_STEPS = {
 			date = util.date(job.now),
 			player = job.snap.player,
 			company = job.snap.company,
-			effects = effects.list(), -- aktywne efekty z nagród za punkty kanału (effects.lua)
-			models = job.models and (next(job.models) and job.models or json.EMPTY_OBJECT), -- id modelu -> { name, icon } (vehicles[].model)
-		}):sub(1, -2) -- bez zamykającej klamry
+			effects = effects.list(), -- active effects from channel points rewards (effects.lua)
+			models = job.models and (next(job.models) and job.models or json.EMPTY_OBJECT), -- model id -> { name, icon } (vehicles[].model)
+		}):sub(1, -2) -- without the closing brace
 		local out = { head }
 		for _, key in ipairs(DYN_ARRAYS) do
-			if job.snap[key] ~= nil then -- pomijamy wyłączone (pojazdy)
+			if job.snap[key] ~= nil then -- skip the ones turned off (vehicles)
 				out[#out + 1] = ',"' .. key .. '":[' .. table.concat(job.parts[key], ",") .. "]"
 			end
 		end
@@ -396,7 +396,7 @@ local function stepDynamic()
 	local job = S.dyn
 	local start = util.clock()
 	local deadline = start + cfg.dynamicBudgetMs / 1000
-	repeat -- co najmniej jeden krok na klatkę
+	repeat -- at least one step per frame
 		local name, fn = DYN_STEPS[job.step][1], DYN_STEPS[job.step][2]
 		local s = util.clock()
 		local done = fn(job, deadline)
@@ -412,13 +412,13 @@ local function stepDynamic()
 	end
 end
 
----------------------------------------------------------------- eksport sieci
--- Krawędzie kodowane porcjami (networkBudgetMs na klatkę) do mapy id -> wiersz.
--- Po zakończeniu:
---   * brak poprzedniej mapy -> pełny zrzut "network",
---   * w przeciwnym razie    -> "networkDelta" z dodanymi/zmienionymi wierszami
---                              i ID usuniętych krawędzi (nic, jeśli brak zmian).
--- Snapshot nie jest atomowy: budowa w trakcie może dać mieszany stan.
+---------------------------------------------------------------- network export
+-- Edges encoded in chunks (networkBudgetMs per frame) into an id -> row map.
+-- When done:
+--   * no previous map -> a full "network" dump,
+--   * otherwise         -> a "networkDelta" with added/changed rows
+--                          and the IDs of removed edges (nothing if there are no changes).
+-- The snapshot isn't atomic: building in the meantime can give a mixed state.
 local function startNetwork(now, reason)
 	S.net = { ids = collectors.edgeIds(), i = 1, rows = {}, count = 0, skipped = 0,
 		gameTime = now, t0 = util.clock(), work = 0, reason = reason }
@@ -434,7 +434,7 @@ local function header(kind, net, extra)
 		fields = collectors.EDGE_FIELDS,
 	}
 	for k, v in pairs(extra or {}) do h[k] = v end
-	return json.encode(h):sub(1, -2) -- bez zamykającej klamry
+	return json.encode(h):sub(1, -2) -- without the closing brace
 end
 
 local function finishNetwork(net)
@@ -489,7 +489,7 @@ local function stepNetwork()
 	local deadline = start + cfg.networkBudgetMs / 1000
 	while net.i <= #net.ids do
 		local id = net.ids[net.i]
-		local row = collectors.edge(id) -- encja mogła zniknąć
+		local row = collectors.edge(id) -- the entity may have disappeared
 		if row then
 			net.rows[id] = json.encode(row)
 			net.count = net.count + 1
@@ -507,9 +507,9 @@ local function stepNetwork()
 	finishNetwork(net)
 end
 
----------------------------------------------------------------- eksport terenu
--- Heightmapa porcjami (terrainBudgetMs na klatkę), tylko gdy nie trwa praca nad siecią.
--- Ponownie po zmianie rewizji kafli terenu (sprawdzane co terrainCheckEveryWallSec).
+---------------------------------------------------------------- terrain export
+-- The heightmap in chunks (terrainBudgetMs per frame), only while no network work is going on.
+-- Again after the terrain tile revisions change (checked every terrainCheckEveryWallSec).
 local function startTerrain(now, reason)
 	S.terrain = terrain.start({ stepM = cfg.terrainStepM, maxSide = cfg.terrainMaxSide,
 		gameTime = now, reason = reason })
@@ -543,7 +543,7 @@ local function updateTerrain(now, wall)
 	if not cfg.terrain then return end
 	if S.terrain then
 		stepTerrain()
-	elseif S.net == nil and S.rows ~= nil then -- najpierw sieć
+	elseif S.net == nil and S.rows ~= nil then -- the network first
 		if cfg.terrainBench and not terrainBenchDone then
 			terrainBenchDone = true
 			terrain.bench({ budgetMs = cfg.terrainBudgetMs })
@@ -563,9 +563,9 @@ local function due(last, now, everyDays, day)
 	return last == nil or now - last >= everyDays * day
 end
 
--- Czy propozycja budowy dotyka sieci? onPostBuildProposal przychodzi też przy budynkach
--- miast itp. (w teście co ~3 s), więc bez filtra sieć byłaby przebudowywana non stop.
--- param = { proposal, proposalData, resultEntities (tylko post), playerInitiated }
+-- Does the build proposal touch the network? onPostBuildProposal also arrives for town
+-- buildings etc. (every ~3 s in a test), so without a filter the network would be rebuilt nonstop.
+-- param = { proposal, proposalData, resultEntities (post only), playerInitiated }
 local function hasItems(v) return #util.list(v) > 0 end
 
 local function hasFrozenEdges(constructionEntity)
@@ -581,12 +581,12 @@ local function touchesNetwork(name, param)
 		return true
 	end
 	if name == "onPreBuildProposal" then
-		-- usuwane konstrukcje jeszcze istnieją: stacja/zajezdnia z własnymi krawędziami?
+		-- removed constructions still exist: a station/depot with its own edges?
 		for _, e in ipairs(util.list(util.field(proposal, "toRemove"))) do
 			if hasFrozenEdges(e) then return true end
 		end
 	else
-		-- dodane konstrukcje już istnieją jako encje wynikowe
+		-- added constructions already exist as result entities
 		for _, e in ipairs(util.list(util.field(param, 3))) do
 			if hasFrozenEdges(e) then return true end
 		end
@@ -595,34 +595,34 @@ local function touchesNetwork(name, param)
 end
 
 local script = {
-	-- Wątki symulacji: tylko subskrypcja zdarzeń budowy (patrz handleEvent).
-	-- Subskrypcje są zapisywane w save'ie, więc wersjonujemy je, żeby starsze zapisy
-	-- (np. tylko z onPostBuildProposal) dostały nowy zestaw.
+	-- Simulation threads: only the subscription to build events (see handleEvent).
+	-- Subscriptions are stored in the save, so we version them, so that older saves
+	-- (e.g. only with onPostBuildProposal) get the new set.
 	update = function(_userParams, state, _dt)
 		local s = state:get() or {}
 		if s.subsVersion ~= 3 then
-			state:subscribeToEvent("onPreBuildProposal")  -- wyburzenia (encje jeszcze istnieją)
-			state:subscribeToEvent("onPostBuildProposal") -- budowa (encje wynikowe już istnieją)
-			state:subscribeToEvent(effects.EVENT)         -- efekty z nagród (effects.lua), wysyłane z wątku GUI
+			state:subscribeToEvent("onPreBuildProposal")  -- demolitions (entities still exist)
+			state:subscribeToEvent("onPostBuildProposal") -- building (result entities already exist)
+			state:subscribeToEvent(effects.EVENT)         -- effects from rewards (effects.lua), sent from the GUI thread
 			s.subsVersion = 3
 			state:set(s)
 		end
 	end,
 
-	-- Wątki symulacji: propozycja budowy/wyburzenia dotykająca sieci (gracz albo miasto)
-	-- podbija licznik, który guiUpdate odczytuje ze wspólnego stanu.
+	-- Simulation threads: a build/demolition proposal touching the network (by the player or a town)
+	-- bumps a counter that guiUpdate reads from the shared state.
 	handleEvent = function(_userParams, state, _src, id, name, param)
 		if name == effects.EVENT and id == effects.SCRIPT_ID then
-			-- wątek GUI nie może pisać stanu: lista aktywnych efektów przychodzi zdarzeniem i trafia do save'a
+			-- the GUI thread can't write the state: the list of active effects arrives as an event and goes into the save
 			local s = state:get() or {}
 			s.effects = (type(param) == "table" and param.effects) or {}
-			s.effectCtl = (type(param) == "table" and param.ctl) or {} -- bazy produktywności / prędkości (effects.lua)
+			s.effectCtl = (type(param) == "table" and param.ctl) or {} -- productivity / speed bases (effects.lua)
 			state:set(s)
 			return
 		end
 		if name == "onPreBuildProposal" or name == "onPostBuildProposal" then
 			local ok, touches = pcall(touchesNetwork, name, param)
-			if not ok or touches then -- przy błędzie lepiej przebudować niż przegapić
+			if not ok or touches then -- on an error better rebuild than miss something
 				local s = state:get() or {}
 				s.netVersion = (s.netVersion or 0) + 1
 				state:set(s)
@@ -640,21 +640,21 @@ local script = {
 			applySettings()
 		end
 
-		-- komendy od Tf3Bridge: błąd nie może zatrzymać eksportu
+		-- commands from Tf3Bridge: an error must not stop the export
 		if S.commandsWall == nil or wall - S.commandsWall >= cfg.commandsEveryWallSec then
 			S.commandsWall = wall
 			local okCmd, errCmd = pcall(commands.poll, wall, now, state:get() or {})
 			if not okCmd then util.log("commands failed: " .. tostring(errCmd)) end
 		end
 
-		-- nowa sesja: pierwszy start albo cofnięcie czasu gry (wczytany starszy save)
+		-- new session: the first start or game time rolled back (an older save loaded)
 		if S.session == nil or (S.lastGameTime and now < S.lastGameTime) then
 			newSession(now)
 		end
 		local paused = S.lastGameTime ~= nil and now == S.lastGameTime
 		S.lastGameTime = now
 
-		-- zmiany sieci zgłoszone przez handleEvent
+		-- network changes reported by handleEvent
 		local shared = state:get() or {}
 		local netVersion = shared.netVersion or 0
 		if netVersion ~= S.netVersionSeen then
@@ -675,7 +675,7 @@ local script = {
 			startNetwork(now, "periodic")
 		end
 
-		-- teren to nowe, niesprawdzone API: błąd wyłącza go na tę sesję zamiast psuć guiUpdate
+		-- terrain is a new, unverified API: an error turns it off for this session instead of breaking guiUpdate
 		local okTerrain, errTerrain = pcall(updateTerrain, now, wall)
 		if not okTerrain then
 			S.terrain, S.terrainSig = nil, "unavailable"
@@ -694,8 +694,8 @@ local script = {
 	end,
 }
 
--- Pliki .script.lua w TF3 muszą definiować globalne data() zwracające tabelę funkcji
--- (wzór: base/base_mod.script.lua). Styl "return {...}" działa tylko w plikach .tl.
+-- .script.lua files in TF3 have to define a global data() returning a table of functions
+-- (pattern: base/base_mod.script.lua). The "return {...}" style only works in .tl files.
 function data()
 	return script
 end

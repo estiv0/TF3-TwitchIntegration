@@ -1,20 +1,20 @@
--- Zapis snapshotów. Wyniki sondy w grze (2026-10-02):
---   wątki symulacji (update):  brak io, os.rename i app -> zostaje tylko log
---   wątek GUI (guiUpdate):     app.saveUserdata działa
+-- Writing snapshots. Probe results in the game (2026-10-02):
+--   simulation threads (update):  no io, os.rename or app -> only the log is left
+--   GUI thread (guiUpdate):       app.saveUserdata works
 --
--- Tryb "userdata" (wątek GUI):
+-- "userdata" mode (GUI thread):
 --   app.saveUserdata("towns_industries", "tf3export_<kind>_<session>_<seq>", { json = "<JSON>" })
---   -> ...\3493540\local\towns_industries\tf3export_<kind>_<session>_<seq>.lua o treści:
+--   -> ...\3493540\local\towns_industries\tf3export_<kind>_<session>_<seq>.lua with the content:
 --        function data()
 --        return {
---            json = "<JSON jako literał stringa Lua>",
+--            json = "<JSON as a Lua string literal>",
 --        }
 --        end
---   Middle app wyciąga literał json = "..." i odwraca escapowanie Lua (\" \\ \n \r \t \ddd).
---   Nie wiadomo, czy zapis jest atomowy - middle app ponawia odczyt, jeśli plik jest niekompletny.
+--   The middle app extracts the json = "..." literal and reverses Lua escaping (\" \\ \n \r \t \ddd).
+--   It's unknown whether the write is atomic - the middle app retries the read if the file is incomplete.
 --
--- Tryb "log" (zapas, np. gdy app jest niedostępne):
---   [tf3x] <kind> <session> <seq> <part>/<total> <fragment JSON-a>  w crash_dump\stdout.txt
+-- "log" mode (fallback, e.g. when app is unavailable):
+--   [tf3x] <kind> <session> <seq> <part>/<total> <JSON fragment>  in crash_dump\stdout.txt
 
 local util = ug_require "util.lua"
 
@@ -31,12 +31,12 @@ function W.mode()
 	return "log"
 end
 
--- Dzieli tekst na kawałki <= size bajtów, nie przecinając znaków UTF-8.
+-- Splits text into chunks of <= size bytes without splitting UTF-8 characters.
 local function utf8Chunks(content, size)
 	local chunks, from, n = {}, 1, #content
 	while from <= n do
 		local to = math.min(from + size - 1, n)
-		-- cofnij koniec, jeśli następny bajt to kontynuacja znaku (10xxxxxx)
+		-- step the end back if the next byte is a character continuation (10xxxxxx)
 		while to < n and to > from do
 			local b = content:byte(to + 1)
 			if b < 0x80 or b >= 0xC0 then break end

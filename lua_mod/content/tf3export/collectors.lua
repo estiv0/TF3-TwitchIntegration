@@ -1,6 +1,6 @@
--- Kolektory: każdy zwraca zwykłe tabele Lua gotowe do json.encode.
--- Biała lista - pobieramy tylko encje z konkretnym komponentem.
--- Pola komponentów zgodne z api/tealdef/api/engine.d.tl z instalacji TF3.
+-- Collectors: each returns plain Lua tables ready for json.encode.
+-- Whitelist - we only take entities with a specific component.
+-- Component fields match api/tealdef/api/engine.d.tl from the TF3 install.
 
 local util = ug_require "util.lua"
 local json = ug_require "json.lua"
@@ -8,8 +8,8 @@ local ct = util.ct
 
 local C = {}
 
----------------------------------------------------------------- ładunki
--- CargoTypeId -> nazwa zasobu (np. "::/cargos/logs/logs.cargo"), z cache.
+---------------------------------------------------------------- cargo
+-- CargoTypeId -> resource name (e.g. "::/cargos/logs/logs.cargo"), cached.
 local cargoNames = {}
 function C.cargoName(id)
 	if id == nil then return nil end
@@ -21,7 +21,7 @@ function C.cargoName(id)
 	return cargoNames[key]
 end
 
----------------------------------------------------------------- gracz
+---------------------------------------------------------------- player
 function C.player()
 	local id = api.engine.util.getPlayer()
 	local balance
@@ -30,12 +30,12 @@ function C.player()
 	return {
 		id = id,
 		name = util.name(id),
-		balance = balance, -- nil = nieskończone pieniądze
+		balance = balance, -- nil = unlimited money
 	}
 end
 
----------------------------------------------------------------- firma
--- Nazwy enumów JournalEntry (scripts/journal.d.tl) - skrypty gry porównują je przez ==.
+---------------------------------------------------------------- company
+-- JournalEntry enum names (scripts/journal.d.tl) - the game scripts compare them with ==.
 local JOURNAL = {
 	Type = { "LOAN", "INTEREST", "CONSTRUCTION", "ACQUISITION", "MAINTENANCE", "INCOME", "OTHER", "SUBSIDY" },
 	Maintenance = { "VEHICLE", "INFRASTRUCTURE", "OTHER", "VEHICLE_MAINTENANCE" },
@@ -62,9 +62,9 @@ local function amounts(v)
 	return out
 end
 
--- Tabela z okna Finanse (game_mechanics/finance/finances_table.tl): kolumny = lata (header), wiersze =
--- { carrier, type, maintenance, construction, values } z kategorii transportu (per nośnik), inwestycji
--- i innych; do tego zysk (total), stan konta (balance), odsetki, kredyt.
+-- The table from the Finances window (game_mechanics/finance/finances_table.tl): columns = years (header), rows =
+-- { carrier, type, maintenance, construction, values } from the transport (per carrier), investment
+-- and other categories; plus profit (total), balance, interest, loan.
 function C.financeTable(years)
 	local player = api.engine.util.getPlayer()
 	local config = api.type.ChartConfig.new()
@@ -101,10 +101,10 @@ function C.financeTable(years)
 	}
 end
 
--- Historia z logbooka świata (wykresy z okna Finanse/Miasta): nazwa -> [[rok, wartość], ...], rok jako
--- liczba z ułamkiem (1921.5 = połowa 1921). Najwyżej maxPoints punktów na serię (równo przerzedzone,
--- ostatni zawsze). ChartResult.series[i] to para list { czasy gry, wartości } (domyślnie po 50 punktów
--- od początku gry do teraz, wartości uśrednione w przedziałach); czas zamieniamy na datę przez util.date.
+-- History from the world logbook (charts from the Finances/Towns windows): name -> [[year, value], ...], the year as
+-- a fractional number (1921.5 = the middle of 1921). At most maxPoints points per series (evenly thinned,
+-- always the last one). ChartResult.series[i] is a pair of lists { game times, values } (by default 50 points
+-- from the start of the game until now, values averaged per bucket); time is turned into a date with util.date.
 function C.worldHistory(names, maxPoints)
 	local res = api.engine.util.logbook.getChart(api.engine.util.getWorld(), names)
 	local out = {}
@@ -127,8 +127,8 @@ function C.worldHistory(names, maxPoints)
 	return out
 end
 
----------------------------------------------------------------- miasta
--- cargoNeeds: {{{CargoTypeId, number}}} - lista (typ zabudowy) list par {ładunek, wartość}
+---------------------------------------------------------------- towns
+-- cargoNeeds: {{{CargoTypeId, number}}} - a list (by building type) of lists of {cargo, value} pairs
 local function cargoNeeds(needs)
 	local out = {}
 	for i, group in ipairs(util.list(needs)) do
@@ -144,9 +144,9 @@ local function cargoNeeds(needs)
 	return out
 end
 
--- Aktualne pojemności dzielnic {mieszkalne, usługowe, przemysłowe} wszystkich miast, jednym wywołaniem.
--- To one rosną razem z miastem (suma = rozmiar z okna miasta); TOWN.initialLandUseCapacities
--- to tylko wartości startowe.
+-- Current district capacities {residential, commercial, industrial} of all towns, in one call.
+-- These grow with the town (sum = the size from the town window); TOWN.initialLandUseCapacities
+-- are only the starting values.
 local function townCapacities()
 	local ok, map = pcall(function() return api.engine.system.townBuildingSystem.getTown2personCapacitiesMap() end)
 	if not ok or map == nil then
@@ -160,9 +160,9 @@ local function townCapacities()
 	return out
 end
 
--- Zaspokojenie potrzeb miasta: [{ cargo, supply, demand }] jak w statystykach miast w grze
--- (townBuildingSystem.getCargoSupplyAndLimit, wszystkie strefy razem; game_mechanics/towns/town_util.tl).
--- demand -1 = bez limitu. nil, gdy API zawiedzie.
+-- Town needs satisfaction: [{ cargo, supply, demand }] as in the game's town statistics
+-- (townBuildingSystem.getCargoSupplyAndLimit, all zones together; game_mechanics/towns/town_util.tl).
+-- demand -1 = no limit. nil when the API fails.
 local function townSupply(id)
 	local ok, map = pcall(function() return api.engine.system.townBuildingSystem.getCargoSupplyAndLimit(id) end)
 	if not ok or map == nil then return nil end
@@ -201,7 +201,7 @@ function C.towns()
 	return out
 end
 
----------------------------------------------------------------- przemysł
+---------------------------------------------------------------- industry
 local function stockRules(stockList)
 	local rules = {}
 	if not stockList then return rules end
@@ -224,9 +224,9 @@ local function stockRules(stockList)
 	return rules
 end
 
--- Magazyny zakładu: ładunek, pojemność, stan teraz (simEntityAtStockSystem, StockId od 0),
--- input (magazyn wejściowy) i consumedYear (zużycie na rok, stockDatas[i].consumeFrequency -
--- to samo, co okno zakładu pokazuje jako faktyczne zużycie).
+-- Industry stocks: cargo, capacity, current level (simEntityAtStockSystem, StockId from 0),
+-- input (input stock) and consumedYear (consumption per year, stockDatas[i].consumeFrequency -
+-- the same the industry window shows as actual consumption).
 local function stocks(stockList, stockEntity)
 	local out = {}
 	if not stockList then return out end
@@ -251,7 +251,7 @@ local function stocks(stockList, stockEntity)
 	return out
 end
 
--- Faktyczna produkcja na rok: ładunek -> stockList.cargoData[ładunek].produceFrequency.
+-- Actual production per year: cargo -> stockList.cargoData[cargo].produceFrequency.
 local function producedYear(stockList)
 	local out = {}
 	if not stockList then return json.EMPTY_OBJECT end
@@ -262,8 +262,8 @@ local function producedYear(stockList)
 	return next(out) and out or json.EMPTY_OBJECT
 end
 
--- Liczniki z logbooka zakładu za ostatni rok (wykres "Przepływ ładunków" w oknie zakładu):
--- wyprodukowane, zużyte, zmarnowane (niezabrane). Brak wpisu = nil.
+-- Counters from the industry logbook for the last year (the "Cargo flow" chart in the industry window):
+-- produced, consumed, wasted (not picked up). No entry = nil.
 local function yearLog(entity)
 	local function value(name)
 		local ok, v = pcall(function() return api.engine.util.logbook.getLogValuePerYear(entity, name) end)
@@ -300,12 +300,12 @@ function C.industries()
 	return out
 end
 
----------------------------------------------------------------- magazyny
--- Magazyny gracza (komponent WAREHOUSE: stockList + construction), jak okno magazynu w grze
--- (gui/main/cargo_util.tl, forEachCargoInStock): magazyn ma kilka składów (stocks), skład ma
--- pojemność i jeden albo kilka dozwolonych ładunków (getStockCargoTypes); stan liczymy per ładunek.
+---------------------------------------------------------------- warehouses
+-- The player's warehouses (WAREHOUSE component: stockList + construction), like the game's warehouse window
+-- (gui/main/cargo_util.tl, forEachCargoInStock): a warehouse has several stores (stocks), a store has
+-- a capacity and one or more allowed cargos (getStockCargoTypes); the level is counted per cargo.
 
--- Konstrukcja -> encja magazynu (do rozpoznania stacji magazynu w C.stations).
+-- Construction -> warehouse entity (to recognize warehouse stations in C.stations).
 function C.warehouseConstructions()
 	local out = {}
 	for _, id in ipairs(util.entities(ct.WAREHOUSE)) do
@@ -333,7 +333,7 @@ local function warehouseStocks(sl)
 				sum = sum + n
 			end
 		end
-		if sum == 0 then -- bez listy ładunków (albo API zawiodło): przynajmniej łączny stan składu
+		if sum == 0 then -- no cargo list (or the API failed): at least the store's total level
 			local ok, n = pcall(function() return api.engine.system.simEntityAtStockSystem.getStockCount(sl, stockId) end)
 			if ok and type(n) == "number" then sum = n end
 		end
@@ -342,7 +342,7 @@ local function warehouseStocks(sl)
 		local cargos = {}
 		for _, c in ipairs(okT and util.list(types) or {}) do cargos[#cargos + 1] = C.cargoName(c) end
 		out[#out + 1] = {
-			cargos = cargos, -- dozwolone ładunki (puste = skład jeszcze bez ustawionego ładunku)
+			cargos = cargos, -- allowed cargo (empty = a store without a cargo set yet)
 			capacity = cap,
 			amount = sum,
 			cargo = next(byCargo) and byCargo or json.EMPTY_OBJECT,
@@ -370,28 +370,28 @@ function C.warehouses()
 				pos = util.center(w.construction) or util.center(id),
 				capacity = capacity,
 				amount = amount,
-				cargo = cargo, -- ładunek -> ilość teraz (wszystkie składy razem)
+				cargo = cargo, -- cargo -> amount now (all stores together)
 				stocks = stocks,
-				year = { unloaded = perYear("itemsUnloaded"), loaded = perYear("itemsLoaded") }, -- przywiezione / wywiezione
+				year = { unloaded = perYear("itemsUnloaded"), loaded = perYear("itemsLoaded") }, -- brought in / shipped out
 			}
 		end
 	end
 	return out
 end
 
----------------------------------------------------------------- stacje
--- Stacje z własną konstrukcją: dworce kolejowe, dworce autobusowe/ciężarówkowe, porty,
--- lotniska. Przystanki przy ulicy nie mają konstrukcji albo są na liście STOP_PATHS - pomijamy je.
--- STATION nie wiadomo, czy da się listować (LINE i BASE_EDGE się nie dało), więc bierzemy
--- mapę stacja -> konstrukcja. Jedna konstrukcja (np. lotnisko) bywa kilkoma stacjami,
--- dlatego wiersz = konstrukcja.
+---------------------------------------------------------------- stations
+-- Stations with their own construction: train stations, bus/truck stations, harbors,
+-- airports. Street stops have no construction or are on the STOP_PATHS list - we skip them.
+-- It's unknown whether STATION can be listed (LINE and BASE_EDGE couldn't), so we take
+-- the station -> construction map. One construction (e.g. an airport) can be several stations,
+-- so a row = a construction.
 
--- Rodzaj najpierw ze ścieżki konstrukcji (base/content/stations/<air|water|rail|street>/...).
--- getCarriers(group, -1, -1) zwraca sumę dla całej GRUPY stacji, a dworzec autobusowy
--- zgrupowany z kolejowym dostałby wtedy RAIL - dlatego nośniki to tylko zapas (mody).
+-- The kind comes first from the construction path (base/content/stations/<air|water|rail|street>/...).
+-- getCarriers(group, -1, -1) returns the sum for the whole station GROUP, and a bus station
+-- grouped with a train station would then get RAIL - so the carriers are only a fallback (mods).
 local STATION_PATHS = { { "/air/", "AIR" }, { "/water/", "WATER" }, { "/rail/", "RAIL" }, { "/street/", "ROAD" } }
-local STATION_KINDS = { "AIR", "WATER", "RAIL", "ROAD", "TRAM" } -- kolejność = priorytet
--- Przystanki, które są konstrukcjami: małe przystanki i przystanek podziemny ("Underground Stop").
+local STATION_KINDS = { "AIR", "WATER", "RAIL", "ROAD", "TRAM" } -- order = priority
+-- Stops that are constructions: small stops and the underground stop ("Underground Stop").
 local STOP_PATHS = { "small_stops", "underground_station" }
 
 local function isStop(file)
@@ -401,8 +401,8 @@ local function isStop(file)
 	return false
 end
 
--- Zakład, do którego należy konstrukcja stacji (stacja wbudowana w przemysł) albo nil.
--- Stacja może być podkonstrukcją, więc sprawdzamy też konstrukcję nadrzędną.
+-- The industry the station construction belongs to (a station built into an industry), or nil.
+-- A station can be a sub-construction, so the parent construction is checked too.
 local function parentConstruction(constrId)
 	local ok, parent = pcall(function()
 		return api.engine.system.streetConnectorSystem.getConstructionEntityForSubconstruction(constrId)
@@ -421,15 +421,15 @@ local function stationIndustry(constrId, constr)
 	return nil
 end
 
--- Magazyn, do którego należy konstrukcja stacji (sama albo nadrzędna) albo nil.
+-- The warehouse the station construction (itself or its parent) belongs to, or nil.
 local function stationWarehouse(constrId, warehouses)
 	if warehouses[constrId] then return warehouses[constrId] end
 	local parent = parentConstruction(constrId)
 	return parent and warehouses[parent] or nil
 end
 
--- Pasażerowie czekający w grupach stacji: (wszyscy, niezadowoleni) albo nil, gdy API zawiedzie.
--- Tak samo liczy okno statystyk stacji w grze (gui/statistics/statistic_stations.tl).
+-- Passengers waiting in station groups: (all, unhappy) or nil when the API fails.
+-- The game's station statistics window counts them the same way (gui/statistics/statistic_stations.tl).
 local passengerCargo
 local function passengerCargoId()
 	if passengerCargo == nil then
@@ -439,7 +439,7 @@ local function passengerCargoId()
 	return passengerCargo or nil
 end
 
--- Pasażerowie czekający na danej linii na jej przystanku (stopIndex od 0, jak vehicles[].stop) albo nil.
+-- Passengers waiting for a given line at its stop (stopIndex from 0, like vehicles[].stop), or nil.
 local function lineStopWaiting(line, stopIndex)
 	local cargo = passengerCargoId()
 	if not cargo then return nil end
@@ -477,7 +477,7 @@ local function stationKind(carriers, file)
 	return nil
 end
 
--- Zwraca listę stacji i mapę encja stacji -> rodzaj (do nośnika linii bez pojazdów).
+-- Returns the list of stations and a station entity -> kind map (for the carrier of a line without vehicles).
 function C.stations()
 	local ok, map = pcall(function() return api.engine.system.streetConnectorSystem.getStation2ConstructionMap() end)
 	if not ok or map == nil then
@@ -531,24 +531,24 @@ function C.stations()
 			local kind = stationKind(carriers, file)
 			local industry = stationIndustry(constrId, constr)
 			local warehouse = stationWarehouse(constrId, warehouses)
-			if kind or industry or warehouse then -- stacja przemysłu / magazynu zostaje, nawet bez rozpoznanego rodzaju
+			if kind or industry or warehouse then -- an industry / warehouse station stays, even without a recognized kind
 				for _, st in ipairs(stations) do kindOf[st] = kind end
 				local waiting, waitingBad
 				if passengers then waiting, waitingBad = waitingPassengers(groups) end
 				out[#out + 1] = {
 					id = constrId,
 					kind = kind or "OTHER",
-					industry = industry, -- id zakładu (industries[].id), gdy stacja do niego należy
-					warehouse = warehouse, -- id magazynu (warehouses[].id), gdy stacja do niego należy
-					carriers = carriers, -- nośniki całej grupy stacji
+					industry = industry, -- industry id (industries[].id) when the station belongs to it
+					warehouse = warehouse, -- warehouse id (warehouses[].id) when the station belongs to it
+					carriers = carriers, -- carriers of the whole station group
 					name = (groups[1] and util.name(groups[1])) or util.name(constrId),
 					file = file,
 					pos = util.center(constrId) or util.center(stations[1]),
 					owner = util.owner(constrId) or util.owner(stations[1]),
 					passengers = passengers,
 					cargo = cargo,
-					waiting = waiting, -- pasażerowie czekający w grupie stacji
-					waitingBad = waitingBad, -- z nich niezadowoleni (za długo czekają)
+					waiting = waiting, -- passengers waiting in the station group
+					waitingBad = waitingBad, -- those of them who are unhappy (waiting too long)
 					groups = groups,
 					stations = stations,
 				}
@@ -558,7 +558,7 @@ function C.stations()
 	return out, kindOf
 end
 
----------------------------------------------------------------- linie i pojazdy
+---------------------------------------------------------------- lines and vehicles
 function C.vehicles()
 	local out = {}
 	for _, id in ipairs(util.entities(ct.TRANSPORT_VEHICLE)) do
@@ -578,9 +578,9 @@ function C.vehicles()
 	return out
 end
 
--- Dopisuje do pojazdu (wpis z C.vehicles) pos (m, do 1 m) i speed (m/s) z api.engine.util.vehicle.
--- Bez nich strona zgaduje położenie z numeru przystanku, a ten na długim odcinku (pociąg, statek)
--- nie zmienia się przez minuty. Pojazdy w zajezdni pomijamy. false = API niedostępne.
+-- Adds pos (m, to 1 m) and speed (m/s) from api.engine.util.vehicle to a vehicle (an entry from C.vehicles).
+-- Without them the website guesses the location from the stop number, and on a long segment (train, ship)
+-- that doesn't change for minutes. Vehicles in a depot are skipped. false = API unavailable.
 function C.vehiclePosition(v)
 	local vu = api.engine.util.vehicle
 	if not vu then return false end
@@ -597,8 +597,8 @@ function C.vehiclePosition(v)
 	return true
 end
 
--- Model z api.res: { name, lifespan (w jednostkach gameTime), icon }, z cache (modeli jest kilkadziesiąt).
--- Nazwa i żywotność jak w oknie pojazdu (gui/line_vehicle_mgmt/vehicle_util.tl, vehicle_store_util.tl).
+-- Model from api.res: { name, lifespan (in gameTime units), icon }, cached (there are a few dozen models).
+-- Name and lifespan as in the vehicle window (gui/line_vehicle_mgmt/vehicle_util.tl, vehicle_store_util.tl).
 local modelCache = {}
 local function modelInfo(modelId)
 	local key = util.scalar(modelId)
@@ -610,8 +610,8 @@ local function modelInfo(modelId)
 			info.name = md.description.name
 			info.lifespan = md.maintenance.lifespan * 1000
 		end)
-		-- "vehicle/bus/mb_o405g.mdl" -> "mb_o405g": nazwa ikonki na stronie (web/img/vehicles/<icon>.png,
-		-- wyciągane z plików gry przez tools/extract_game_icons.py)
+		-- "vehicle/bus/mb_o405g.mdl" -> "mb_o405g": the icon name on the website (web/img/vehicles/<icon>.png,
+		-- extracted from the game files by tools/extract_game_icons.py)
 		local okF, file = pcall(function() return api.res.modelRep.getName(modelId) end)
 		if okF and type(file) == "string" then info.icon = file:match("([^/\\]+)%.mdl$") end
 		modelCache[key] = info
@@ -619,7 +619,7 @@ local function modelInfo(modelId)
 	return modelCache[key]
 end
 
--- Nazwa zespołu trakcyjnego (multiple unit) z pliku w transportVehicleConfig.muFileNames, z cache.
+-- The multiple unit name from the file in transportVehicleConfig.muFileNames, cached.
 local muCache = {}
 local function muName(file)
 	if muCache[file] == nil then
@@ -632,7 +632,7 @@ local function muName(file)
 	return muCache[file] or nil
 end
 
--- Data gry jako ułamek roku (2031.5 = około 1 lipca 2031); nil bez kalendarza.
+-- Game date as a fraction of a year (2031.5 = about 1 July 2031); nil without a calendar.
 local function fracYear(t)
 	local d = util.date(t)
 	if not d or type(d.year) ~= "number" then return nil end
@@ -640,15 +640,15 @@ local function fracYear(t)
 end
 C.fracYear = fracYear
 
--- Dopisuje do pojazdu (wpis z C.vehicles) szczegóły ze składu (transportVehicleConfig) i config:
---   model    = id modelu czoła składu (nazwa i ikonka w models)
---   parts    = liczba części składu (lokomotywa + wagony), tylko gdy więcej niż 1
---   age      = wiek najstarszej części w latach kalendarza gry (jak "Wiek" w oknie pojazdu)
---   wear     = wiek / żywotność tej części (1 = koniec żywotności, jak procent w oknie linii)
---   maint    = średni stan techniczny części, 0..1 (vehicle_util.getAvgMaintenanceState)
---   cap      = pojemność według ładunku { [nazwa ładunku] = liczba }
---   load     = ile teraz wiezie, te same klucze co cap (simEntityAtVehicleSystem)
--- models: tabela "id modelu" -> { name, icon } (klucze tekstowe, żeby JSON dał obiekt), uzupełniana o modele tego pojazdu.
+-- Adds details from the consist (transportVehicleConfig) and config to a vehicle (an entry from C.vehicles):
+--   model    = model id of the lead unit (name and icon in models)
+--   parts    = number of parts in the consist (locomotive + wagons), only when more than 1
+--   age      = age of the oldest part in game calendar years (like "Age" in the vehicle window)
+--   wear     = age / lifespan of that part (1 = end of lifespan, like the percentage in the line window)
+--   maint    = average maintenance state of the parts, 0..1 (vehicle_util.getAvgMaintenanceState)
+--   cap      = capacity by cargo { [cargo name] = count }
+--   load     = what it carries now, the same keys as cap (simEntityAtVehicleSystem)
+-- models: a "model id" -> { name, icon } table (string keys, so JSON gives an object), filled in with this vehicle's models.
 function C.vehicleDetails(v, now, nowYear, models)
 	local tv = util.comp(v.id, ct.TRANSPORT_VEHICLE)
 	if not tv then return end
@@ -664,7 +664,7 @@ function C.vehicleDetails(v, now, nowYear, models)
 			local info = modelInfo(head)
 			models[key] = { name = (type(mu) == "string" and mu ~= "" and muName(mu)) or info.name, icon = info.icon }
 		end
-		-- najstarsza część (przy równym czasie zakupu ta z krótszą żywotnością), jak getMinPurchaseTimeAndLifespan
+		-- the oldest part (with equal purchase time the one with the shorter lifespan), like getMinPurchaseTimeAndLifespan
 		local bought, lifespan, maintSum, maintN = nil, nil, 0, 0
 		for _, p in ipairs(parts) do
 			local t = util.field(p, "purchaseTime")
@@ -682,8 +682,8 @@ function C.vehicleDetails(v, now, nowYear, models)
 		end
 		if maintN > 0 then v.maint = util.round(maintSum / maintN, 3) end
 	end
-	-- pojemności: tablica Lua od 1, CargoTypeId = indeks - 1 (jak gui/main/cargo_util.tl); ładunek na pokładzie
-	-- tym samym wywołaniem co okno gry, jedno na rodzaj ładunku z pojemnością
+	-- capacities: a 1-based Lua array, CargoTypeId = index - 1 (like gui/main/cargo_util.tl); cargo on board
+	-- with the same call as the game window, one per cargo type with capacity
 	local sim = api.engine.system.simEntityAtVehicleSystem
 	local cap, load = {}, {}
 	for index, n in util.pairs(util.field(util.field(tv, "config"), "capacities")) do
@@ -698,9 +698,9 @@ function C.vehicleDetails(v, now, nowYear, models)
 	if next(load) then v.load = load end
 end
 
--- Statystyki linii jak w oknie linii i statystykach gry (gui/line_vehicle_mgmt/line_react_util.tl,
--- gui/statistics/statistic_lines.tl). prevYear = { year, from, to } albo nil.
--- Każde pole osobno w pcall: błąd jednego API nie kasuje reszty.
+-- Line statistics as in the line window and the game statistics (gui/line_vehicle_mgmt/line_react_util.tl,
+-- gui/statistics/statistic_lines.tl). prevYear = { year, from, to } or nil.
+-- Each field in its own pcall: an error in one API doesn't wipe the rest.
 function C.lineStats(id, now, prevYear)
 	local function try(f)
 		local ok, v = pcall(f)
@@ -710,7 +710,7 @@ function C.lineStats(id, now, prevYear)
 	local finance = api.engine.util.finance
 	local yearLen = try(function() return api.util.getDefaultYearDuration() end)
 	local s = {
-		-- przychody minus utrzymanie z ostatnich 12 miesięcy ("Zysk" w oknie linii)
+		-- income minus maintenance over the last 12 months ("Profit" in the line window)
 		profit12m = yearLen and try(function()
 			return finance.calculateBalance({ id }, math.max(now - yearLen, 0), now, true)
 		end),
@@ -726,11 +726,11 @@ function C.lineStats(id, now, prevYear)
 		end)
 	end
 
-	-- zapełnienie pojazdów w chwili pomiaru, per ładunek i łącznie
+	-- vehicle load at the time of measurement, per cargo and in total
 	local ok, usages = pcall(function() return api.engine.util.line.getLineCapacityUsages(id, false) end)
 	if ok and usages then
 		local used, capacity, cargo = 0, 0, {}
-		-- to tablica Lua indeksowana od 1: CargoTypeId = indeks - 1 (jak w gui/main/cargo_util.tl)
+		-- this is a 1-based Lua array: CargoTypeId = index - 1 (as in gui/main/cargo_util.tl)
 		for index, u in util.pairs(usages) do
 			local uu, uc = util.field(u, "used"), util.field(u, "capacity")
 			if type(index) == "number" and type(uu) == "number" and type(uc) == "number" and uc > 0 then
@@ -745,18 +745,18 @@ function C.lineStats(id, now, prevYear)
 	return s
 end
 
--- Zysk linii ze wszystkich zakończonych lat: od początku gry do yearStart (początek bieżącego roku).
--- Zmienia się tylko na przełomie roku, więc skrypt liczy go raz na rok gry (nil = brak danych).
+-- Line profit over all finished years: from the start of the game to yearStart (the start of the current year).
+-- It only changes at the turn of a year, so the script computes it once per game year (nil = no data).
 function C.lineProfitTotal(id, yearStart)
 	local ok, v = pcall(function() return api.engine.util.finance.calculateBalance({ id }, 0, yearStart, true) end)
 	if ok and type(v) == "number" then return v end
 	return nil
 end
 
--- stationKinds: encja stacji -> rodzaj (z C.stations); nośnik linii bez pojazdów.
--- vehicles = nil (pojazdy wyłączone): vehicleCount = nil, nośnik tylko z rodzaju stacji.
+-- stationKinds: station entity -> kind (from C.stations); the carrier of a line without vehicles.
+-- vehicles = nil (vehicles turned off): vehicleCount = nil, the carrier only from the station kind.
 function C.lines(vehicles, stationKinds)
-	-- liczba pojazdów i nośnik linii z już zebranej listy pojazdów (bez drugiego przejścia)
+	-- vehicle count and line carrier from the already collected vehicle list (without a second pass)
 	local perLine, carrier = {}, {}
 	for _, v in ipairs(vehicles or {}) do
 		if v.line then
@@ -765,9 +765,9 @@ function C.lines(vehicles, stationKinds)
 		end
 	end
 
-	-- LINE nie da się listować przez getEntitiesWithComponent ("Cannot loop over this
-	-- component type"). Gra używa lineSystem.getLinesForPlayer; dokładamy linie znalezione
-	-- w pojazdach (np. innych firm).
+	-- LINE can't be listed with getEntitiesWithComponent ("Cannot loop over this
+	-- component type"). The game uses lineSystem.getLinesForPlayer; we add the lines found
+	-- in vehicles (e.g. of other companies).
 	local ids, seen = {}, {}
 	local function addLine(id)
 		if id and id > 0 and not seen[id] then seen[id] = true; ids[#ids + 1] = id end
@@ -783,9 +783,9 @@ function C.lines(vehicles, stationKinds)
 	for id in pairs(perLine) do addLine(id) end
 	table.sort(ids)
 
-	-- Pozycja przystanku: stop.station to indeks (od 0) w STATION_GROUP.stations.
-	-- Encja stacji zwykle nie ma BOUNDING_VOLUME, więc sięgamy do jej konstrukcji;
-	-- w ostateczności środek grupy stacji. Cache na jeden eksport (stacje się powtarzają).
+	-- Stop position: stop.station is an index (from 0) into STATION_GROUP.stations.
+	-- The station entity usually has no BOUNDING_VOLUME, so we go to its construction;
+	-- as a last resort the center of the station group. Cached for one export (stations repeat).
 	local stopPos, stopStation = {}, {}
 	local function stationOf(group, index)
 		local key = tostring(group) .. ":" .. tostring(index)
@@ -810,7 +810,7 @@ function C.lines(vehicles, stationKinds)
 		end
 		return stopPos[key] or nil
 	end
-	-- Czekający pasażerowie na przystanku przy ulicy (grupa bez dworca z C.stations - dworce liczą je same).
+	-- Passengers waiting at a street stop (a group without a station from C.stations - stations count them themselves).
 	local stopWaiting = {}
 	local function waitingAt(group, station)
 		if stationKinds and station and stationKinds[station] then return nil end
@@ -833,11 +833,11 @@ function C.lines(vehicles, stationKinds)
 					group = s.stationGroup,
 					station = s.station,
 					terminal = s.terminal,
-					entity = stationOf(s.stationGroup, s.station), -- encja stacji, por. stations[].stations
+					entity = stationOf(s.stationGroup, s.station), -- station entity, cf. stations[].stations
 					pos = stationPos(s.stationGroup, s.station),
 					name = util.name(s.stationGroup),
 					waiting = waitingAt(s.stationGroup, stationOf(s.stationGroup, s.station)),
-					lineWaiting = lineStopWaiting(id, i - 1), -- czekający właśnie na tę linię
+					lineWaiting = lineStopWaiting(id, i - 1), -- waiting for exactly this line
 				}
 			end
 			local color = util.comp(id, ct.COLOR)
@@ -846,7 +846,7 @@ function C.lines(vehicles, stationKinds)
 				name = util.name(id),
 				color = color and util.vec3(color.color),
 				owner = util.owner(id),
-				carrier = lineCarrier, -- z pojazdów, a bez pojazdów z rodzaju stacji (nil = przystanki przy ulicy)
+				carrier = lineCarrier, -- from the vehicles, and without vehicles from the station kind (nil = street stops)
 				stops = stops,
 				vehicleCount = vehicles and (perLine[id] or 0) or nil,
 			}
@@ -855,20 +855,20 @@ function C.lines(vehicles, stationKinds)
 	return out
 end
 
----------------------------------------------------------------- sieć (statyczna)
--- Format zwarty: jedna krawędź = jedna tablica, kolejność pól w EDGE_FIELDS.
+---------------------------------------------------------------- network (static)
+-- Compact format: one edge = one array, field order in EDGE_FIELDS.
 C.EDGE_FIELDS = {
 	"id", "node0", "node1",
 	"x0", "y0", "z0", "x1", "y1", "z1",
 	"tx0", "ty0", "tz0", "tx1", "ty1", "tz1",
 	"road",   -- "STREET" / "TRACK"
 	"type",   -- "NORMAL" / "BRIDGE" / "TUNNEL"
-	"owner",  -- 0 = brak właściciela (miasto/świat)
+	"owner",  -- 0 = no owner (town/world)
 }
 
--- Lista ID wszystkich krawędzi (drogi + tory).
--- BASE_EDGE nie da się listować przez getEntitiesWithComponent, więc zbieramy krawędzie
--- z mapy węzeł -> segmenty (streetSystem.getNode2SegmentMap). Jedno wywołanie C.
+-- List of the IDs of all edges (streets + tracks).
+-- BASE_EDGE can't be listed with getEntitiesWithComponent, so we collect the edges
+-- from the node -> segments map (streetSystem.getNode2SegmentMap). One C call.
 function C.edgeIds()
 	local ok, map = pcall(function() return api.engine.system.streetSystem.getNode2SegmentMap() end)
 	if not ok or map == nil then
@@ -885,7 +885,7 @@ function C.edgeIds()
 	return ids
 end
 
--- Zwraca wiersz albo nil, gdy encja zniknęła lub nie ma pozycji (krawędź pomijamy).
+-- Returns a row, or nil when the entity is gone or has no position (the edge is skipped).
 function C.edge(id)
 	local e = util.comp(id, ct.BASE_EDGE)
 	if not e then return nil end

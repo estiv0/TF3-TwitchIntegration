@@ -1,6 +1,6 @@
--- Deskryptor game scriptu (wzór: base/content/game_mechanics/achievements/achievements.gs.lua).
--- Gra rejestruje pliki *.gs.lua z content/ jako zasoby gameScriptRep.
--- update/handleEvent: wątki symulacji; guiUpdate: wątek GUI (jeden).
+-- Game script descriptor (pattern: base/content/game_mechanics/achievements/achievements.gs.lua).
+-- The game registers *.gs.lua files from content/ as gameScriptRep resources.
+-- update/handleEvent: simulation threads; guiUpdate: the GUI thread (one).
 function data()
 	return {
 		updateScript = {

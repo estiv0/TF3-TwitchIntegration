@@ -1,21 +1,21 @@
--- Efekty czasowe z nagród za punkty kanału: boost miasta, produktywność zakładu (boost), blokada
--- wywozu z zakładów (strajk, nalot skarbówki), prędkość pojazdów linii (paliwo premium / chrzczone),
--- zatrzymanie linii.
--- Każdy efekt trwa X miesięcy gry i sam się cofa (czas gry stoi na pauzie, więc efekt też).
--- Miesiące, nie dni: dzień gry trwa tylko 2-3 s, więc efekt na kilka dni mijał, zanim było go widać.
+-- Timed effects from channel points rewards: town boost, industry productivity (boost), shipping
+-- block from industries (strike, tax raid), the speed of a line's vehicles (premium / watered-down fuel),
+-- line stop.
+-- Each effect lasts X game months and undoes itself (game time stands still while paused, so does the effect).
+-- Months, not days: a game day lasts only 2-3 s, so an effect of a few days was over before you could see it.
 --
--- Działa w wątku GUI (tam czytamy kolejkę komend). Lista efektów jest kopiowana do stanu game scriptu
--- (state, zapisywany w save'ie) zdarzeniem skryptowym "tf3x_effects" obsługiwanym w handleEvent
--- (wątek symulacji; tylko on może pisać state). Po wczytaniu gry efekty wracają ze stanu.
+-- Runs on the GUI thread (that's where we read the command queue). The list of effects is copied to the game script state
+-- (state, stored in the save) with the "tf3x_effects" script event handled in handleEvent
+-- (a simulation thread; only it can write state). After a game is loaded the effects come back from the state.
 --
--- Efekt na tym samym celu (np. drugi boost tego samego miasta) przedłuża czas zamiast się kumulować;
--- gdy nowe wykupienie ma silniejszy mnożnik (zmiana ustawień), efekt dostaje ten silniejszy.
--- Paliwo (premium / chrzczone) to jedna kolejka na linię: inne paliwo kupione w trakcie nie mnoży się
--- z obecnym, tylko czeka i zaczyna działać, gdy obecne się skończy (queue niżej).
+-- An effect on the same target (e.g. a second boost of the same town) extends the time instead of stacking;
+-- when the new redemption has a stronger multiplier (a settings change), the effect gets the stronger one.
+-- Fuel (premium / watered-down) is one queue per line: other fuel bought in the meantime doesn't multiply
+-- with the current one, it just waits and starts working when the current one ends (queue below).
 --
--- Produktywność zakładu i prędkość pojazdu ustawia jeden sterownik na obiekt (Controller niżej):
--- różne efekty na tym samym obiekcie mnożą się, zamiast walczyć o wartość. Strajk i nalot na tym samym
--- zakładzie też się mnożą (część nowej produkcji, która zostaje; freezeSync niżej).
+-- Industry productivity and vehicle speed are set by one controller per object (Controller below):
+-- different effects on the same object multiply instead of fighting over the value. A strike and a raid on the same
+-- industry multiply too (the share of new production that stays; freezeSync below).
 
 local util = ug_require "util.lua"
 local ct = util.ct
@@ -26,12 +26,12 @@ E.EVENT = "tf3x_effects"
 E.SCRIPT_ID = "tf3export"
 
 local MIN_MONTHS, MAX_MONTHS = 1, 60
-local SETTLE_POLLS = 3 -- tyle odczytów (~s) czekamy, aż gra przyjmie ustawioną wartość
+local SETTLE_POLLS = 3 -- how many reads (~s) we wait for the game to accept the value we set
 
-local active = nil -- key -> efekt (same dane, bez funkcji); nil = jeszcze nie wczytane ze stanu
-local lastNow = nil -- ostatni znany czas gry (sterowniki pomijają efekty czekające w kolejce)
+local active = nil -- key -> effect (data only, no functions); nil = not yet loaded from the state
+local lastNow = nil -- the last known game time (controllers skip effects waiting in a queue)
 
----------------------------------------------------------------- pomocnicze
+---------------------------------------------------------------- helpers
 local function send(cmd)
 	api.cmd.sendCommand(cmd)
 end
@@ -44,20 +44,20 @@ end
 
 local function near(a, b) return a ~= nil and b ~= nil and math.abs(a - b) < 1e-3 end
 
--- Miesiąc gry w jednostkach gameTime (rok = 365 dni).
+-- A game month in gameTime units (a year = 365 days).
 local function monthLength()
 	return util.dayLength() * 365 / 12
 end
 
 local function fmt(x) return x and string.format("%.3f", x) or "?" end
 
----------------------------------------------------------------- sterownik wartości
--- Pilnuje jednej liczby na wielu obiektach (produktywność zakładu, prędkość pojazdu): baza (wartość
--- sprzed efektów) × iloczyn mnożników aktywnych efektów. Gra może tę liczbę zmieniać sama (skrypt
--- pracowników ustawia produktywność), więc po ustawieniu czekamy kilka odczytów, aż gra ją przyjmie,
--- i zapamiętujemy, co faktycznie przyjęła (applied; gra może mieć własny limit). Dopiero zmiana względem
--- applied znaczy, że ktoś inny ją zmienił: wtedy nowa wartość staje się bazą. Bez tego każda różnica
--- od celu przeliczałaby bazę w kółko. Po końcu efektów wraca baza.
+---------------------------------------------------------------- value controller
+-- Keeps one number on many objects (industry productivity, vehicle speed): base (the value
+-- from before the effects) × the product of the active effects' multipliers. The game may change this number itself (the
+-- workers script sets productivity), so after setting it we wait a few reads for the game to accept it,
+-- and remember what it actually accepted (applied; the game may have its own cap). Only a change relative to
+-- applied means someone else changed it: then the new value becomes the base. Without this every difference
+-- from the target would recompute the base over and over. After the effects end the base comes back.
 local function Controller(name, read, write)
 	local C = { entries = {} } -- id -> { baseline, factor, target, applied, settle, rebases }
 
@@ -80,7 +80,7 @@ local function Controller(name, read, write)
 			return true
 		end
 		if near(v, en.applied) then return false end
-		if near(v, en.target) then -- gra przyjęła nasz cel z opóźnieniem: to nie nowa baza (inaczej mnożnik dwa razy)
+		if near(v, en.target) then -- the game accepted our target late: that's not a new base (otherwise the multiplier twice)
 			en.applied = v
 			return true
 		end
@@ -94,7 +94,7 @@ local function Controller(name, read, write)
 		return true
 	end
 
-	-- wanted: id -> mnożnik. Zwraca true, gdy zmieniły się dane do zapisania w stanie.
+	-- wanted: id -> multiplier. Returns true when data to be stored in the state changed.
 	function C.sync(wanted)
 		local changed = false
 		for id, f in pairs(wanted) do
@@ -128,7 +128,7 @@ local function Controller(name, read, write)
 		return changed
 	end
 
-	-- Czy gra przyjęła cel: wartość równa celowi albo przesunięta od bazy w jego stronę (gra może mieć limit).
+	-- Did the game accept the target: the value equals the target or moved from the base towards it (the game may have a cap).
 	function C.reached(id)
 		local en, v = C.entries[id], read(id)
 		if en == nil or v == nil then return false end
@@ -152,7 +152,7 @@ local function Controller(name, read, write)
 		C.entries = {}
 		for _, x in ipairs(util.list(list)) do
 			if type(x) == "table" and tonumber(x.id) and x.baseline and x.factor and x.target then
-				-- settle od nowa: po wczytaniu nie wiemy, czy gra zdążyła przyjąć ostatni cel
+				-- settle again: after loading we don't know whether the game managed to accept the last target
 				C.entries[tonumber(x.id)] = { baseline = x.baseline, factor = x.factor, target = x.target, applied = x.applied,
 					settle = x.applied == nil and SETTLE_POLLS or nil }
 			end
@@ -162,7 +162,7 @@ local function Controller(name, read, write)
 	return C
 end
 
--- Produktywność zakładu: modyfikatory listy magazynowej (na encji zakładu albo w ind.stockList).
+-- Industry productivity: the stock list modifiers (on the industry entity or in ind.stockList).
 local function productivity(industry)
 	local ind = util.comp(industry, ct.INDUSTRY)
 	local sl = (ind and util.comp(ind.stockList, ct.STOCK_LIST)) or util.comp(industry, ct.STOCK_LIST)
@@ -176,7 +176,7 @@ local function setProductivity(industry, p)
 	send(api.cmd.makeStockListSetModifiersCmd(industry, m))
 end
 
--- Prędkość maksymalna pojazdu: modifiers.topSpeedScale komponentu TRANSPORT_VEHICLE.
+-- A vehicle's top speed: modifiers.topSpeedScale of the TRANSPORT_VEHICLE component.
 local VEHICLE_SCALES = { "noiseScale", "pollutionScale", "comfortScale" }
 
 local function vehicleModifiers(vehicle)
@@ -192,7 +192,7 @@ end
 local function setSpeedScale(vehicle, scale)
 	local cur = vehicleModifiers(vehicle)
 	local m = api.type.TransportVehicle.Modifiers.new()
-	for _, k in ipairs(VEHICLE_SCALES) do -- komenda ustawia wszystkie skale naraz: pozostałe bez zmian
+	for _, k in ipairs(VEHICLE_SCALES) do -- the command sets all scales at once: the others unchanged
 		local x = cur and tonumber(util.field(cur, k))
 		m[k] = x or 1.0
 	end
@@ -203,14 +203,14 @@ end
 local industries = Controller("productivity", productivity, setProductivity)
 local vehicles = Controller("speed", speedScale, setSpeedScale)
 
----------------------------------------------------------------- blokada wywozu (strajk, nalot)
--- Strajk nie rusza produktywności: gra liczy długość cyklu reguły raz, przy jego starcie
--- (ruleDatas[i].applyHistory[].interval), więc cykl zaczęty przy ×0,01 trwał lata po końcu efektu.
--- Zakład produkuje więc normalnie, a nowe sztuki zdejmujemy z magazynów wyjściowych (komenda
--- debugowa ustawiająca stan magazynu; działa poza trybem debug). Pojazdy mogą zabrać to, co leżało.
--- Nowe sztuki poznajemy po czasie przybycia (getStockEntities: {czas, encja}), więc odbiór
--- i produkcja w tej samej sekundzie się nie mylą. factor = jaka część nowych sztuk zostaje.
-local freezes = {} -- zakład -> { sl = encja stockList, stocks = { [stockId] = { newest, target, carry } } }
+---------------------------------------------------------------- shipping block (strike, raid)
+-- A strike doesn't touch productivity: the game computes a rule's cycle length once, when it starts
+-- (ruleDatas[i].applyHistory[].interval), so a cycle started at ×0.01 lasted years after the effect ended.
+-- So the industry produces normally, and we take the new items off the output stocks (a debug
+-- command that sets the stock level; it works outside debug mode). Vehicles can pick up what was already there.
+-- New items are recognized by arrival time (getStockEntities: {time, entity}), so a pickup
+-- and production in the same second don't get mixed up. factor = the share of new items that stays.
+local freezes = {} -- industry -> { sl = stockList entity, stocks = { [stockId] = { newest, target, carry } } }
 local freezeFailed = false
 
 local function stockListOf(industry)
@@ -230,7 +230,7 @@ local function outputStockIds(sl)
 	return out
 end
 
--- Czasy przybycia sztuk w magazynie; nil przy błędzie.
+-- Arrival times of the items in a stock; nil on error.
 local function arrivals(sl, stockId)
 	local ok, list = pcall(api.engine.system.simEntityAtStockSystem.getStockEntities, sl, stockId)
 	if not ok then return nil end
@@ -261,7 +261,7 @@ local function freezeStep(st, keep)
 			end
 			s.newest = newest
 			local base = count - fresh
-			-- poprzednia komenda jeszcze nie weszła: nie wolno jej nadpisać wyższą wartością
+			-- the previous command hasn't landed yet: it must not be overwritten with a higher value
 			if s.target and base > s.target then base = s.target end
 			local kept = fresh * keep + s.carry
 			local whole = math.floor(kept)
@@ -279,7 +279,7 @@ local function freezeStep(st, keep)
 	end
 end
 
--- wanted: zakład -> część nowych sztuk, która zostaje (iloczyn factorów efektów).
+-- wanted: industry -> the share of new items that stays (the product of the effects' factors).
 local function freezeSync(wanted)
 	for id, keep in pairs(wanted) do
 		if util.comp(id, ct.INDUSTRY) then
@@ -292,21 +292,21 @@ local function freezeSync(wanted)
 		end
 	end
 	for id in pairs(freezes) do
-		if wanted[id] == nil then freezes[id] = nil end -- nic do cofania: produkcja szła normalnie
+		if wanted[id] == nil then freezes[id] = nil end -- nothing to undo: production ran normally
 	end
 end
 
----------------------------------------------------------------- rodzaje efektów
--- Dwa style:
---  * group = "industry" | "speed": efekt tylko podaje mnożnik (range = dozwolony zakres), resztę robi
---    sterownik; group = "freeze": blokada wywozu (freezeSync), factor = część nowej produkcji, która
---    zostaje; multi = efekt na wielu zakładach naraz (e.entities), klucz po c.target;
---  * apply(e) -> verify albo nil, błąd; revert(e) cofa (lineStop, lineHold, townBoost).
--- queue = nazwa kolejki: efekty z tą samą kolejką na tym samym celu działają po kolei, nie naraz.
+---------------------------------------------------------------- effect kinds
+-- Two styles:
+--  * group = "industry" | "speed": the effect only gives a multiplier (range = allowed range), the controller
+--    does the rest; group = "freeze": shipping block (freezeSync), factor = the share of new production that
+--    stays; multi = an effect on many industries at once (e.entities), keyed by c.target;
+--  * apply(e) -> verify or nil, error; revert(e) undoes it (lineStop, lineHold, townBoost).
+-- queue = queue name: effects with the same queue on the same target run one after another, not at once.
 local TYPES = {}
 
--- Miasto: mnożymy sizeFactors (mieszkalne, usługowe, przemysłowe). Budynki dorastają do nowego
--- rozmiaru stopniowo (updateAllBuildings = false), po końcu efektu wracają stare współczynniki.
+-- Town: we multiply sizeFactors (residential, commercial, industrial). Buildings grow into the new
+-- size gradually (updateAllBuildings = false); after the effect ends the old factors come back.
 TYPES.townBoost = {
 	range = { 1.0, 5.0 },
 	apply = function(e)
@@ -336,18 +336,18 @@ TYPES.townBoost = {
 	end,
 }
 
--- Zakład: boost (produktywność, na stronie „Produktywność”); strajk i nalot skarbówki (wszystkie
--- zakłady jednego widza) to blokada wywozu: factor = jaka część nowej produkcji trafia do magazynu.
+-- Industry: boost (productivity, "Productivity" on the website); strike and tax raid (all
+-- industries of one viewer) are a shipping block: factor = the share of new production that reaches the stock.
 TYPES.industryBoost = { group = "industry", range = { 1.0, 5.0 } }
 TYPES.industryStrike = { group = "freeze", range = { 0.0, 1.0 } }
 TYPES.industryTaxRaid = { group = "freeze", range = { 0.0, 1.0 }, multi = true }
 
--- Linia: prędkość maksymalna wszystkich jej pojazdów (także dokupionych w trakcie efektu).
+-- Line: the top speed of all its vehicles (including ones bought during the effect).
 TYPES.lineFuelPremium = { group = "speed", range = { 1.0, 3.0 }, queue = "fuel" }
 TYPES.lineFuelBad = { group = "speed", range = { 0.1, 1.0 }, queue = "fuel" }
 
--- Linia, wariant "stop": jak przycisk zatrzymania w grze; pojazd staje tam, gdzie jest (także na szlaku).
--- Pojazdy zatrzymane wcześniej przez gracza zostawiamy w spokoju (nie ruszamy ich też przy cofaniu).
+-- Line, "stop" variant: like the in-game stop button; a vehicle stops where it is (also mid-route).
+-- Vehicles the player stopped earlier are left alone (we don't touch them when undoing either).
 TYPES.lineStop = {
 	apply = function(e)
 		local vs = util.lineVehicles(e.entity)
@@ -379,8 +379,8 @@ TYPES.lineStop = {
 	end,
 }
 
--- Linia, wariant "hold": ręczny odjazd; pojazdy dojeżdżają do przystanku i czekają tam.
--- API nie pokazuje tego trybu, więc efektu nie da się sprawdzić (uznajemy wysłanie za sukces).
+-- Line, "hold" variant: manual departure; vehicles drive to the stop and wait there.
+-- The API doesn't expose this mode, so the effect can't be checked (sending counts as success).
 TYPES.lineHold = {
 	apply = function(e)
 		local vs = util.lineVehicles(e.entity)
@@ -400,17 +400,17 @@ TYPES.lineHold = {
 	end,
 }
 
--- Cele efektu: lista zakładów (multi) albo jedna encja.
+-- The effect's targets: a list of industries (multi) or one entity.
 local function targets(e)
 	return e.entities or { e.entity }
 end
 
--- Efekt czeka w kolejce (jego czas jeszcze nie nadszedł).
+-- The effect waits in a queue (its time hasn't come yet).
 local function waiting(e, now)
 	return now ~= nil and e.startTime ~= nil and now < e.startTime
 end
 
--- Inne efekty z tej samej kolejki na tym samym celu.
+-- Other effects from the same queue on the same target.
 local function queueMates(e)
 	local out = {}
 	local q = TYPES[e.type].queue
@@ -421,7 +421,7 @@ local function queueMates(e)
 	return out
 end
 
--- Przesuwa w czasie efekty z kolejki, które startują po końcu e (po przedłużeniu albo przerwaniu e).
+-- Shifts in time the queued effects that start after e ends (after e is extended or interrupted).
 local function shiftQueue(e, from, delta)
 	for _, o in ipairs(queueMates(e)) do
 		if o.startTime and o.startTime >= from - 1e-6 then
@@ -431,14 +431,14 @@ local function shiftQueue(e, from, delta)
 	end
 end
 
----------------------------------------------------------------- sterowniki
--- Mnożniki ze wszystkich aktywnych efektów -> sterowniki. True = zmiana do zapisania w stanie.
+---------------------------------------------------------------- controllers
+-- Multipliers from all active effects -> controllers. True = a change to store in the state.
 local function syncControllers()
 	local prod, freeze, lineSpeed, speed = {}, {}, {}, {}
 	for _, e in pairs(active) do
 		local t = TYPES[e.type]
 		if waiting(e, lastNow) then
-			-- jeszcze w kolejce: bez wpływu na grę
+			-- still queued: no effect on the game
 		elseif t.group == "industry" then
 			for _, id in ipairs(targets(e)) do prod[id] = (prod[id] or 1.0) * e.factor end
 		elseif t.group == "freeze" then
@@ -450,13 +450,13 @@ local function syncControllers()
 	for line, f in pairs(lineSpeed) do
 		for _, v in ipairs(util.lineVehicles(line)) do speed[v] = f end
 	end
-	freezeSync(freeze) -- bez stanu w save'ie: po wczytaniu blokada startuje od obecnego stanu magazynów
+	freezeSync(freeze) -- no state in the save: after loading the block starts from the current stock levels
 	local a = industries.sync(prod)
 	local b = vehicles.sync(speed)
 	return a or b
 end
 
----------------------------------------------------------------- stan
+---------------------------------------------------------------- state
 local function persist()
 	local list = {}
 	for _, e in pairs(active) do list[#list + 1] = e end
@@ -465,7 +465,7 @@ local function persist()
 	if not ok then util.log("effects: saving to game state failed: " .. tostring(err)) end
 end
 
--- Nowa sesja (wczytana gra): efekty wracają ze stanu game scriptu przy następnym update.
+-- New session (a game loaded): effects come back from the game script state on the next update.
 function E.reset()
 	active = nil
 end
@@ -478,7 +478,7 @@ local function load(shared)
 	local n = 0
 	for _, e in ipairs(util.list(shared and shared.effects)) do
 		if type(e) == "table" and e.key and TYPES[e.type] then
-			-- save sprzed sterownika: boost przemysłu trzymał bazę w samym efekcie
+			-- a save from before the controller: the industry boost kept its base in the effect itself
 			if e.type == "industryBoost" and e.baseline and industries.entries[e.entity] == nil then
 				industries.entries[e.entity] = { baseline = e.baseline, factor = e.factor, target = e.target or e.baseline * e.factor,
 					applied = e.applied }
@@ -491,7 +491,7 @@ local function load(shared)
 	if n > 0 then util.log(string.format("effects: %d active effect(s) restored from the save", n)) end
 end
 
--- Co sekundę z guiUpdate: wygasanie i pilnowanie efektów.
+-- Every second from guiUpdate: expiring and maintaining the effects.
 function E.update(now, shared)
 	if active == nil then load(shared) end
 	lastNow = now
@@ -516,7 +516,7 @@ local function keyOf(c)
 	return tostring(c.effect) .. ":" .. tostring(tonumber(c.entity))
 end
 
--- Efekt, którego nie udało się potwierdzić (commands.lua zwraca wtedy punkty): cofamy i usuwamy.
+-- An effect that couldn't be confirmed (commands.lua then refunds the points): undo and remove it.
 function E.abort(c)
 	local key = keyOf(c)
 	local e = active and active[key]
@@ -524,7 +524,7 @@ function E.abort(c)
 	local t = TYPES[e.type]
 	if t.revert then pcall(t.revert, e) end
 	active[key] = nil
-	if t.queue then -- następne w kolejce zaczynają wtedy, kiedy miał zacząć przerwany
+	if t.queue then -- the next ones in the queue start when the interrupted one was due to start
 		local from = math.max(e.startTime or 0, lastNow or 0)
 		shiftQueue(e, e.untilTime, from - e.untilTime)
 	end
@@ -533,7 +533,7 @@ function E.abort(c)
 	util.log("effect " .. key .. " aborted")
 end
 
--- "123,456" -> { 123, 456 } (tylko istniejące zakłady)
+-- "123,456" -> { 123, 456 } (existing industries only)
 local function parseIndustries(s)
 	local out = {}
 	if type(s) ~= "string" then return out end
@@ -554,7 +554,7 @@ local function union(a, b)
 	return out
 end
 
--- Grupa (zakłady / prędkość): sprawdzenie celu i verify po ustawieniu przez sterownik.
+-- Group (industries / speed): target check and verify once the controller has set it.
 local function startGroup(t, e)
 	if t.group == "industry" or t.group == "freeze" then
 		for _, id in ipairs(targets(e)) do
@@ -598,9 +598,9 @@ local function describeGroup(t, e)
 	return string.format("x%s on %d object(s), e.g. %s", fmt(e.factor), #ids, ids[1] and ctl.describe(ids[1]) or "-")
 end
 
--- Komenda "effect" z kolejki: { effect, entity, months, factor, user } (+ entities = "1,2,3", target = klucz
--- dla efektów multi). Zwraca verify albo nil, błąd (jak rodzaje komend w commands.lua), a na końcu info
--- { until = data końca w kalendarzu gry } dla wiadomości na czacie.
+-- The "effect" command from the queue: { effect, entity, months, factor, user } (+ entities = "1,2,3", target = key
+-- for multi effects). Returns verify or nil, error (like the command kinds in commands.lua), and at the end info
+-- { until = end date in the game calendar } for the chat message.
 function E.start(c, now)
 	if active == nil then return nil, "effects not loaded yet" end
 	if now ~= nil then lastNow = now end
@@ -609,7 +609,7 @@ function E.start(c, now)
 	if not t or not entity or not months or now == nil then return nil, "bad arguments" end
 	if t.multi and (type(c.target) ~= "string" or c.target == "") then return nil, "bad arguments" end
 	months = math.max(MIN_MONTHS, math.min(MAX_MONTHS, months))
-	local factor = nil -- tylko efekty z mnożnikiem (range)
+	local factor = nil -- only effects with a multiplier (range)
 	if t.range then
 		factor = tonumber(c.factor)
 		if not factor then return nil, "bad arguments" end
@@ -620,16 +620,16 @@ function E.start(c, now)
 	local key = keyOf(c)
 
 	local existing = active[key]
-	if existing then -- przedłużenie; siła tylko mocniej (np. po zmianie mnożnika w ustawieniach)
+	if existing then -- extension; strength only goes up (e.g. after the multiplier changes in the settings)
 		local oldUntil = existing.untilTime
 		existing.untilTime = math.max(existing.untilTime, now) + months * monthLength()
-		if t.queue then shiftQueue(existing, oldUntil, existing.untilTime - oldUntil) end -- kolejne w kolejce później
+		if t.queue then shiftQueue(existing, oldUntil, existing.untilTime - oldUntil) end -- the next ones in the queue later
 		local stronger = factor and existing.factor and math.abs(factor - 1) > math.abs(existing.factor - 1) + 1e-6
 		if stronger then
 			existing.factor = factor
 			if t.upgrade then t.upgrade(existing) end
 		end
-		if list then existing.entities = union(existing.entities or {}, list) end -- nowe zakłady ofiary też
+		if list then existing.entities = union(existing.entities or {}, list) end -- the victim's new industries too
 		if type(c.user) == "string" and c.user ~= "" then existing.user = c.user end
 		if t.group then syncControllers() end
 		persist()
@@ -637,7 +637,7 @@ function E.start(c, now)
 		return function() return true end, nil, { ["until"] = util.date(existing.untilTime) }
 	end
 
-	-- kolejka (paliwo): inny efekt z tej kolejki jeszcze trwa -> ten zaczyna po jego końcu
+	-- queue (fuel): another effect from this queue is still running -> this one starts after it ends
 	local startAt = now
 	if t.queue then
 		for _, o in ipairs(queueMates({ type = c.effect, entity = entity })) do startAt = math.max(startAt, o.untilTime) end
@@ -650,7 +650,7 @@ function E.start(c, now)
 		if verify then
 			active[key] = e
 			if waiting(e, now) then
-				verify = function() return true end -- nic jeszcze nie ustawiamy, zacznie się samo
+				verify = function() return true end -- we set nothing yet, it starts on its own
 				persist()
 				util.log(string.format("effect %s queued for %d months, starts in %.1f months", key, months, (startAt - now) / monthLength()))
 				return verify, nil, { ["until"] = util.date(e.untilTime) }
@@ -668,8 +668,8 @@ function E.start(c, now)
 	return verify, nil, { ["until"] = util.date(e.untilTime) }
 end
 
--- Aktywne efekty do eksportu dynamicznego (strona pokazuje je przy mieście, zakładzie i linii);
--- efekt na wielu zakładach (nalot skarbówki) to osobny wpis przy każdym z nich.
+-- Active effects for the dynamic export (the website shows them next to the town, industry and line);
+-- an effect on many industries (tax raid) is a separate entry for each of them.
 function E.list()
 	local out = {}
 	for _, e in pairs(active or {}) do

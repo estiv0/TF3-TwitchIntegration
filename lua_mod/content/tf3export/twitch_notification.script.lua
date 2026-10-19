@@ -1,6 +1,6 @@
--- Wygląd powiadomienia "Twitch" (typ: twitch_notification.res.lua). Teksty są gotowe z Tf3Bridge
--- (komenda notify w commands.lua): params = { title, text, entity = { entity, revision } | nil }.
--- Kliknięcie przenosi kamerę do encji (miasto, zakład, linia), jeśli jeszcze istnieje.
+-- The look of the "Twitch" notification (type: twitch_notification.res.lua). The texts come ready from Tf3Bridge
+-- (the notify command in commands.lua): params = { title, text, entity = { entity, revision } | nil }.
+-- Clicking moves the camera to the entity (town, industry, line) if it still exists.
 local notification_util = ug_require "::/game_mechanics/notifications/notification_util.tl"
 
 local ICON = "estiv0_tf3export::/tf3export/icons/twitch.tga"
@@ -19,8 +19,8 @@ notification.useDataState = function(p)
 	}
 end
 
--- Pliki .script.lua muszą definiować globalne data() zwracające tabelę funkcji (gra woła
--- "<plik>.script@useDataState" przez util.useFn); "return {...}" działa tylko w plikach .tl.
+-- .script.lua files have to define a global data() returning a table of functions (the game calls
+-- "<file>.script@useDataState" through util.useFn); "return {...}" only works in .tl files.
 function data()
 	return notification
 end

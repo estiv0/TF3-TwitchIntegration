@@ -1,27 +1,27 @@
--- Komendy od Tf3Bridge (akcje widzów z Twitcha: czat, punkty kanału, przycisk testowy).
+-- Commands from Tf3Bridge (Twitch viewer actions: chat, channel points, the test button).
 --
---   Tf3Bridge -> local\towns_industries\tf3export_queue.lua    (format app.saveUserdata, pisany przez Tf3Bridge)
+--   Tf3Bridge -> local\towns_industries\tf3export_queue.lua    (app.saveUserdata format, written by Tf3Bridge)
 --     { commands = { { id = "...", kind = "setName", created = <unix s>, entity = 123, name = "..." }, ... } }
---     rodzaje: setName { entity, name }, adopt { entity, owner },
+--     kinds: setName { entity, name }, adopt { entity, owner },
 --              effect { effect = townBoost|industryBoost|industryStrike|industryTaxRaid|lineFuelPremium|lineFuelBad
 --                       |lineStop|lineHold, entity, months, factor, user, entities?, target? } (effects.lua)
---              wreck { entity = linia, share } (sabotaż hamulców: część pojazdów linii znika)
---              subsidy { amount, user } (dotacja), loan { amount, months, percent, user } (kredyt w systemie kredytów gry)
+--              wreck { entity = line, share } (brake sabotage: some of the line's vehicles disappear)
+--              subsidy { amount, user } (subsidy), loan { amount, months, percent, user } (a loan in the game's loan system)
 --              createTown { x, y, name, owner }, createIndustry { x, y, file, name, owner } (create.lua)
---              notify { title, text, entity?, dismissMs? } (powiadomienie w grze, twitch_notification.script.lua)
---   wynik efektu ma też until = { year, month, day } (koniec w kalendarzu gry, do wiadomości na czacie),
---   a wynik createTown / createIndustry: entity = id nowej encji (link na czacie);
---   wynik wreck: count = zniszczone pojazdy, total = pojazdy linii przed sabotażem
+--              notify { title, text, entity?, dismissMs? } (in-game notification, twitch_notification.script.lua)
+--   an effect's result also has until = { year, month, day } (the end in the game calendar, for the chat message),
+--   and the result of createTown / createIndustry: entity = id of the new entity (link in chat);
+--   the result of wreck: count = vehicles destroyed, total = the line's vehicles before the sabotage
 --   mod      -> local\towns_industries\tf3export_results.lua  (app.saveUserdata)
 --     { json = '{"results":[{"id":"...","status":"ok|failed|invalid|expired","error":"..."}]}',
 --       done = "id1\nid2\n..." }
 --
--- Tylko wątek GUI (app.loadUserdata/saveUserdata). Tf3Bridge usuwa komendę z kolejki, gdy zobaczy
--- jej wynik; do tego czasu mod pomija ją po id (zbiór done, odtwarzany z results.lua po restarcie gry).
+-- GUI thread only (app.loadUserdata/saveUserdata). Tf3Bridge removes a command from the queue once it sees
+-- its result; until then the mod skips it by id (the done set, rebuilt from results.lua after a game restart).
 --
--- Gra wysyła komendy (api.cmd.sendCommand) ze swoich skryptów w wątkach symulacji; z wątku GUI
--- jeszcze tego nie sprawdzaliśmy. Dlatego wynik nie opiera się tylko na callbacku: po wysłaniu
--- sprawdzamy w kolejnych odczytach, czy zmiana jest widoczna (np. nowa nazwa), z limitem czasu.
+-- The game sends commands (api.cmd.sendCommand) from its scripts on simulation threads; from the GUI thread
+-- we haven't checked this yet. So the result doesn't rely only on the callback: after sending
+-- we check on the following reads whether the change is visible (e.g. the new name), with a time limit.
 
 local json = ug_require "json.lua"
 local util = ug_require "util.lua"
@@ -31,13 +31,13 @@ local create = ug_require "create.lua"
 local M = {}
 
 local DIR, QUEUE, RESULTS = util.USERDATA_DIR, util.FILE_PREFIX .. "queue", util.FILE_PREFIX .. "results"
-local MAX_RESULTS = 100   -- tyle ostatnich wyników trzymamy w results.lua
-local MAX_AGE_SEC = 300   -- starszych komend nie wykonujemy (np. kolejka sprzed restartu gry)
-local VERIFY_SEC = 15     -- tyle czekamy, aż efekt komendy będzie widoczny
-local VERIFY_CREATE_SEC = 45 -- nowe miasto / zakład: gra buduje dłużej, a zakład potem jeszcze dostaje nazwę
+local MAX_RESULTS = 100   -- how many of the latest results we keep in results.lua
+local MAX_AGE_SEC = 300   -- older commands aren't executed (e.g. a queue from before a game restart)
+local VERIFY_SEC = 15     -- how long we wait for a command's effect to become visible
+local VERIFY_CREATE_SEC = 45 -- new town / industry: the game builds longer, and the industry still gets its name afterwards
 
-local done = nil          -- id -> true; nil = jeszcze nie wczytane z results.lua
-local results = {}        -- { id, status, error } (najnowsze na końcu)
+local done = nil          -- id -> true; nil = not yet loaded from results.lua
+local results = {}        -- { id, status, error } (newest last)
 local pending = {}        -- id -> { cmd, sent, verify, callback }
 
 local function save()
@@ -66,16 +66,16 @@ local function loadDone()
 	if not ok or type(t) ~= "table" or type(t.done) ~= "string" then return end
 	for id in t.done:gmatch("[^\n]+") do
 		done[id] = true
-		results[#results + 1] = { id = id, status = "ok" } -- szczegóły poprzednich wyników nie są potrzebne
+		results[#results + 1] = { id = id, status = "ok" } -- details of earlier results aren't needed
 	end
 end
 
----------------------------------------------------------------- rodzaje komend
--- kind -> function(cmd) -> verify (function() -> true, gdy efekt widoczny) albo nil, błąd;
--- opcjonalnie trzecia wartość: info dołączane do wyniku (np. until)
+---------------------------------------------------------------- command kinds
+-- kind -> function(cmd) -> verify (function() -> true when the effect is visible) or nil, error;
+-- optionally a third value: info added to the result (e.g. until)
 local KINDS = {}
 
--- Zmiana nazwy encji (miasto, zakład, grupa stacji, linia, pojazd).
+-- Renaming an entity (town, industry, station group, line, vehicle).
 function KINDS.setName(c)
 	local entity, name = tonumber(c.entity), c.name
 	if not entity or type(name) ~= "string" or name == "" or #name > 200 then return nil, "bad arguments" end
@@ -87,8 +87,8 @@ function KINDS.setName(c)
 	return function() return util.name(entity) == name end
 end
 
--- Adopcja: "Nazwa" -> "Nazwa | właściciel", tylko gdy obiekt nie ma jeszcze właściciela.
--- Sprawdzane tutaj, w chwili wykonania, żeby dwie adopcje tuż po sobie nie nadpisały się nawzajem.
+-- Adoption: "Name" -> "Name | owner", only when the object has no owner yet.
+-- Checked here, at execution time, so that two adoptions right after each other don't overwrite each other.
 function KINDS.adopt(c)
 	local entity, owner = tonumber(c.entity), c.owner
 	if not entity or type(owner) ~= "string" or owner == "" or owner:find("|", 1, true) then return nil, "bad arguments" end
@@ -103,20 +103,20 @@ function KINDS.adopt(c)
 	return function() return util.name(entity) == newName end
 end
 
-local now, shared = nil, nil -- czas gry i stan game scriptu z bieżącego poll
+local now, shared = nil, nil -- game time and game script state from the current poll
 
 function KINDS.effect(c)
 	return effects.start(c, now)
 end
 
--- Sabotaż hamulców: losowo od 1 do share (domyślnie 50%) pojazdów linii, ale zawsze co najmniej jeden,
--- znika jak po wypadku. Gra nie ma wypadków, więc pojazdy sprzedajemy, a kwotę ze sprzedaży (wartość
--- po amortyzacji) zabieramy wpisem w księgach: streamer traci pojazd i nic na tym nie zarabia.
--- Nie do cofnięcia; wpis w księgach dopiero, gdy pojazdów już nie ma (nieudana sprzedaż nic nie kosztuje).
+-- Brake sabotage: randomly 1 to share (default 50%) of the line's vehicles, but always at least one,
+-- disappear as after an accident. The game has no accidents, so we sell the vehicles and take the sale amount (value
+-- after depreciation) back with a journal entry: the streamer loses the vehicle and gains nothing from it.
+-- Can't be undone; the journal entry only comes once the vehicles are gone (a failed sale costs nothing).
 local seeded = false
 
--- Pojazd wciąż jeździ na linii. Samo entityExists nie wystarcza: gra może oddać id sprzedanego
--- pojazdu nowej encji, a wtedy sprzedaż wyglądałaby na nieudaną i widz dostałby punkty z powrotem.
+-- The vehicle still runs on the line. entityExists alone isn't enough: the game may give a sold vehicle's id
+-- to a new entity, and then the sale would look failed and the viewer would get the points back.
 local function stillOnLine(v, line)
 	if not api.engine.entityExists(v) then return false end
 	local tv = util.comp(v, util.ct.TRANSPORT_VEHICLE)
@@ -134,7 +134,7 @@ function KINDS.wreck(c)
 	end
 	share = math.max(0, math.min(1, share))
 	local count = math.random(1, math.max(1, math.floor(#vs * share)))
-	for i = #vs, 2, -1 do -- tasowanie Fishera-Yatesa, bierzemy pierwsze count
+	for i = #vs, 2, -1 do -- Fisher-Yates shuffle, we take the first count
 		local j = math.random(1, i)
 		vs[i], vs[j] = vs[j], vs[i]
 	end
@@ -158,11 +158,11 @@ function KINDS.wreck(c)
 		return n
 	end
 	return function()
-		-- callback true = gra przyjęła sprzedaż, nawet jeśli pojazdy znikną dopiero w następnym kroku symulacji
+		-- callback true = the game accepted the sale, even if the vehicles only disappear in the next simulation step
 		local p = pending[c.id]
 		if not (p and p.callback == true) and remaining() > 0 then return false end
 		if not booked and value > 0 then
-			booked = true -- sprzedaż potwierdzona: błąd księgowania nie może zwrócić punktów
+			booked = true -- sale confirmed: a booking error must not refund the points
 			local ok, err = pcall(function()
 				local entry = api.type.JournalEntry.new()
 				entry.amount = -value
@@ -178,8 +178,8 @@ function KINDS.wreck(c)
 		holdOnPause = true }
 end
 
--- Pieniądze dla firmy od widza: dotacja (wpis SUBSIDY w księgach) albo kredyt w systemie kredytów gry.
--- Przy nieograniczonych pieniądzach (getPlayersBalance == nil) oba nie mają sensu, a gra zamraża wtedy kredyty.
+-- Money for the company from a viewer: a subsidy (a SUBSIDY journal entry) or a loan in the game's loan system.
+-- With unlimited money (getPlayersBalance == nil) neither makes sense, and the game freezes loans then.
 local function limitedMoney()
 	return api.engine.util.finance.getPlayersBalance(api.engine.util.getPlayer()) ~= nil
 end
@@ -203,16 +203,16 @@ function KINDS.subsidy(c)
 			local p = pending[c.id]
 			if p then p.callback = success end
 		end)
-	-- stan konta zmienia się cały czas, więc o wyniku decyduje callback gry
+	-- the balance changes all the time, so the game's callback decides the result
 	return function()
 		local p = pending[c.id]
 		return p ~= nil and p.callback == true
 	end
 end
 
--- Kredyt: to samo zdarzenie, które wysyła okno Finanse → Kredyty dla własnego kredytu ({ nil, loan }); game script gry
--- (game_mechanics/finance/loan.script.tl) wypłaca kwotę, dopisuje kredyt do obtainedLoans i co miesiąc pobiera
--- ratę: kwota / miesiące + odsetki (kwota × % / miesiące). Kredyt widać i można spłacić w oknie Finanse.
+-- Loan: the same event the Finances → Loans window sends for a custom loan ({ nil, loan }); the game's game script
+-- (game_mechanics/finance/loan.script.tl) pays out the amount, adds the loan to obtainedLoans and every month collects
+-- an installment: amount / months + interest (amount × % / months). The loan is visible and can be repaid in the Finances window.
 local LOAN_SCRIPT = "::/game_mechanics/finance/loan.gs"
 local MAX_LOANS = 4 -- loan_util.maximalObtainableLoans
 
@@ -239,23 +239,23 @@ function KINDS.loan(c)
 	}
 	api.cmd.sendCommand(api.cmd.makeScriptingSendEventCmd("", "Loan", "Obtain", { nil, loan }))
 	util.log(string.format("loan: %d for %d months at %s%% (%d of %d loans)", amount, months, tostring(percent), count, MAX_LOANS))
-	-- skrypt gry dopisuje kredyt dopiero po udanej wypłacie (freeId rośnie o 1)
+	-- the game script adds the loan only after a successful payout (freeId grows by 1)
 	return function()
 		local now = loanTable()
 		return type(now) == "table" and (tonumber(now.freeId) or 0) > freeId
 	end, nil, { holdOnPause = true }
 end
 
--- Powiadomienie w grze (po rozliczonej nagrodzie za punkty kanału). Teksty są gotowe z Tf3Bridge.
--- Stanu powiadomień nie sprawdzamy (żyje w game scripcie gry), więc wysłanie = sukces.
+-- In-game notification (after a settled channel points reward). The texts come ready from Tf3Bridge.
+-- We don't check the notification state (it lives in the game's game script), so sending = success.
 local NOTIFICATION_TYPE = "estiv0_tf3export::/tf3export/twitch_notification.script"
--- W bajtach (Tf3Bridge tnie już po znakach: 100 / 300); tu tylko zabezpieczenie, które nie rozcina liter UTF-8.
+-- In bytes (Tf3Bridge already cuts by characters: 100 / 300); here only a safeguard that doesn't split UTF-8 letters.
 local MAX_TITLE, MAX_TEXT = 400, 1200
 
 local function clip(s, max)
 	if #s <= max then return s end
 	s = s:sub(1, max)
-	-- urwany znak wielobajtowy na końcu: cofamy się po bajtach kontynuacji (10xxxxxx) do bajtu początkowego
+	-- a cut-off multibyte character at the end: step back over continuation bytes (10xxxxxx) to the lead byte
 	local lead = #s
 	while lead > 1 and s:byte(lead) >= 128 and s:byte(lead) < 192 do lead = lead - 1 end
 	local b = s:byte(lead)
@@ -266,8 +266,8 @@ local function clip(s, max)
 	return s
 end
 
--- { entity, revision } jak entity_util.makeEntityAndRevision z gry: kliknięcie działa, póki encja się nie zmieni
--- (np. nie zostanie usunięta); nil, gdy encji nie ma.
+-- { entity, revision } like the game's entity_util.makeEntityAndRevision: clicking works as long as the entity doesn't change
+-- (e.g. isn't removed); nil when the entity is gone.
 local function entityAndRevision(entity)
 	local ok, res = pcall(function()
 		if not api.engine.entityExists(entity) then return nil end
@@ -287,12 +287,12 @@ function KINDS.notify(c)
 	api.cmd.sendCommand(api.cmd.makeScriptingSendEventCmd("", "Notifications", "add", {
 		type = NOTIFICATION_TYPE,
 		params = params,
-		autoDismissDuration = math.floor(tonumber(c.dismissMs) or 10000), -- tylko chowa okienko; wpis zostaje w dzienniku
+		autoDismissDuration = math.floor(tonumber(c.dismissMs) or 10000), -- only hides the popup; the entry stays in the log
 	}))
 	return function() return true end
 end
 
--- Nowe miasto / zakład w miejscu wskazanym przez widza na mapie strony.
+-- New town / industry at the spot the viewer picked on the website map.
 function KINDS.createTown(c)
 	return create.town(c, pending)
 end
@@ -301,7 +301,7 @@ function KINDS.createIndustry(c)
 	return create.industry(c, pending)
 end
 
----------------------------------------------------------------- pętla
+---------------------------------------------------------------- loop
 local function start(c, wall)
 	local id = c.id
 	if c.created and wall > 0 and wall - c.created > MAX_AGE_SEC then
@@ -312,15 +312,15 @@ local function start(c, wall)
 	local ok, verify, err, info = pcall(kind, c)
 	if not ok then return finish(id, "failed", tostring(verify)) end
 	if not verify then return finish(id, "invalid", err) end
-	local p = pending[id] or {} -- create.lua mógł już zapisać wynik callbacku
+	local p = pending[id] or {} -- create.lua may already have stored the callback result
 	p.sent, p.verify, p.cmd, p.info = wall, verify, c, info
 	p.timeout = (c.kind == "createTown" or c.kind == "createIndustry") and VERIFY_CREATE_SEC or VERIFY_SEC
 	pending[id] = p
 	util.log(string.format("command %s: sent %s", id, c.kind))
 end
 
--- paused: czas gry stoi od poprzedniego poll. Komendy z info.holdOnPause (wreck) czekają wtedy dłużej,
--- bo zmiana może wejść dopiero po wznowieniu symulacji, a punktów za wykonaną już sprzedaż nie da się odebrać.
+-- paused: game time hasn't moved since the previous poll. Commands with info.holdOnPause (wreck) then wait longer,
+-- because the change may only land after the simulation resumes, and points for a sale already made can't be taken back.
 local function check(wall, paused)
 	for id, p in pairs(pending) do
 		local ok, visible = pcall(p.verify)
@@ -330,7 +330,7 @@ local function check(wall, paused)
 		if ok and visible then
 			finish(id, "ok", nil, p.info)
 		elseif p.callback == false or (p.waited or 0) >= p.timeout then
-			-- nieudany efekt cofamy, bo Tf3Bridge zwróci widzowi punkty
+			-- a failed effect is undone, because Tf3Bridge will refund the viewer's points
 			if p.cmd.kind == "effect" then pcall(effects.abort, p.cmd) end
 			local why = not ok and ("verify error: " .. tostring(visible))
 				or p.info and p.info.diag and select(2, pcall(p.info.diag))
@@ -341,12 +341,12 @@ local function check(wall, paused)
 	end
 end
 
--- Nowa sesja (wczytana inna gra): efekty trzeba wczytać od nowa z jej stanu.
+-- New session (another game loaded): effects have to be reloaded from its state.
 function M.reset()
 	effects.reset()
 end
 
--- Wołane z guiUpdate co commandsEveryWallSec; gameTime i stan game scriptu (state:get()) dla efektów.
+-- Called from guiUpdate every commandsEveryWallSec; gameTime and the game script state (state:get()) for the effects.
 local lastGameTime = nil
 
 function M.poll(wall, gameTime, sharedState)
@@ -359,7 +359,7 @@ function M.poll(wall, gameTime, sharedState)
 	check(wall, paused)
 	if not util.userdataExists(DIR, QUEUE) then return end
 	local ok, t = pcall(function() return app.loadUserdata(DIR, QUEUE) end)
-	if not ok or type(t) ~= "table" or type(t.commands) ~= "table" then return end -- np. plik w trakcie zapisu
+	if not ok or type(t) ~= "table" or type(t.commands) ~= "table" then return end -- e.g. the file is being written
 	for _, c in ipairs(t.commands) do
 		if type(c) == "table" and type(c.id) == "string" and not done[c.id] and not pending[c.id] then
 			start(c, wall)

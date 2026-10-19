@@ -1,25 +1,25 @@
--- Nowe miasta i zakłady z nagród za punkty kanału (widz wskazuje miejsce na mapie strony).
+-- New towns and industries from channel points rewards (the viewer picks the spot on the website map).
 --
--- Tak samo jak edytor mapy gry (gui/map_editor/map_editor.tl, makeTowns / makeIndustries):
---   miasto: api.engine.mapgen.createTowns -> toAdd -> api.cmd.makeTownCreateCmd
---   zakład: api.engine.mapgen.createIndustries -> toAdd -> api.engine.util.proposal.createIndustryProposal
+-- The same way as the game's map editor (gui/map_editor/map_editor.tl, makeTowns / makeIndustries):
+--   town: api.engine.mapgen.createTowns -> toAdd -> api.cmd.makeTownCreateCmd
+--   industry: api.engine.mapgen.createIndustries -> toAdd -> api.engine.util.proposal.createIndustryProposal
 --           -> api.cmd.makeWorldBuildProposalCmd
--- toRemove z mapgen pomijamy: nowy obiekt nigdy nie usuwa istniejących.
+-- toRemove from mapgen is ignored: a new object never removes existing ones.
 --
--- Zakład budujemy bez ignoreErrors: kolizja z torami, drogą albo stacją streamera kończy się błędem
--- (Tf3Bridge zwraca widzowi punkty), a nie zburzeniem cudzej infrastruktury.
+-- An industry is built without ignoreErrors: a collision with the streamer's tracks, street or station ends in an error
+-- (Tf3Bridge refunds the viewer's points) rather than demolishing someone else's infrastructure.
 --
--- Nazwa: "Nazwa | widz" (jak po kupnie miasta), więc widz od razu jest właścicielem.
+-- Name: "Name | viewer" (as after buying a town), so the viewer is the owner right away.
 
 local util = ug_require "util.lua"
 local ct = util.ct
 
 local C = {}
 
-local MAX_NAME = 200       -- bajty, jak w setName
-local FIND_RADIUS = 1500   -- m: tak daleko od wskazanego punktu szukamy nowego zakładu
+local MAX_NAME = 200       -- bytes, as in setName
+local FIND_RADIUS = 1500   -- m: how far from the chosen point we look for the new industry
 
--- Zakłady stawiane na wodzie (reszta tylko na lądzie).
+-- Industries placed on water (the rest only on land).
 local ON_WATER = { oil_platform = true, fishing_grounds = true, dredging_platform = true }
 
 local function vec2(x, y) return api.type.Vec2f.new(x, y) end
@@ -30,7 +30,7 @@ local function waterLevel()
 	return type(w) == "number" and w or nil
 end
 
--- true/false: punkt pod wodą; nil, gdy nie wiadomo (brak poziomu wody albo wysokości).
+-- true/false: the point is under water; nil when unknown (no water level or height).
 local function underWater(x, y)
 	local w = waterLevel()
 	if not w then return nil end
@@ -39,7 +39,7 @@ local function underWater(x, y)
 	return h < w
 end
 
--- Wspólne sprawdzenie argumentów: x, y w granicach mapy, nazwa i właściciel bez "|".
+-- Shared argument check: x, y within the map, name and owner without "|".
 local function place(c)
 	local x, y = tonumber(c.x), tonumber(c.y)
 	local name, owner = c.name, c.owner
@@ -53,7 +53,7 @@ local function place(c)
 	return { x = x, y = y, name = name, full = full }
 end
 
--- Encje z danym komponentem w zbiorze (id -> true).
+-- Entities with a given component as a set (id -> true).
 local function entitySet(componentType)
 	local set = {}
 	for _, id in ipairs(util.entities(componentType)) do set[id] = true end
@@ -67,8 +67,8 @@ local function townNamed(full)
 	return nil
 end
 
--- Potrzeby ładunkowe najbliższego miasta (kategorie, nie CargoTypeId), żeby nowe miasto
--- miało podobne zapotrzebowanie jak sąsiedzi. nil, gdy się nie da (gra dobierze sama albo wcale).
+-- Cargo needs of the nearest town (categories, not CargoTypeId), so the new town
+-- has demand similar to its neighbors. nil when that's not possible (the game picks on its own or not at all).
 local function nearestCargoNeeds(x, y)
 	local ok, map = pcall(function() return api.engine.terrain.makeMapFromGame(false, true, false, false) end)
 	if not ok or not map then return nil end
@@ -86,7 +86,7 @@ end
 
 local function seed(x, y) return string.format("tf3x_%d_%d", math.floor(x), math.floor(y)) end
 
--- Wynik api.cmd.sendCommand -> pending[id].callback (commands.lua sprawdza go razem z verify).
+-- Result of api.cmd.sendCommand -> pending[id].callback (commands.lua checks it together with verify).
 local function remember(pending, id)
 	return function(_, success)
 		local p = pending[id]
@@ -94,7 +94,7 @@ local function remember(pending, id)
 	end
 end
 
----------------------------------------------------------------- miasto
+---------------------------------------------------------------- town
 -- { x, y, name, owner }
 function C.town(c, pending)
 	local p, err = place(c)
@@ -112,16 +112,16 @@ function C.town(c, pending)
 	local result = api.engine.mapgen.createTowns(seed(p.x, p.y), { town })
 	local toAdd = result and util.field(result, "toAdd")
 	if #util.list(toAdd) == 0 then return nil, "no room for a town here" end
-	api.cmd.sendCommand(api.cmd.makeTownCreateCmd(toAdd), remember(pending, c.id)) -- jak edytor: lista z mapgen bez zmian
-	local info = {} -- info.entity: id nowego miasta (do linku na czacie i powiadomienia)
+	api.cmd.sendCommand(api.cmd.makeTownCreateCmd(toAdd), remember(pending, c.id)) -- like the editor: the list from mapgen unchanged
+	local info = {} -- info.entity: id of the new town (for the chat link and the notification)
 	return function()
 		info.entity = townNamed(p.full)
 		return info.entity ~= nil
 	end, nil, info
 end
 
----------------------------------------------------------------- zakład
--- Typ "coal_mine" z pliku "::/industries/coal_mine/coal_mine.con".
+---------------------------------------------------------------- industry
+-- Type "coal_mine" from the file "::/industries/coal_mine/coal_mine.con".
 local function industryType(file)
 	return type(file) == "string" and file:match("^::/industries/([%w_]+)/%1%.con$") or nil
 end
@@ -134,21 +134,21 @@ local function placementTag(file)
 	return ok and type(tag) == "string" and tag or nil
 end
 
--- Nowy zakład (spoza zbioru before) najbliżej punktu.
+-- The new industry (outside the before set) nearest to the point.
 local function newIndustryNear(before, x, y)
 	local best, bestD = nil, FIND_RADIUS ^ 2
 	for _, id in ipairs(util.entities(ct.INDUSTRY)) do
 		if not before[id] then
 			local ind = util.comp(id, ct.INDUSTRY)
 			local pos = (ind and util.center(ind.construction)) or util.center(id)
-			local d = pos and ((pos[1] - x) ^ 2 + (pos[2] - y) ^ 2) or 0 -- bez pozycji: i tak nowy
+			local d = pos and ((pos[1] - x) ^ 2 + (pos[2] - y) ^ 2) or 0 -- no position: new anyway
 			if d <= bestD then best, bestD = id, d end
 		end
 	end
 	return best
 end
 
--- { x, y, file, name, owner }; file: plik .con zakładu z eksportu (industries[].file).
+-- { x, y, file, name, owner }; file: the industry's .con file from the export (industries[].file).
 function C.industry(c, pending)
 	local p, err = place(c)
 	if not p then return nil, err end
@@ -177,9 +177,9 @@ function C.industry(c, pending)
 	local before = entitySet(ct.INDUSTRY)
 	api.cmd.sendCommand(api.cmd.makeWorldBuildProposalCmd(proposal, context, false, false, true), remember(pending, c.id))
 
-	-- Najpierw czekamy na nowy zakład, potem nadajemy mu nazwę (gra nazywa go sama: "Miasto Kopalnia").
+	-- First we wait for the new industry, then we name it (the game names it itself: "Town Mine").
 	local found, renamed = nil, false
-	local info = {} -- info.entity: id nowego zakładu (do linku na czacie i powiadomienia)
+	local info = {} -- info.entity: id of the new industry (for the chat link and the notification)
 	return function()
 		found = found or newIndustryNear(before, p.x, p.y)
 		if not found then return false end

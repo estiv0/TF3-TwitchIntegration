@@ -1,10 +1,10 @@
--- Jednorazowy pomiar formatu zapisu (docs/export-format-performance.md).
--- Porównuje na tych samych danych sieci:
---   A) json.encode w Lua + app.saveUserdata({ json = <string> })   (obecny format)
---   B) app.saveUserdata({ fields, edges = <tabele Lua> })           (serializacja w C++ gry)
--- Wynik: linie "[tf3export] bench ..." w logu oraz pliki tf3export_bench_A/_B w local\towns_industries\
--- (middle app ma je ignorować; do usunięcia ręcznie po pomiarze).
--- Uruchamia się raz na sesję w wątku GUI; jedna klatka będzie długa (~kilkaset ms).
+-- One-off measurement of the write format (docs/export-format-performance.md).
+-- Compares on the same network data:
+--   A) json.encode in Lua + app.saveUserdata({ json = <string> })   (current format)
+--   B) app.saveUserdata({ fields, edges = <Lua tables> })           (serialization in the game's C++)
+-- Result: "[tf3export] bench ..." lines in the log and tf3export_bench_A/_B files in local\towns_industries\
+-- (the middle app should ignore them; delete them by hand after the measurement).
+-- Runs once per session on the GUI thread; one frame will be long (~a few hundred ms).
 
 local json = ug_require "json.lua"
 local util = ug_require "util.lua"
@@ -24,7 +24,7 @@ function B.run(ids)
 
 	local dir = util.USERDATA_DIR
 
-	-- zbieranie surowych wierszy (wspólny koszt obu wariantów)
+	-- collecting raw rows (cost shared by both variants)
 	local t0 = util.clock()
 	local rows = {}
 	for _, id in ipairs(ids) do
@@ -33,7 +33,7 @@ function B.run(ids)
 	end
 	local t1 = util.clock()
 
-	-- A: JSON w Lua
+	-- A: JSON in Lua
 	local parts = {}
 	for i, row in ipairs(rows) do parts[i] = json.encode(row) end
 	local content = '{"fields":' .. json.encode(collectors.EDGE_FIELDS) .. ',"edges":[' .. table.concat(parts, ",") .. "]}"
@@ -41,13 +41,13 @@ function B.run(ids)
 	local okA, errA = pcall(function() app.saveUserdata(dir, util.FILE_PREFIX .. "bench_A", { json = content }) end)
 	local t3 = util.clock()
 
-	-- B: tabela Lua, serializacja po stronie gry
+	-- B: a Lua table, serialized on the game's side
 	local okB, errB = pcall(function()
 		app.saveUserdata(dir, util.FILE_PREFIX .. "bench_B", { fields = collectors.EDGE_FIELDS, edges = rows })
 	end)
 	local t4 = util.clock()
 
-	-- B2: to samo z liczbami zaokrąglonymi do 0.1 m / 0.01 (wariant "mniejsza precyzja")
+	-- B2: the same with numbers rounded to 0.1 m / 0.01 (the "lower precision" variant)
 	local rounded = {}
 	for i, row in ipairs(rows) do
 		local r = {}

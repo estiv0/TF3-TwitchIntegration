@@ -1,24 +1,24 @@
--- Eksport kształtu terenu (heightmapa) dla tła mapy na stronie.
+-- Export of the terrain shape (heightmap) for the map background on the website.
 --
 -- API (api/tealdef/api/engine.d.tl, UtilTerrain):
---   api.engine.terrain.getBaseHeightAt(Vec2f)   wysokość z siatki 4 m, bez wyrównań pod tory/drogi
---   api.engine.terrain.getBoundingBox()         zakres świata (Box2f, min/max)
---   api.engine.terrain.makeMapFromGame(true, ...) GameMap z pełną tablicą heightmap
---   api.engine.terrain.getTerrainEntityRevisions() rewizje kafli -> wykrywanie terraformowania
---   app.writeHeightmap(map, name, stl, 16bit, biomes) natywny zapis obrazka (jak w edytorze map)
+--   api.engine.terrain.getBaseHeightAt(Vec2f)   height from the 4 m grid, without leveling for tracks/streets
+--   api.engine.terrain.getBoundingBox()         world extent (Box2f, min/max)
+--   api.engine.terrain.makeMapFromGame(true, ...) GameMap with the full heightmap array
+--   api.engine.terrain.getTerrainEntityRevisions() tile revisions -> detecting terraforming
+--   app.writeHeightmap(map, name, stl, 16bit, biomes) native image writer (as in the map editor)
 --
--- Eksport (metoda A): próbkowanie getBaseHeightAt co stepM metrów, porcjami w kolejnych
--- klatkach (budgetMs), potem kodowanie też porcjami i zapis jednego pliku "terrain".
+-- Export (method A): sampling getBaseHeightAt every stepM meters, in chunks over successive
+-- frames (budgetMs), then encoding also in chunks and writing a single "terrain" file.
 --
--- Format "terrain" (JSON):
+-- The "terrain" format (JSON):
 --   { v, kind="terrain", session, seq, gameTime, method="baseHeight",
---     nx, ny, step, x0, y0,        -- próbka (i, j) leży w świecie w (x0 + i*step, y0 + j*step)
+--     nx, ny, step, x0, y0,        -- sample (i, j) is located in the world at (x0 + i*step, y0 + j*step)
 --     zMin, zMax, zScale,          -- h = zMin + q * zScale
---     waterLevel,                  -- może być null
---     encoding="b64x3", data }     -- wiersze od j=0 (południe, min y), w wierszu i rosnąco;
---                                     każda próbka q (0..262143) = 3 znaki base64, najstarsze bity pierwsze
+--     waterLevel,                  -- may be null
+--     encoding="b64x3", data }     -- rows from j=0 (south, min y), i ascending within a row;
+--                                     each sample q (0..262143) = 3 base64 characters, most significant bits first
 --
--- Benchmark (T.bench): jednorazowy pomiar wszystkich trzech metod, wyniki w logu "[tf3export] terrain bench ...".
+-- Benchmark (T.bench): a one-off measurement of all three methods, results in the log as "[tf3export] terrain bench ...".
 
 local json = ug_require "json.lua"
 local util = ug_require "util.lua"
@@ -29,8 +29,8 @@ local B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 local B64C = {}
 for i = 1, 64 do B64C[i - 1] = B64:sub(i, i) end
 
-local Q_MAX = 262143 -- 18 bitów = 3 znaki base64
-local Z_SCALE = 0.1  -- 10 cm na jednostkę
+local Q_MAX = 262143 -- 18 bits = 3 base64 characters
+local Z_SCALE = 0.1  -- 10 cm per unit
 
 local function terrainApi()
 	local ok, t = pcall(function() return api.engine.terrain end)
@@ -61,7 +61,7 @@ function T.boundingBox()
 	return box
 end
 
--- Poziom żeglownej wody: komponent TERRAIN encji świata (Engine.Component.Terrain.waterLevel).
+-- Navigable water level: the TERRAIN component of the world entity (Engine.Component.Terrain.waterLevel).
 function T.waterLevel()
 	local c = util.comp(api.engine.util.getWorld(), util.ct.TERRAIN)
 	local w = c and util.field(c, "waterLevel")
@@ -69,9 +69,9 @@ function T.waterLevel()
 	return nil
 end
 
--- Podpis rewizji kafli terenu: liczba kafli + największa rewizja. Rewizja (Engine.Revision.num)
--- to rosnąca trójka (tick, komenda, indeks), więc każda zmiana kafla podnosi maksimum.
--- (Wersja z sumą/haszem padała na string.format "%d" - wartości poza zakresem int.)
+-- Signature of the terrain tile revisions: tile count + the largest revision. A revision (Engine.Revision.num)
+-- is an increasing triple (tick, command, index), so every tile change raises the maximum.
+-- (A version with a sum/hash failed on string.format "%d" - values outside the int range.)
 function T.revisionSignature()
 	local t = terrainApi()
 	if not t then return nil end
@@ -92,13 +92,13 @@ function T.revisionSignature()
 	return tostring(count) .. ":" .. tostring(best[1]) .. "." .. tostring(best[2]) .. "." .. tostring(best[3])
 end
 
----------------------------------------------------------------- zadanie eksportu
--- Tworzy zadanie; nil, jeśli API terenu jest niedostępne.
+---------------------------------------------------------------- export task
+-- Creates a task; nil if the terrain API is unavailable.
 function T.start(opts)
 	local box = T.boundingBox()
 	if not box then return nil end
 	local step = opts.stepM
-	-- limit rozmiaru: najwyżej maxSide próbek na bok
+	-- size limit: at most maxSide samples per side
 	local side = math.max(box.maxX - box.minX, box.maxY - box.minY)
 	if side / step + 1 > opts.maxSide then
 		step = math.ceil(side / (opts.maxSide - 1))
@@ -150,7 +150,7 @@ local function encodeRow(job)
 	job.ej = job.ej + 1
 end
 
--- Jedna porcja pracy. Zwraca true, gdy zadanie jest gotowe do zapisu (T.content).
+-- One chunk of work. Returns true when the task is ready to be written (T.content).
 function T.step(job, budgetMs)
 	local t = terrainApi()
 	local start = util.clock()
@@ -184,11 +184,11 @@ function T.content(job, header)
 end
 
 ---------------------------------------------------------------- benchmark
--- Jednorazowo, w jednej klatce (zatnie grę na chwilę). Porównuje:
---   A) getBaseHeightAt w pętli (n próbek; czas przeliczany na pełną siatkę),
---   B) makeMapFromGame(true,...) + odczyt tablicy heightmap z Lua,
---   C) makeMapFromGame + app.writeHeightmap (natywny obrazek 16-bit w userdata\heightmaps).
--- Dodatkowo: koszt getTerrainEntityRevisions i porównanie wartości A vs B w kilku punktach.
+-- Once, in a single frame (stutters the game for a moment). Compares:
+--   A) getBaseHeightAt in a loop (n samples; the time scaled to the full grid),
+--   B) makeMapFromGame(true,...) + reading the heightmap array from Lua,
+--   C) makeMapFromGame + app.writeHeightmap (a native 16-bit image in userdata\heightmaps).
+-- Additionally: the cost of getTerrainEntityRevisions and comparing A vs B values at a few points.
 local function ms(t) return t * 1000 end
 
 local function try(label, fn)
@@ -209,14 +209,14 @@ function T.bench(opts)
 	util.log(string.format("terrain bench: bbox x %.0f..%.0f, y %.0f..%.0f (%.0f x %.0f m), waterLevel %s",
 		box.minX, box.maxX, box.minY, box.maxY, w, d, tostring(T.waterLevel())))
 
-	-- rewizje
+	-- revisions
 	try("revisions", function()
 		local c = util.clock()
 		local sig = T.revisionSignature()
 		util.log(string.format("terrain bench revisions: %.2f ms, signature %s", ms(util.clock() - c), tostring(sig)))
 	end)
 
-	-- A: getBaseHeightAt i getHeightAt
+	-- A: getBaseHeightAt and getHeightAt
 	local n = 20000
 	try("A", function()
 		local c = util.clock()
@@ -258,13 +258,13 @@ function T.bench(opts)
 			tostring(map.numTilesX), tostring(map.numTilesY), tostring(map.levels), tostring(map.offsetZ),
 			tostring(map.waterLevel), tostring(res and res.x), tostring(res and res.y), tostring(res and res.z)))
 
-		-- odczyt co 8. próbki (32 m przy siatce 4 m) - realny koszt zmniejszania w Lua
+		-- reading every 8th sample (32 m with a 4 m grid) - the real cost of downscaling in Lua
 		c = util.clock()
 		local s = 0
 		for k = 1, len, 8 do s = s + (hm[k] or 0) end
 		util.log(string.format("terrain bench B: read every 8th of %d values %.0f ms", len, ms(util.clock() - c)))
 
-		-- układ tablicy: szerokość = numTilesX * 256 / res.x (+1?); porównanie z getBaseHeightAt
+		-- array layout: width = numTilesX * 256 / res.x (+1?); comparison with getBaseHeightAt
 		local rx = (res and res.x) or 4
 		for _, extra in ipairs({ 0, 1 }) do
 			local cols = math.floor((map.numTilesX or 0) * 256 / rx + 0.5) + extra
@@ -283,7 +283,7 @@ function T.bench(opts)
 		end
 	end)
 
-	-- C: natywny zapis obrazka
+	-- C: native image write
 	if map and (type(app) == "table" or type(app) == "userdata") then
 		try("C", function()
 			local c = util.clock()
