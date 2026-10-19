@@ -45,7 +45,7 @@ Wymagania i ograniczenia:
 
 - Najlepszy będzie **Device Code Grant Flow**. Tf3Bridge pokazuje kod, a streamer wpisuje go na `twitch.tv/activate`.
 - Aplikacja jest rejestrowana na dev.twitch.tv jako „public client”, więc nie trzeba trzymać client secret.
-- Client ID aplikacji (`Twitch:ClientId` w `appsettings.json`): `8cp6n72q1r4gdodyxkonpe4r19ume7`.
+- Client ID aplikacji (`Twitch:ClientId` w `appsettings.json`): `odsqr5oc7n3xw7qezu9k1a36f1dvlh`.
 - Token odświeżania przechowujemy zaszyfrowany DPAPI w `%LOCALAPPDATA%\Tf3Bridge`, tak jak dziś SAS (`azure.json`).
 
 ## 2. Co mamy po naszej stronie

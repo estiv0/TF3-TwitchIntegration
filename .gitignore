@@ -42,3 +42,7 @@ docs/blob_sas
 *.pfx
 *.pem
 *.key
+
+# Robocze notatki i plany (tylko lokalnie)
+docs/api-ideas.md
+docs/own-points-economy.md
