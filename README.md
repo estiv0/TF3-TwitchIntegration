@@ -17,26 +17,26 @@ The interfaces of Tf3Bridge and the website are in **English and Polish**.
 ## How it works
 
 ```mermaid
-flowchart LR
+flowchart TB
+    V(["Viewers"])
+    SITE["Static website"]
+    TW["Twitch<br/>(EventSub, Helix)"]
+    BLOB[("Azure Blob Storage<br/>'live' container")]
     subgraph PC["Streamer's PC"]
+        direction LR
         TF3["Transport Fever 3<br/>+ mod"]
         BR["Tf3Bridge"]
         LOCAL["web/data<br/>(local copy)"]
+        TF3 -- "export files" --> BR
+        BR -- "command queue" --> TF3
+        BR --> LOCAL
     end
-    BLOB[("Azure Blob Storage<br/>'live' container")]
-    SITE["Static website"]
-    TW["Twitch<br/>(EventSub, Helix)"]
-    V(["Viewers"])
 
-    TF3 -- "export files<br/>(app.saveUserdata)" --> BR
-    BR -- "command queue" --> TF3
-    BR --> LOCAL
-    BR -- "changed files<br/>(gzip, SAS token)" --> BLOB
-    SITE -- "polls meta.json,<br/>fetches data on change" --> BLOB
-    V --> SITE
+    V -- "watch the map" --> SITE
     V -- "channel points,<br/>chat commands" --> TW
-    TW -- "redemptions,<br/>chat messages" --> BR
-    BR -- "chat replies,<br/>fulfill / refund" --> TW
+    SITE -- "polls meta.json" --> BLOB
+    TW <-- "redemptions and chat /<br/>replies, fulfill, refund" --> BR
+    BR -- "changed files<br/>(gzip, SAS token)" --> BLOB
 ```
 
 **Game → website**
