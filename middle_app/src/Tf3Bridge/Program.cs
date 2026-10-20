@@ -71,9 +71,9 @@ internal static class Program
         mirror.Configure(AzureSettingsStore.Load());
         var mod = ModInstaller.Sync(options.InputDir, host.Services.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(ModInstaller)));
         ModSettingsStore.EnsureExists(options.InputDir);
-        host.Services.GetRequiredService<ChatCommandService>(); // chat commands (!...): listens to EventSub from creation
+        var chatCommands = host.Services.GetRequiredService<ChatCommandService>(); // chat commands (!...): listens to EventSub from creation
 
         Application.Run(new MainForm(runner, mirror, host.Services.GetRequiredService<TwitchSession>(), host.Services.GetRequiredService<EventSubClient>(),
-            host.Services.GetRequiredService<ModCommandQueue>(), host.Services.GetRequiredService<RewardService>(), options, mod, uiLog));
+            host.Services.GetRequiredService<ModCommandQueue>(), host.Services.GetRequiredService<RewardService>(), chatCommands, options, mod, uiLog));
     }
 }
