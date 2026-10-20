@@ -6,7 +6,7 @@ namespace Tf3Bridge.Tests;
 public sealed class MainFormLayoutTests
 {
     private static readonly string[] Buttons =
-        ["Uruchom", "Folder wyjściowy", "Folder moda", "Ustawienia moda…", "Azure…", "Twitch…", "Nagrody…", "Test akcji…"];
+        ["Uruchom", "Folder wyjściowy", "Folder moda", "Ustawienia moda…", "Azure…", "Twitch…", "Nagrody…", "Komendy czatu…", "Test akcji…"];
 
     private const string LongStatus = "Nagrody: kanał bez Affiliate/Partner: nagrody wyłączone (zostaje „Symuluj nagrodę”) i jeszcze dużo dłuższy tekst, który na pewno się nie mieści";
 

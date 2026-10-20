@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
+using Tf3Bridge.Chat;
 using Tf3Bridge.Cloud;
 using Tf3Bridge.Commands;
 using Tf3Bridge.Processing;
@@ -23,6 +24,7 @@ public sealed class MainForm : Form
     private readonly EventSubClient _eventSub;
     private readonly ModCommandQueue _commands;
     private readonly RewardService _rewards;
+    private readonly ChatCommandService _chatCommands;
     private readonly CancellationTokenSource _backgroundCts = new();
     private readonly BridgeOptions _options;
     private readonly UiLogProvider _log;
@@ -48,7 +50,7 @@ public sealed class MainForm : Form
     private readonly ModInstallResult _mod;
     private bool _closing;
 
-    public MainForm(BridgeRunner runner, AzureMirror mirror, TwitchSession twitch, EventSubClient eventSub, ModCommandQueue commands, RewardService rewards, BridgeOptions options, ModInstallResult mod, UiLogProvider log)
+    public MainForm(BridgeRunner runner, AzureMirror mirror, TwitchSession twitch, EventSubClient eventSub, ModCommandQueue commands, RewardService rewards, ChatCommandService chatCommands, BridgeOptions options, ModInstallResult mod, UiLogProvider log)
     {
         _runner = runner;
         _mirror = mirror;
@@ -56,6 +58,7 @@ public sealed class MainForm : Form
         _eventSub = eventSub;
         _commands = commands;
         _rewards = rewards;
+        _chatCommands = chatCommands;
         _options = options;
         _log = log;
 
@@ -105,12 +108,13 @@ public sealed class MainForm : Form
         var azure = ToolButton("Azure…", groupStart: true);
         var twitchButton = ToolButton("Twitch…");
         var rewardsButton = ToolButton(Loc.T("Rewards…"));
+        var chatButton = ToolButton(Loc.T("Chat commands…"));
         var commandTest = ToolButton(Loc.T("Test actions…"));
         _lastUpdate.ForeColor = SystemColors.GrayText;
         _toggle.Margin = new Padding(0, 3, 3, 3);
         _language.Margin = new Padding(12, 6, 3, 3);
         openOutput.Margin = GroupMargin;
-        var toolbar = Toolbar(_toggle, openOutput, openInput, modSettings, azure, twitchButton, rewardsButton, commandTest, _language);
+        var toolbar = Toolbar(_toggle, openOutput, openInput, modSettings, azure, twitchButton, rewardsButton, chatButton, commandTest, _language);
         var statusBox = StatusPanel(_status, _lastUpdate, _azure, _twitchStatus, _eventSubStatus, _rewardStatus);
 
         var paths = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, Margin = new Padding(0, 8, 0, 8) };
@@ -131,6 +135,7 @@ public sealed class MainForm : Form
         twitchButton.Click += (_, _) => EditTwitch();
         commandTest.Click += (_, _) => TestCommand();
         rewardsButton.Click += (_, _) => EditRewards();
+        chatButton.Click += (_, _) => EditChatCommands();
 
         var oldMenu = _tray.ContextMenuStrip;
         var menu = new ContextMenuStrip();
@@ -156,6 +161,7 @@ public sealed class MainForm : Form
         OnTick();
         // Unchanged default reward titles and descriptions switch to the new language and go to Twitch.
         _rewards.UpdateSettings(_rewards.Settings.Normalized());
+        _chatCommands.UpdateSettings(_chatCommands.Settings); // unchanged default command names too
         _log.CreateLogger(nameof(MainForm)).LogInformation("Language changed to {Language}", lang);
     }
 
@@ -337,6 +343,14 @@ public sealed class MainForm : Form
             NotificationSeconds = dialog.NotificationSeconds, Zones = dialog.Zones, Extras = dialog.Extras,
         });
         _log.CreateLogger(nameof(MainForm)).LogInformation("Reward settings saved");
+    }
+
+    private void EditChatCommands()
+    {
+        using var dialog = new ChatCommandsDialog(_chatCommands.Settings);
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        _chatCommands.UpdateSettings(dialog.Settings);
+        _log.CreateLogger(nameof(MainForm)).LogInformation("Chat command settings saved");
     }
 
     private void EditModSettings()

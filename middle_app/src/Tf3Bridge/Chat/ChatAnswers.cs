@@ -6,11 +6,16 @@ namespace Tf3Bridge.Chat;
 
 /// <summary>
 /// One chat command to answer. <see cref="Root"/>: the latest dynamic.json (default for commands without game data);
-/// <see cref="DataAge"/>: how old that file is.
+/// <see cref="DataAge"/>: how old that file is. <see cref="Commands"/>: the configured names, for answers that point to other commands.
 /// </summary>
 internal sealed record ChatRequest(ChatAsker Asker, string Arg, string SiteUrl, JsonElement Root = default, TimeSpan? DataAge = null)
 {
     public string Mention => "@" + Asker.Name;
+
+    public ChatCommandSettings Commands { get; init; } = ChatCommandSettings.Default;
+
+    /// <summary>"!miasto" (the configured name), also when the command is off: the asker just used it.</summary>
+    public string Name(ChatCommandKind kind) => "!" + Commands.Get(kind).Name;
 }
 
 /// <summary>Who asked: display name (fallback login) and login.</summary>
@@ -24,10 +29,28 @@ internal static class ChatAnswers
 
     private const int ListMax = 5;
 
-    public static string Help(ChatRequest r) => Loc.F(
-        "{0} TF3 commands: !assets [viewer], !town <name>, !industry <name>, !line <name>, !ranking, "
-        + "!free [towns|industries], !best / !worst [line|company], !company, !date, !map. "
-        + "Only channel points change the game.", r.Mention);
+    // Order of the list in !help (help itself is not listed).
+    private static readonly ChatCommandKind[] HelpOrder =
+    [
+        ChatCommandKind.Assets, ChatCommandKind.Town, ChatCommandKind.Industry, ChatCommandKind.Line, ChatCommandKind.Ranking,
+        ChatCommandKind.Free, ChatCommandKind.Best, ChatCommandKind.Worst, ChatCommandKind.Company, ChatCommandKind.Date, ChatCommandKind.Map,
+    ];
+
+    /// <summary>"@ala TF3 commands: !assets [viewer], !town &lt;name&gt;, …, !best / !worst [line|company], …": only the commands that are on, with their configured names.</summary>
+    public static string Help(ChatRequest r)
+    {
+        var items = new List<string>();
+        foreach (var kind in HelpOrder)
+        {
+            if (r.Commands.Shown(kind) is not { } name) continue;
+            // "!best / !worst [line|company]": one entry when both are on.
+            if (kind == ChatCommandKind.Worst && r.Commands.Shown(ChatCommandKind.Best) is not null) continue;
+            if (kind == ChatCommandKind.Best && r.Commands.Shown(ChatCommandKind.Worst) is { } worst) name += " / " + worst;
+            items.Add(name + ChatCommandKinds.Usage(kind));
+        }
+        var list = items.Count > 0 ? string.Join(", ", items) + ". " : "";
+        return Loc.F("{0} TF3 commands: {1}Only channel points change the game.", r.Mention, list);
+    }
 
     public static string Map(ChatRequest r) =>
         string.IsNullOrWhiteSpace(r.SiteUrl)
@@ -65,7 +88,7 @@ internal static class ChatAnswers
     }
 
     /// <summary>"@ala Szczecin (owner: estiv0): capacity 900, +25% since game start, needs met 80%, effects: town boost +50% until 12 May 1922 (from ola). link"</summary>
-    public static string Town(ChatRequest r) => Describe(r, GameObjectKind.Town, Loc.T("!town Szczecin"), (x, parts) =>
+    public static string Town(ChatRequest r) => Describe(r, GameObjectKind.Town, r.Name(ChatCommandKind.Town) + " Szczecin", (x, parts) =>
     {
         var size = Sum(x, "capacities");
         parts.Add(Loc.F("capacity {0}", Int(size)));
@@ -75,7 +98,7 @@ internal static class ChatAnswers
     });
 
     /// <summary>"@ala Brewery (owner: estiv0): level 2/4, productivity 120%, production (year) 1,234, effects: …. link"</summary>
-    public static string Industry(ChatRequest r) => Describe(r, GameObjectKind.Industry, Loc.T("!industry Brewery"), (x, parts) =>
+    public static string Industry(ChatRequest r) => Describe(r, GameObjectKind.Industry, r.Name(ChatCommandKind.Industry) + " " + Loc.T("Brewery"), (x, parts) =>
     {
         if (Num(x, "level") is { } level)
         {
@@ -88,7 +111,7 @@ internal static class ChatAnswers
     });
 
     /// <summary>"@ala Line 1 (owner: estiv0): 10 vehicles (stopped: 2), profit (12 mo.) $653,957, load 64%, transported (year) 12,345. link"</summary>
-    public static string Line(ChatRequest r) => Describe(r, GameObjectKind.Line, Loc.T("!line Line 1"), (x, parts) =>
+    public static string Line(ChatRequest r) => Describe(r, GameObjectKind.Line, r.Name(ChatCommandKind.Line) + " " + Loc.T("Line 1"), (x, parts) =>
     {
         if (Num(x, "vehicleCount") is { } n)
         {
@@ -128,7 +151,10 @@ internal static class ChatAnswers
             .OrderByDescending(o => o.Score).ThenByDescending(o => o.Profit12m ?? double.MinValue)
             .ThenBy(o => o.Name, StringComparer.CurrentCultureIgnoreCase)
             .Take(ListMax).ToList();
-        if (owners.Count == 0) return Loc.F("{0} nobody has bought anything yet. See !free", r.Mention);
+        if (owners.Count == 0)
+            return r.Commands.Shown(ChatCommandKind.Free) is { } free
+                ? Loc.F("{0} nobody has bought anything yet. See {1}", r.Mention, free)
+                : Loc.F("{0} nobody has bought anything yet.", r.Mention);
 
         static string Summary(OwnerAssets o)
         {
@@ -150,7 +176,7 @@ internal static class ChatAnswers
         bool towns = true, industries = true;
         if (arg.StartsWith("miast", StringComparison.Ordinal) || arg.StartsWith("town", StringComparison.Ordinal)) industries = false;
         else if (arg.StartsWith("zaklad", StringComparison.Ordinal) || arg.StartsWith("industr", StringComparison.Ordinal)) towns = false;
-        else if (arg.Length > 0) return Loc.F("{0} use: !free [towns|industries]", r.Mention);
+        else if (arg.Length > 0) return Loc.F("{0} use: {1}", r.Mention, r.Name(ChatCommandKind.Free) + ChatCommandKinds.Usage(ChatCommandKind.Free));
 
         static bool Free(JsonElement x) => Str(x, "name") is { } n && OwnerName.Split(n).Owner is null;
         static string Name(JsonElement x) => OwnerName.Split(Str(x, "name")!).Name;
@@ -242,7 +268,8 @@ internal static class ChatAnswers
             var text = Loc.F("{0} {1} viewer company: {2}, line profit (12 mo.) {3} ({4}).", r.Mention, word, o!.Name, Money(o.Profit12m!.Value), Lines(o.Lines));
             return RewardMessages.OwnerLink(r.SiteUrl, o.Key) is { } link ? $"{text} {link}" : text;
         }
-        return Loc.F("{0} use: !{1} [line|company]", r.Mention, word);
+        var kind = best ? ChatCommandKind.Best : ChatCommandKind.Worst;
+        return Loc.F("{0} use: {1}", r.Mention, r.Name(kind) + ChatCommandKinds.Usage(kind));
     }
 
     // Active reward effects on the object: "town boost +50% until 12 May 1922 (from ola)".

@@ -47,7 +47,7 @@ dotnet test
 
 The app speaks English and every language that has a file in `src/Tf3Bridge/Locales/` (now: Polish). One setting, the language list at the end of the button row (**English / Polski**, each language under its own name), covers everything: the windows, the chat replies, the in-game notifications and the default reward texts. The first start follows the Windows display language when there is a file for it, English otherwise; the choice is saved in `%LOCALAPPDATA%\Tf3Bridge\language.txt` as the language code (`Loc`). The log stays in English.
 
-The default titles and descriptions of the channel points rewards are translated like any other text (`RewardKinds.DefaultsFor`). After a language switch, the rewards whose title or description is still the default of another language get the default of the new one and go to Twitch right away; texts the streamer changed stay as they are. Chat command names and aliases are not translated: they are defined in `Chat/ChatCommandService.cs` and every alias works regardless of the setting (see "Chat commands").
+The default titles and descriptions of the channel points rewards are translated like any other text (`RewardKinds.DefaultsFor`). After a language switch, the rewards whose title or description is still the default of another language get the default of the new one and go to Twitch right away; texts the streamer changed stay as they are. Chat command names are not translated: the streamer sets them in the "Chat commands" window (`Chat/ChatCommandSettings.cs`), and by default every command answers to both its English and Polish name regardless of the setting; the language only decides which name `!help` shows (see "Chat commands").
 
 ### How texts work in the code
 
@@ -150,9 +150,11 @@ How it works:
 
 ## Chat commands
 
-Our commands start with `!` (no prefix). They only read the last `dynamic.json` and reply in chat as the streamer; they never send anything to the game (`Chat/ChatCommandService.cs`: list of commands and cooldowns, `Chat/ChatAnswers.cs`: the reply texts). Links only when `Twitch:SiteUrl` is set. Object names are matched the same way as in rewards (`TargetResolver`): case- and diacritics-insensitive, first exactly, then by prefix, then by substring; when several match, the reply lists them. Every command answers to its English and its Polish name (and the arguments too: `!free towns` = `!wolne miasta`); the reply is in the app language (see "Language"), with numbers formatted for it ("$833,881" / "$ 833 881").
+Our commands start with `!` (no prefix). They only read the last `dynamic.json` and reply in chat as the streamer; they never send anything to the game (`Chat/ChatCommandService.cs`: list of commands and cooldowns, `Chat/ChatAnswers.cs`: the reply texts). Links only when `Twitch:SiteUrl` is set. Object names are matched the same way as in rewards (`TargetResolver`): case- and diacritics-insensitive, first exactly, then by prefix, then by substring; when several match, the reply lists them. By default every command answers to its English and its Polish name (and the arguments too: `!free towns` = `!wolne miasta`); the reply is in the app language (see "Language"), with numbers formatted for it ("$833,881" / "$ 833 881").
 
-| Command | Polish name (and other aliases) | Reply | Cooldown (whole chat) |
+The **Chat commands…** window (`Ui/ChatCommandsDialog.cs`) lets the streamer switch each command off, rename it, edit its extra names (aliases) and its cooldown, e.g. remove the Polish names on an English stream. Settings: `%LOCALAPPDATA%\Tf3Bridge\chat-commands.json` (`Chat/ChatCommandSettings.cs`); no file = the defaults below. Names are letters, digits and `_` (case-insensitive, stored without `!`), each name may belong to one command only (off commands included). Saved changes apply from the next chat message, without a restart. A command that is off is ignored silently and left out of `!help`; answers that point to another command (`!ranking` → "see !free", usage hints) use the configured names. Unchanged default names follow a language switch (the current language's name first), like the reward texts.
+
+| Command | Polish name (and other aliases) | Reply | Cooldown (whole chat, default) |
 |---|---|---|---|
 | `!help` | `!commands`, `!pomoc`, `!komendy` | list of commands (in the app language) | 30 s |
 | `!map` | `!mapa` | link to the website | 30 s |
@@ -287,7 +289,9 @@ middle_app/
     Commands/ModCommandQueue.cs   the queue.lua queue, reading results from results.lua, expiry
     Commands/GameObjects.cs       action targets from dynamic.json, "Name | Owner" names
     Commands/OwnerAssets.cs       viewers' estates from dynamic.json (like the Owners tab on the website)
-    Chat/ChatCommandService.cs    chat commands (!...): list, aliases, cooldowns; no game changes
+    Chat/ChatCommandService.cs    chat commands (!...): matching names from the settings, cooldowns; no game changes
+    Chat/ChatCommandSettings.cs   chat command names, aliases, on/off, cooldowns, stored in chat-commands.json
+    Ui/ChatCommandsDialog.cs      chat command settings
     Chat/ChatAnswers.cs           reply texts for chat commands (from dynamic.json)
     Ui/CommandTestDialog.cs       testing without Twitch: reward simulation and manual rename
     Rewards/RewardSettings.cs     rewards (kinds, costs, months, multipliers), stored in rewards.json
