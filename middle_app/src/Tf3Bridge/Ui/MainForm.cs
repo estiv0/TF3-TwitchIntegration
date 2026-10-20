@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using Tf3Bridge.Chat;
 using Tf3Bridge.Cloud;
 using Tf3Bridge.Commands;
+using Tf3Bridge.Output;
 using Tf3Bridge.Processing;
 using Tf3Bridge.Rewards;
 using Tf3Bridge.Twitch;
@@ -25,6 +26,7 @@ public sealed class MainForm : Form
     private readonly ModCommandQueue _commands;
     private readonly RewardService _rewards;
     private readonly ChatCommandService _chatCommands;
+    private readonly LocalWebServer _web;
     private readonly CancellationTokenSource _backgroundCts = new();
     private readonly BridgeOptions _options;
     private readonly UiLogProvider _log;
@@ -49,7 +51,7 @@ public sealed class MainForm : Form
     private readonly ModInstallResult _mod;
     private bool _closing;
 
-    public MainForm(BridgeRunner runner, AzureMirror mirror, TwitchSession twitch, EventSubClient eventSub, ModCommandQueue commands, RewardService rewards, ChatCommandService chatCommands, BridgeOptions options, ModInstallResult mod, UiLogProvider log)
+    public MainForm(BridgeRunner runner, AzureMirror mirror, TwitchSession twitch, EventSubClient eventSub, ModCommandQueue commands, RewardService rewards, ChatCommandService chatCommands, LocalWebServer web, BridgeOptions options, ModInstallResult mod, UiLogProvider log)
     {
         _runner = runner;
         _mirror = mirror;
@@ -58,6 +60,7 @@ public sealed class MainForm : Form
         _commands = commands;
         _rewards = rewards;
         _chatCommands = chatCommands;
+        _web = web;
         _options = options;
         _log = log;
 
@@ -98,6 +101,7 @@ public sealed class MainForm : Form
 
         // Buttons in a wrapping row (narrow window = two rows), below them full-width status lines;
         // a status that is too long ends with "…", and the full text is in the tooltip (AutoEllipsis).
+        var openSite = ToolButton(Loc.T("Website"));
         var openOutput = ToolButton(Loc.T("Output folder"));
         var openInput = ToolButton(Loc.T("Mod folder"));
         var modSettings = ToolButton(Loc.T("Mod settings…"));
@@ -118,8 +122,8 @@ public sealed class MainForm : Form
             var chosen = Loc.Languages[language.SelectedIndex];
             BeginInvoke(() => ChangeLanguage(chosen));
         };
-        openOutput.Margin = GroupMargin;
-        var toolbar = Toolbar(_toggle, openOutput, openInput, modSettings, azure, twitchButton, rewardsButton, chatButton, commandTest, language);
+        openSite.Margin = GroupMargin;
+        var toolbar = Toolbar(_toggle, openSite, openOutput, openInput, modSettings, azure, twitchButton, rewardsButton, chatButton, commandTest, language);
         var statusBox = StatusPanel(_status, _lastUpdate, _azure, _twitchStatus, _eventSubStatus, _rewardStatus);
 
         var paths = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, Margin = new Padding(0, 8, 0, 8) };
@@ -130,9 +134,11 @@ public sealed class MainForm : Form
             : Loc.T("(TF3 folder not found in Steam – set --Bridge:InputDir=…)"));
         AddPathRow(paths, Loc.T("Output (website):"), _options.OutputDir);
         AddPathRow(paths, Loc.T("Mod in game:"), ModText(_mod));
+        AddPathRow(paths, Loc.T("Local website:"), WebText(_web));
 
         Controls.Add(Root(toolbar, statusBox, paths, _logBox));
 
+        openSite.Click += (_, _) => OpenWebsite();
         openOutput.Click += (_, _) => OpenFolder(_options.OutputDir);
         openInput.Click += (_, _) => OpenFolder(_options.InputDir);
         azure.Click += (_, _) => EditAzure();
@@ -474,6 +480,24 @@ public sealed class MainForm : Form
         ModInstallStatus.NoSteam => Loc.T("(not installed – no TF3 folder in Steam, start the game once)"),
         _ => Loc.T("(installation error – details in the log)"),
     };
+
+    private static string WebText(LocalWebServer web) => web.State switch
+    {
+        WebServerState.Running => $"{web.Url}  " + Loc.F("(files from {0})", web.WebDir),
+        WebServerState.PortTaken => Loc.F("(off – port {0} is taken; close the other server or set --Bridge:WebPort=…)", web.Port),
+        WebServerState.NoWebDir => Loc.T("(off – no website folder with index.html; set --Bridge:WebDir=…)"),
+        _ => Loc.T("(off – Bridge:WebPort is 0)"),
+    };
+
+    private void OpenWebsite()
+    {
+        if (_web.Url is not { } url)
+        {
+            MessageBox.Show(Loc.T("The local website is not running:") + $"\n{WebText(_web)}", "Tf3Bridge", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+    }
 
     private static void OpenFolder(string path)
     {

@@ -11,7 +11,7 @@ TF3 (mod) ──app.saveUserdata──▶ ...\3493540\local\tf3export\*.lua
                                output\latest\meta.json      session, seq, game date, edge count
 ```
 
-Output always goes to a local folder (`LocalFolderPublisher`), and optionally also to Azure Blob Storage with the same `latest/*` layout (see "Upload to Azure").
+Output always goes to a local folder (`LocalFolderPublisher`), and optionally also to Azure Blob Storage with the same `latest/*` layout (see "Upload to Azure"). Tf3Bridge also serves the local website at http://localhost:5080 (`LocalWebServer`): the files of `web/` and the published data under `/data/`, so no separate static server is needed. The **Website** button opens it.
 
 ## Running
 
@@ -79,6 +79,8 @@ Put your own values (e.g. `Twitch:SiteUrl`, your website's address) into `src/Tf
 |---|---|---|
 | `InputDir` | empty: detected from Steam (`SteamLocator`): the Steam folder from the registry, and in it `userdata\<account>\3493540\local\tf3export` of the logged-in account; without a logged-in Steam, the account that last played TF3 with the mod | the folder the mod writes to |
 | `OutputDir` | empty: `web\data` of the repository the exe lives in (searched upwards from the exe folder), i.e. where the local website reads from; outside the repository, `output\` next to the exe. A relative path counts from the exe folder | where to publish `latest/*.json` |
+| `WebPort` | 5080 | port of the local website (`http://localhost:<port>/`, localhost only); 0 = off. When the port is taken (e.g. `web\serve.ps1` is running), the window says so and the bridge works on without it |
+| `WebDir` | empty: `web\` of the repository the exe lives in (searched upwards like `OutputDir`); outside the repository the local website is off | the website files the local website serves; `/data/` always comes from `OutputDir` |
 | `PollIntervalMs` | 500 | how often to check the folder |
 | `IncompleteFileTimeoutSec` | 30 | a file that still can't be read after this time goes to `InputDir\failed` |
 | `KeepProcessedFiles` | false | moves files to `InputDir\processed` instead of deleting them (debug) |
@@ -307,6 +309,7 @@ middle_app/
     Processing/NetworkState.cs    assembling the network from a dump and diffs
     Processing/JsonRead.cs        safe reads of numbers and strings from JsonNode
     Output/IPublisher.cs          publish target interface
+    Output/LocalWebServer.cs      the local website (HttpListener): web/ + OutputDir under /data/
     Output/LocalFolderPublisher.cs
   tests/Tf3Bridge.Tests/          xUnit: reader, network assembly, processor pass, Azure and mod settings, Twitch login, EventSub, command queue, rewards
 ```

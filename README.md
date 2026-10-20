@@ -118,7 +118,7 @@ cd middle_app/src/Tf3Bridge
 dotnet run
 ```
 
-The app finds your Steam folder and the TF3 user data on its own. Inside your checkout it publishes the data to `web/data/`, where the local website reads it.
+The app finds your Steam folder and the TF3 user data on its own. Inside your checkout it publishes the data to `web/data/` and serves the website at http://localhost:5080.
 
 ### 2. Enable the mod in the game
 
@@ -140,11 +140,9 @@ Without an argument the script uses the `TF3_GAME_DIR` environment variable or t
 
 ### 4. Open the website
 
-```powershell
-.\web\serve.ps1
-```
+Click **Website** in Tf3Bridge or open http://localhost:5080. Tf3Bridge serves `web/` itself while it runs; the port is `Bridge:WebPort` in `appsettings.json` (0 turns it off).
 
-Then open http://localhost:5080. Any other static file server pointed at `web/` works too; opening `index.html` straight from disk doesn't, because browsers block `fetch` from `file://`.
+Without Tf3Bridge, `.\web\serve.ps1` serves the same folder, and any other static file server pointed at `web/` works too. Opening `index.html` straight from disk doesn't, because browsers block `fetch` from `file://`.
 
 Optionally give the site a name and logo: copy `web/site.example.json` to `web/site.json` and set `title` and `logo` (see [Website settings](#website-settings)).
 

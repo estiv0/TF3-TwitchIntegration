@@ -17,6 +17,15 @@ public sealed class BridgeOptions
     /// </summary>
     public string OutputDir { get; set; } = "";
 
+    /// <summary>Port of the local website (<see cref="Output.LocalWebServer"/>, http://localhost:WebPort/); 0 = off.</summary>
+    public int WebPort { get; set; } = 5080;
+
+    /// <summary>
+    /// Website files served by the local website. Empty = web/ of the repository the exe sits in
+    /// (see <see cref="ResolveWebDir"/>), or "" when there is none.
+    /// </summary>
+    public string WebDir { get; set; } = "";
+
     public int PollIntervalMs { get; set; } = 500;
 
     /// <summary>
@@ -57,11 +66,21 @@ public sealed class BridgeOptions
     {
         var baseDir = AppContext.BaseDirectory;
         if (!string.IsNullOrWhiteSpace(dir)) return Path.GetFullPath(dir, baseDir);
-        for (var d = new DirectoryInfo(baseDir); d is not null; d = d.Parent)
+        return FindRepoWebDir() is { } web ? Path.Combine(web, "data") : Path.Combine(baseDir, "output");
+    }
+
+    /// <summary>A configured path wins (relative to the exe folder); empty = the repository's web/, or "" outside it.</summary>
+    public static string ResolveWebDir(string dir) =>
+        !string.IsNullOrWhiteSpace(dir) ? Path.GetFullPath(dir, AppContext.BaseDirectory) : FindRepoWebDir() ?? "";
+
+    // Walk up from the exe to the folder containing web/index.html.
+    private static string? FindRepoWebDir()
+    {
+        for (var d = new DirectoryInfo(AppContext.BaseDirectory); d is not null; d = d.Parent)
         {
-            if (File.Exists(Path.Combine(d.FullName, "web", "index.html")))
-                return Path.Combine(d.FullName, "web", "data");
+            var web = Path.Combine(d.FullName, "web");
+            if (File.Exists(Path.Combine(web, "index.html"))) return web;
         }
-        return Path.Combine(baseDir, "output");
+        return null;
     }
 }
