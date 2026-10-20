@@ -45,7 +45,6 @@ public sealed class MainForm : Form
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 250 };
     private readonly Icon _iconOn = MakeIcon(Color.FromArgb(46, 160, 67));
     private readonly Icon _iconOff = MakeIcon(Color.FromArgb(140, 148, 160));
-    private readonly ComboBox _language = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 90 };
     private readonly List<string> _lines = [];
     private readonly ModInstallResult _mod;
     private bool _closing;
@@ -75,9 +74,6 @@ public sealed class MainForm : Form
             else _runner.Start();
             _toggle.Enabled = true;
         };
-        _language.Items.AddRange([.. Loc.Languages.Select(Loc.NativeName)]); // English + one per Locales\*.json
-        _language.SelectedIndex = Math.Max(0, Loc.Languages.ToList().IndexOf(Loc.Language));
-        _language.SelectedIndexChanged += (_, _) => ChangeLanguage(Loc.Languages[_language.SelectedIndex]);
         _tray.DoubleClick += (_, _) => RestoreFromTray();
 
         _mod = mod;
@@ -89,13 +85,13 @@ public sealed class MainForm : Form
 
     /// <summary>
     /// Builds the window contents in the current language; called again after a language change.
-    /// The long-lived controls (status lines, log, toggle, language) move into the new layout.
+    /// The long-lived controls (status lines, log, toggle) move into the new layout; the language list is new each time.
     /// </summary>
     private void BuildLayout()
     {
         SuspendLayout();
         var old = Controls.Count > 0 ? Controls[0] : null;
-        foreach (var keep in new Control[] { _toggle, _language, _status, _lastUpdate, _azure, _twitchStatus, _eventSubStatus, _rewardStatus, _logBox })
+        foreach (var keep in new Control[] { _toggle, _status, _lastUpdate, _azure, _twitchStatus, _eventSubStatus, _rewardStatus, _logBox })
             keep.Parent?.Controls.Remove(keep);
         Controls.Clear();
         old?.Dispose();
@@ -112,9 +108,18 @@ public sealed class MainForm : Form
         var commandTest = ToolButton(Loc.T("Test actions…"));
         _lastUpdate.ForeColor = SystemColors.GrayText;
         _toggle.Margin = new Padding(0, 3, 3, 3);
-        _language.Margin = new Padding(12, 6, 3, 3);
+        // A new list per layout: moving the old one into the new layout from inside its own event broke later changes.
+        var language = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 90, Margin = new Padding(12, 6, 3, 3) };
+        language.Items.AddRange([.. Loc.Languages.Select(Loc.NativeName)]); // English + one per Locales\*.json
+        language.SelectedIndex = Math.Max(0, Loc.Languages.ToList().IndexOf(Loc.Language));
+        // After the event: the rebuild disposes this list.
+        language.SelectedIndexChanged += (_, _) =>
+        {
+            var chosen = Loc.Languages[language.SelectedIndex];
+            BeginInvoke(() => ChangeLanguage(chosen));
+        };
         openOutput.Margin = GroupMargin;
-        var toolbar = Toolbar(_toggle, openOutput, openInput, modSettings, azure, twitchButton, rewardsButton, chatButton, commandTest, _language);
+        var toolbar = Toolbar(_toggle, openOutput, openInput, modSettings, azure, twitchButton, rewardsButton, chatButton, commandTest, language);
         var statusBox = StatusPanel(_status, _lastUpdate, _azure, _twitchStatus, _eventSubStatus, _rewardStatus);
 
         var paths = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, Margin = new Padding(0, 8, 0, 8) };
