@@ -70,7 +70,7 @@ public sealed class TwitchAuthClient
         while (true)
         {
             if (DateTimeOffset.UtcNow >= code.ExpiresAt)
-                throw new TwitchAuthException(Loc.T("The code expired, log in again.", "Kod wygasł, zaloguj się jeszcze raz."), rejected: true);
+                throw new TwitchAuthException(Loc.T("The code expired, log in again."), rejected: true);
             await _delay(interval, ct);
             try
             {

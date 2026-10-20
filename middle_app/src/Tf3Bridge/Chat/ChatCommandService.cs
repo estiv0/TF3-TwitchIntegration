@@ -9,8 +9,8 @@ namespace Tf3Bridge.Chat;
 /// <summary>
 /// Informational chat commands (e.g. "!majatek"). They only read the latest dynamic.json and answer in chat;
 /// they never queue game commands (the game changes only through channel points, see CommandSource).
-/// Texts: <see cref="ChatAnswers"/>; list for viewers: <c>!help</c>. Every command answers to its English and Polish name;
-/// the answer is in the app language (<see cref="Loc"/>).
+/// Texts: <see cref="ChatAnswers"/>; list for viewers: <c>!help</c>. Every command answers to its English name and to the
+/// aliases of every locale file (<see cref="Loc.CommandAliases"/>); the answer is in the app language (<see cref="Loc"/>).
 /// Two cooldowns, both silent (no answer): one viewer gets at most one answer per <see cref="Cooldown"/>,
 /// and the same command with the same argument is answered at most once per its own cooldown for the whole chat.
 /// </summary>
@@ -22,21 +22,26 @@ public sealed class ChatCommandService
     private sealed record Command(string Name, TimeSpan Cooldown, bool NeedsData, Func<ChatRequest, string> Run);
 
     private static readonly Dictionary<string, Command> Commands = Build(
-        (new("help", TimeSpan.FromSeconds(30), false, ChatAnswers.Help), ["!help", "!commands", "!pomoc", "!komendy"]),
-        (new("map", TimeSpan.FromSeconds(30), false, ChatAnswers.Map), ["!map", "!mapa"]),
-        (new("assets", TimeSpan.FromSeconds(30), true, ChatAnswers.Assets), ["!assets", "!majatek", "!majątek"]),
-        (new("town", TimeSpan.FromSeconds(30), true, ChatAnswers.Town), ["!town", "!miasto"]),
-        (new("industry", TimeSpan.FromSeconds(30), true, ChatAnswers.Industry), ["!industry", "!zaklad", "!zakład"]),
-        (new("line", TimeSpan.FromSeconds(30), true, ChatAnswers.Line), ["!line", "!linia"]),
+        (new("help", TimeSpan.FromSeconds(30), false, ChatAnswers.Help), ["!help", "!commands"]),
+        (new("map", TimeSpan.FromSeconds(30), false, ChatAnswers.Map), ["!map"]),
+        (new("assets", TimeSpan.FromSeconds(30), true, ChatAnswers.Assets), ["!assets"]),
+        (new("town", TimeSpan.FromSeconds(30), true, ChatAnswers.Town), ["!town"]),
+        (new("industry", TimeSpan.FromSeconds(30), true, ChatAnswers.Industry), ["!industry"]),
+        (new("line", TimeSpan.FromSeconds(30), true, ChatAnswers.Line), ["!line"]),
         (new("ranking", TimeSpan.FromSeconds(60), true, ChatAnswers.Ranking), ["!ranking", "!top"]),
-        (new("free", TimeSpan.FromSeconds(60), true, ChatAnswers.Free), ["!free", "!wolne"]),
-        (new("date", TimeSpan.FromSeconds(30), true, ChatAnswers.Date), ["!date", "!data"]),
-        (new("company", TimeSpan.FromSeconds(60), true, ChatAnswers.Company), ["!company", "!firma"]),
-        (new("best", TimeSpan.FromSeconds(60), true, r => ChatAnswers.Extreme(r, best: true)), ["!best", "!najlepsza", "!najlepszy"]),
-        (new("worst", TimeSpan.FromSeconds(60), true, r => ChatAnswers.Extreme(r, best: false)), ["!worst", "!najgorsza", "!najgorszy"]));
+        (new("free", TimeSpan.FromSeconds(60), true, ChatAnswers.Free), ["!free"]),
+        (new("date", TimeSpan.FromSeconds(30), true, ChatAnswers.Date), ["!date"]),
+        (new("company", TimeSpan.FromSeconds(60), true, ChatAnswers.Company), ["!company"]),
+        (new("best", TimeSpan.FromSeconds(60), true, r => ChatAnswers.Extreme(r, best: true)), ["!best"]),
+        (new("worst", TimeSpan.FromSeconds(60), true, r => ChatAnswers.Extreme(r, best: false)), ["!worst"]));
 
+    /// <summary>Command names, for locale files (their aliases go under <see cref="Loc.CommandsKey"/> with these names).</summary>
+    internal static IEnumerable<string> Names => Commands.Values.Select(c => c.Name).Distinct();
+
+    // English aliases from the code plus those of every locale file; an alias claimed twice keeps the first command.
     private static Dictionary<string, Command> Build(params (Command Command, string[] Aliases)[] list) =>
-        list.SelectMany(x => x.Aliases.Select(a => (Alias: a, x.Command))).ToDictionary(x => x.Alias, x => x.Command);
+        list.SelectMany(x => x.Aliases.Concat(Loc.CommandAliases(x.Command.Name)).Select(a => (Alias: a.Trim().ToLowerInvariant(), x.Command)))
+            .DistinctBy(x => x.Alias).ToDictionary(x => x.Alias, x => x.Command);
 
     private readonly ChatApi _chat;
     private readonly bool _mock;
@@ -111,7 +116,7 @@ public sealed class ChatCommandService
         var asker = new ChatAsker(m.ChatterName.Length > 0 ? m.ChatterName : m.ChatterLogin, m.ChatterLogin);
         if (!command.NeedsData) return command.Run(new ChatRequest(asker, arg, _siteUrl));
         using var doc = LoadDynamic();
-        if (doc is null) return Loc.T($"@{asker.Name} I have no game data yet.", $"@{asker.Name} nie mam jeszcze danych z gry.");
+        if (doc is null) return Loc.F("@{0} I have no game data yet.", asker.Name);
         var age = _time.GetUtcNow() - new DateTimeOffset(File.GetLastWriteTimeUtc(_dynamicPath), TimeSpan.Zero);
         return command.Run(new ChatRequest(asker, arg, _siteUrl, doc.RootElement, age));
     }

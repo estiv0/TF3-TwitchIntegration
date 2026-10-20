@@ -45,11 +45,28 @@ dotnet test
 
 ## Language
 
-The app speaks English or Polish. One setting, the **English / Polski** list at the end of the button row, covers everything: the windows, the chat replies, the in-game notifications and the default reward texts. The first start follows the Windows display language (Polish Windows = Polish, anything else = English); the choice is saved in `%LOCALAPPDATA%\Tf3Bridge\language.txt` (`Loc`). The log stays in English.
+The app speaks English and every language that has a file in `src/Tf3Bridge/Locales/` (now: Polish). One setting, the language list at the end of the button row (**English / Polski**, each language under its own name), covers everything: the windows, the chat replies, the in-game notifications and the default reward texts. The first start follows the Windows display language when there is a file for it, English otherwise; the choice is saved in `%LOCALAPPDATA%\Tf3Bridge\language.txt` as the language code (`Loc`). The log stays in English.
 
-The default titles and descriptions of the channel points rewards exist in both languages (`RewardKinds.DefaultsFor`). After a language switch, the rewards whose title or description is still the default of the other language get the default of the new one and go to Twitch right away; texts the streamer changed stay as they are. Chat commands answer to both their English and Polish names regardless of the setting (see "Chat commands").
+The default titles and descriptions of the channel points rewards are translated like any other text (`RewardKinds.DefaultsFor`). After a language switch, the rewards whose title or description is still the default of another language get the default of the new one and go to Twitch right away; texts the streamer changed stay as they are. Chat commands answer to their English names and to the aliases of every language file regardless of the setting (see "Chat commands").
 
-In the code a text sits next to its translation: `Loc.T("English", "polski")`. Tests run in Polish by default (a `[ModuleInitializer]` in the test project); English tests use `using var _ = Loc.Use(Lang.En);`.
+### How texts work in the code
+
+The code holds only English, which is both the key and the fallback (gettext style):
+
+- `Loc.T("Save")`: a fixed text.
+- `Loc.F("{0} live map: {1}", mention, url)`: a text with values, as a `string.Format` format, so a translation can reorder them. Never pass `$"..."` to `Loc`: the key would change with every value (a test fails on that).
+- `Loc.P(n, "{0} town", "{0} towns")`: a count with the plural form of the language.
+- `Loc.N("TF3: buy a town")`: marks a text that is translated later (`Loc.T(x)` / `Loc.In(language, x)` where it is shown), e.g. tables of names or reward defaults.
+
+Tests run in Polish by default (a `[ModuleInitializer]` in the test project); English tests use `using var _ = Loc.Use("en");`. `LocaleTests` scans the source for the literal keys of `Loc.T` / `Loc.F` / `Loc.P` / `Loc.N` and fails when a locale file misses one of them, has a key the code no longer uses, changes the placeholders (`{0}`, `{months}`, …) or has the wrong number of plural forms. So after adding or changing an English text, add it to every locale file too.
+
+### Adding a language
+
+1. Copy `src/Tf3Bridge/Locales/pl.json` to `<code>.json`, where `<code>` is the two-letter language code (`de.json`, `cs.json`, …; it must be a .NET culture: number formats and the name in the list come from it).
+2. Translate the values, never the keys. Keep the placeholders: `{0}`, `{1}` (may move inside the sentence) and `{months}`, `{percent}`, `{site}`, `{amount}` in reward descriptions; a literal brace in a `Loc.F` text is written `{{` / `}}`. A value left as `""` is not translated yet and shows in English.
+3. Plurals (`"{0} town": [...]`) are arrays with one form per plural category of the language, in the order of the rule in `Loc.Rule`: English-like languages 2 (one, other), Polish, Czech, Slovak, Russian, Ukrainian, Croatian, Serbian 3, Japanese, Chinese, Korean 1. A language with another rule needs a line in `Loc.Rule`.
+4. `_commands`: extra chat command names per command (`"assets": ["!vermogen"]`); every alias works whatever the app language, so avoid names another language already uses. `_arguments`: prefixes of command arguments by their English prefix (`"town": ["stadt"]`, compared without case and diacritics).
+5. Build and run the tests (`dotnet test`). The file is embedded in the exe (`Locales\*.json` in `Tf3Bridge.csproj`), so the language shows up in the list without other changes.
 
 ## Configuration (`src/Tf3Bridge/appsettings.json`, `Bridge` section)
 
@@ -134,7 +151,7 @@ How it works:
 
 ## Chat commands
 
-Our commands start with `!` (no prefix). They only read the last `dynamic.json` and reply in chat as the streamer; they never send anything to the game (`Chat/ChatCommandService.cs`: list of commands and cooldowns, `Chat/ChatAnswers.cs`: the reply texts). Links only when `Twitch:SiteUrl` is set. Object names are matched the same way as in rewards (`TargetResolver`): case- and diacritics-insensitive, first exactly, then by prefix, then by substring; when several match, the reply lists them. Every command answers to its English and its Polish name (and the arguments too: `!free towns` = `!wolne miasta`); the reply is in the app language (see "Language"), with numbers formatted for it ("$833,881" / "$ 833 881").
+Our commands start with `!` (no prefix). They only read the last `dynamic.json` and reply in chat as the streamer; they never send anything to the game (`Chat/ChatCommandService.cs`: list of commands and cooldowns, `Chat/ChatAnswers.cs`: the reply texts). Links only when `Twitch:SiteUrl` is set. Object names are matched the same way as in rewards (`TargetResolver`): case- and diacritics-insensitive, first exactly, then by prefix, then by substring; when several match, the reply lists them. Every command answers to its English name and to the aliases from the locale files, e.g. Polish (and the arguments too: `!free towns` = `!wolne miasta`; see "Adding a language"); the reply is in the app language (see "Language"), with numbers formatted for it ("$833,881" / "$ 833 881").
 
 | Command | Polish name (and other aliases) | Reply | Cooldown (whole chat) |
 |---|---|---|---|
@@ -151,7 +168,7 @@ Our commands start with `!` (no prefix). They only read the last `dynamic.json` 
 | `!best [line\|company]` | `!najlepsza`, `!najlepszy` (`[linia\|firma]`) | the line with the highest 12-month profit or (`company`) the viewer with the highest total profit of their lines | 60 s |
 | `!worst [line\|company]` | `!najgorsza`, `!najgorszy` | as above, lowest profit | 60 s |
 
-- There are two cooldowns, both silent (no reply): one viewer gets at most one reply per 10 s (any command), and the same command with the same argument is repeated in chat at most once per the time in the table. Arguments are compared case- and diacritics-insensitively, so `!town Łódź` and `!town lodz` are the same reply. English and Polish names of a command share it. `!assets` without an argument counts separately for each viewer.
+- There are two cooldowns, both silent (no reply): one viewer gets at most one reply per 10 s (any command), and the same command with the same argument is repeated in chat at most once per the time in the table. Arguments are compared case- and diacritics-insensitively, so `!town Łódź` and `!town lodz` are the same reply. All names of a command share it. `!assets` without an argument counts separately for each viewer.
 - With the Twitch CLI test server the reply only goes to the log (the server has no chat).
 
 **Testing without Twitch (Twitch CLI):**

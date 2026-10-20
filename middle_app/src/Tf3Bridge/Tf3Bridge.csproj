@@ -38,6 +38,11 @@
     <EmbeddedResource Include="$(LuaModDir)content\**\*" LogicalName="mod/content/%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <!-- Translations (Loc): Locales\pl.json -> resource "locales/pl.json"; a new file is a new language. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Locales\*.json" LogicalName="locales/%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="Tf3Bridge.Tests" />
   </ItemGroup>

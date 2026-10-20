@@ -11,24 +11,35 @@ public static class RewardMessages
     {
         var (value, unit) = Math.Abs(amount) switch
         {
-            >= 1_000_000_000 => (amount / 1e9, Loc.T("B", " mld")),
-            >= 1_000_000 => (amount / 1e6, Loc.T("M", " mln")),
-            >= 1_000 => (amount / 1e3, Loc.T("k", " tys.")),
+            >= 1_000_000_000 => (amount / 1e9, Loc.T("B")),
+            >= 1_000_000 => (amount / 1e6, Loc.T("M")),
+            >= 1_000 => (amount / 1e3, Loc.T("k")),
             _ => (amount, ""),
         };
         var number = Math.Round(value, 2).ToString("0.##", Loc.Culture);
-        return Loc.Pl ? number + unit + " $" : "$" + number + unit;
+        return Loc.F("${0}{1}", number, unit);
     }
 
-    private static readonly string[] MonthsGenitive =
-        ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca", "sierpnia", "września", "października", "listopada", "grudnia"];
-
-    private static readonly string[] MonthsEnglish =
-        ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    // {0} = day, {1} = year (a language may need its own word order or grammatical case).
+    private static readonly string[] Months =
+    [
+        Loc.N("{0} January {1}"),
+        Loc.N("{0} February {1}"),
+        Loc.N("{0} March {1}"),
+        Loc.N("{0} April {1}"),
+        Loc.N("{0} May {1}"),
+        Loc.N("{0} June {1}"),
+        Loc.N("{0} July {1}"),
+        Loc.N("{0} August {1}"),
+        Loc.N("{0} September {1}"),
+        Loc.N("{0} October {1}"),
+        Loc.N("{0} November {1}"),
+        Loc.N("{0} December {1}"),
+    ];
 
     /// <summary>"12 May 1922" / "12 maja 1922"</summary>
     public static string Date(GameDate d) =>
-        d.Month is >= 1 and <= 12 ? $"{d.Day} {(Loc.Pl ? MonthsGenitive : MonthsEnglish)[d.Month - 1]} {d.Year}" : $"{d.Day}.{d.Month}.{d.Year}";
+        d.Month is >= 1 and <= 12 ? Loc.F(Months[d.Month - 1], d.Day, d.Year) : $"{d.Day}.{d.Month}.{d.Year}";
 
     /// <param name="login">Viewer to mention (Twitch login).</param>
     /// <param name="target">Object name, or null when the reward was refused before a target was found.</param>
@@ -41,59 +52,33 @@ public static class RewardMessages
     {
         var who = "@" + login.TrimStart('@');
         if (!ok)
-            return Loc.T($"{who} {Label(config.Kind)}: {reason ?? "it didn't work"}. Your points have been refunded.",
-                $"{who} {Label(config.Kind)}: {reason ?? "nie udało się"}. Punkty wróciły do Ciebie.");
+            return Loc.F("{0} {1}: {2}. Your points have been refunded.", who, Label(config.Kind), reason ?? Loc.T("it didn't work"));
 
         var percent = RewardKinds.Percent(config.Kind, config.Factor);
-        if (!Loc.Pl) return Join(English(config, who, target, until, percent, count, total), link);
-        var when = until is { } d ? $"do {Date(d)} (data w grze)" : $"przez {config.Months} mies. gry";
+        var when = until is { } d ? Loc.F("until {0} (in-game date)", Date(d)) : Loc.F("for {0} game months", config.Months);
         var text = config.Kind switch
         {
-            RewardKind.AdoptTown => $"{who} miasto {target} jest teraz Twoje!",
-            RewardKind.BuyIndustry => $"{who} zakład {target} jest teraz Twój!",
-            RewardKind.BoostTown => $"{who} boost miasta {target} (+{percent}%) działa {when}.",
-            RewardKind.BoostIndustry => $"{who} boost przemysłu {target} (+{percent}%) działa {when}.",
-            RewardKind.StopLine => $"{who} linia {target} stoi {when}.",
-            RewardKind.HoldLine => $"{who} pojazdy linii {target} czekają na przystankach {when}.",
-            RewardKind.CreateTown => $"{who} miasto {target} zostało założone i jest Twoje!",
-            RewardKind.CreateIndustry => $"{who} zakład {target} został zbudowany i jest Twój!",
-            RewardKind.StrikeIndustry => $"{who} strajk w zakładzie {target} (-{percent}% produkcji) trwa {when}.",
-            RewardKind.TaxRaid => $"{who} nalot skarbówki na {target} (-{percent}% produkcji) trwa {when}.",
-            RewardKind.PremiumFuel => $"{who} paliwo premium na linii {target} (+{percent}% prędkości) działa {when}.",
-            RewardKind.BadFuel => $"{who} chrzczone paliwo na linii {target} (-{percent}% prędkości) działa {when}.",
-            RewardKind.BrakeSabotage => $"{who} sabotaż hamulców na linii {target}: {Wrecked(count, total)}.",
-            RewardKind.Subsidy => $"{who} dotacja {target} trafiła na konto firmy. Dzięki!",
-            RewardKind.Loan => $"{who} kredyt {target} na {percent}% przyznany: gra spłaca go w ratach przez {config.Months} mies. gry.",
+            RewardKind.AdoptTown => Loc.F("{0} the town {1} is yours now!", who, target),
+            RewardKind.BuyIndustry => Loc.F("{0} the industry {1} is yours now!", who, target),
+            RewardKind.BoostTown => Loc.F("{0} town boost {1} (+{2}%) runs {3}.", who, target, percent, when),
+            RewardKind.BoostIndustry => Loc.F("{0} industry boost {1} (+{2}%) runs {3}.", who, target, percent, when),
+            RewardKind.StopLine => Loc.F("{0} line {1} is stopped {2}.", who, target, when),
+            RewardKind.HoldLine => Loc.F("{0} the vehicles of line {1} wait at the stops {2}.", who, target, when),
+            RewardKind.CreateTown => Loc.F("{0} the town {1} has been founded and it's yours!", who, target),
+            RewardKind.CreateIndustry => Loc.F("{0} the industry {1} has been built and it's yours!", who, target),
+            RewardKind.StrikeIndustry => Loc.F("{0} the strike at {1} (-{2}% production) lasts {3}.", who, target, percent, when),
+            RewardKind.TaxRaid => Loc.F("{0} the tax raid on {1} (-{2}% production) lasts {3}.", who, target, percent, when),
+            RewardKind.PremiumFuel => Loc.F("{0} premium fuel on line {1} (+{2}% speed) runs {3}.", who, target, percent, when),
+            RewardKind.BadFuel => Loc.F("{0} watered-down fuel on line {1} (-{2}% speed) runs {3}.", who, target, percent, when),
+            RewardKind.BrakeSabotage => Loc.F("{0} brake sabotage on line {1}: {2}.", who, target, Wrecked(count, total)),
+            RewardKind.Subsidy => Loc.F("{0} the subsidy of {1} has reached the company's account. Thanks!", who, target),
+            RewardKind.Loan => Loc.F("{0} loan of {1} at {2}% granted: the game repays it in installments over {3} game months.", who, target, percent, config.Months),
             _ => throw new ArgumentOutOfRangeException(nameof(config)),
         };
         return Join(text, link);
     }
 
     private static string Join(string text, string? link) => string.IsNullOrEmpty(link) ? text : $"{text} {link}";
-
-    private static string English(RewardConfig config, string who, string? target, GameDate? until, string percent, int? count, int? total)
-    {
-        var when = until is { } d ? $"until {Date(d)} (in-game date)" : $"for {config.Months} game months";
-        return config.Kind switch
-        {
-            RewardKind.AdoptTown => $"{who} the town {target} is yours now!",
-            RewardKind.BuyIndustry => $"{who} the industry {target} is yours now!",
-            RewardKind.BoostTown => $"{who} town boost {target} (+{percent}%) runs {when}.",
-            RewardKind.BoostIndustry => $"{who} industry boost {target} (+{percent}%) runs {when}.",
-            RewardKind.StopLine => $"{who} line {target} is stopped {when}.",
-            RewardKind.HoldLine => $"{who} the vehicles of line {target} wait at the stops {when}.",
-            RewardKind.CreateTown => $"{who} the town {target} has been founded and it's yours!",
-            RewardKind.CreateIndustry => $"{who} the industry {target} has been built and it's yours!",
-            RewardKind.StrikeIndustry => $"{who} the strike at {target} (-{percent}% production) lasts {when}.",
-            RewardKind.TaxRaid => $"{who} the tax raid on {target} (-{percent}% production) lasts {when}.",
-            RewardKind.PremiumFuel => $"{who} premium fuel on line {target} (+{percent}% speed) runs {when}.",
-            RewardKind.BadFuel => $"{who} watered-down fuel on line {target} (-{percent}% speed) runs {when}.",
-            RewardKind.BrakeSabotage => $"{who} brake sabotage on line {target}: {Wrecked(count, total)}.",
-            RewardKind.Subsidy => $"{who} the subsidy of {target} has reached the company's account. Thanks!",
-            RewardKind.Loan => $"{who} loan of {target} at {percent}% granted: the game repays it in installments over {config.Months} game months.",
-            _ => throw new ArgumentOutOfRangeException(nameof(config)),
-        };
-    }
 
     /// <summary>Title of the in-game notification after a redemption.</summary>
     public static string NotificationTitle(string user, bool test) => (test ? "[TEST] " : "") + "Twitch: " + user;
@@ -105,58 +90,33 @@ public static class RewardMessages
     public static string Notification(RewardConfig config, string user, string target, GameDate? until, int? count = null, int? total = null)
     {
         var percent = RewardKinds.Percent(config.Kind, config.Factor);
-        if (!Loc.Pl) return EnglishNotification(config, user, target, until, percent, count, total);
-        var when = until is { } d ? $"do {Date(d)}" : $"na {config.Months} mies.";
+        var when = until is { } d ? Loc.F("until {0}", Date(d)) : Loc.F("for {0} months", config.Months);
         return config.Kind switch
         {
-            RewardKind.AdoptTown => $"{user} kupił(a) miasto {target}.",
-            RewardKind.BuyIndustry => $"{user} kupił(a) zakład {target}.",
-            RewardKind.BoostTown => $"{user} przyspieszył(a) wzrost miasta {target} o +{percent}% {when}.",
-            RewardKind.BoostIndustry => $"{user} zwiększył(a) produkcję zakładu {target} o +{percent}% {when}.",
-            RewardKind.StopLine => $"{user} zatrzymał(a) linię {target} {when}.",
-            RewardKind.HoldLine => $"{user} kazał(a) pojazdom linii {target} czekać na przystankach {when}.",
-            RewardKind.CreateTown => $"{user} założył(a) miasto {target}.",
-            RewardKind.CreateIndustry => $"{user} zbudował(a) zakład {target}.",
-            RewardKind.StrikeIndustry => $"{user} wywołał(a) strajk w zakładzie {target}: produkcja -{percent}% {when}.",
-            RewardKind.TaxRaid => $"{user} nasłał(a) skarbówkę na {target}: produkcja -{percent}% {when}.",
-            RewardKind.PremiumFuel => $"{user} zatankował(a) paliwo premium na linii {target}: +{percent}% prędkości {when}.",
-            RewardKind.BadFuel => $"{user} ochrzcił(a) paliwo na linii {target}: -{percent}% prędkości {when}.",
-            RewardKind.BrakeSabotage => $"Problemy techniczne na linii {target}: {Wrecked(count, total)} (sabotaż: {user}).",
-            RewardKind.Subsidy => $"{user} przekazał(a) firmie dotację {target}.",
-            RewardKind.Loan => $"{user} udzielił(a) firmie kredytu {target} na {percent}% na {config.Months} mies. (raty w zakładce Kredyty).",
-            _ => throw new ArgumentOutOfRangeException(nameof(config)),
-        };
-    }
-
-    private static string EnglishNotification(RewardConfig config, string user, string target, GameDate? until, string percent, int? count, int? total)
-    {
-        var when = until is { } d ? $"until {Date(d)}" : $"for {config.Months} months";
-        return config.Kind switch
-        {
-            RewardKind.AdoptTown => $"{user} bought the town {target}.",
-            RewardKind.BuyIndustry => $"{user} bought the industry {target}.",
-            RewardKind.BoostTown => $"{user} sped up the growth of {target} by +{percent}% {when}.",
-            RewardKind.BoostIndustry => $"{user} raised the production of {target} by +{percent}% {when}.",
-            RewardKind.StopLine => $"{user} stopped the line {target} {when}.",
-            RewardKind.HoldLine => $"{user} made the vehicles of line {target} wait at the stops {when}.",
-            RewardKind.CreateTown => $"{user} founded the town {target}.",
-            RewardKind.CreateIndustry => $"{user} built the industry {target}.",
-            RewardKind.StrikeIndustry => $"{user} started a strike at {target}: production -{percent}% {when}.",
-            RewardKind.TaxRaid => $"{user} sent the tax office after {target}: production -{percent}% {when}.",
-            RewardKind.PremiumFuel => $"{user} filled up premium fuel on line {target}: +{percent}% speed {when}.",
-            RewardKind.BadFuel => $"{user} watered down the fuel on line {target}: -{percent}% speed {when}.",
-            RewardKind.BrakeSabotage => $"Technical problems on line {target}: {Wrecked(count, total)} (sabotage: {user}).",
-            RewardKind.Subsidy => $"{user} gave the company a subsidy of {target}.",
-            RewardKind.Loan => $"{user} gave the company a loan of {target} at {percent}% for {config.Months} months (installments in the Loans tab).",
+            RewardKind.AdoptTown => Loc.F("{0} bought the town {1}.", user, target),
+            RewardKind.BuyIndustry => Loc.F("{0} bought the industry {1}.", user, target),
+            RewardKind.BoostTown => Loc.F("{0} sped up the growth of {1} by +{2}% {3}.", user, target, percent, when),
+            RewardKind.BoostIndustry => Loc.F("{0} raised the production of {1} by +{2}% {3}.", user, target, percent, when),
+            RewardKind.StopLine => Loc.F("{0} stopped the line {1} {2}.", user, target, when),
+            RewardKind.HoldLine => Loc.F("{0} made the vehicles of line {1} wait at the stops {2}.", user, target, when),
+            RewardKind.CreateTown => Loc.F("{0} founded the town {1}.", user, target),
+            RewardKind.CreateIndustry => Loc.F("{0} built the industry {1}.", user, target),
+            RewardKind.StrikeIndustry => Loc.F("{0} started a strike at {1}: production -{2}% {3}.", user, target, percent, when),
+            RewardKind.TaxRaid => Loc.F("{0} sent the tax office after {1}: production -{2}% {3}.", user, target, percent, when),
+            RewardKind.PremiumFuel => Loc.F("{0} filled up premium fuel on line {1}: +{2}% speed {3}.", user, target, percent, when),
+            RewardKind.BadFuel => Loc.F("{0} watered down the fuel on line {1}: -{2}% speed {3}.", user, target, percent, when),
+            RewardKind.BrakeSabotage => Loc.F("Technical problems on line {0}: {1} (sabotage: {2}).", target, Wrecked(count, total), user),
+            RewardKind.Subsidy => Loc.F("{0} gave the company a subsidy of {1}.", user, target),
+            RewardKind.Loan => Loc.F("{0} gave the company a loan of {1} at {2}% for {3} months (installments in the Loans tab).", user, target, percent, config.Months),
             _ => throw new ArgumentOutOfRangeException(nameof(config)),
         };
     }
 
     /// <summary>"vehicles destroyed: 2 of 5" / "zniszczone pojazdy: 2 z 5" (count from the mod; unknown with an older mod).</summary>
     private static string Wrecked(int? count, int? total) =>
-        count is not { } n ? Loc.T("vehicles were destroyed", "pojazdy zostały zniszczone")
-        : total is { } t ? Loc.T($"vehicles destroyed: {n} of {t}", $"zniszczone pojazdy: {n} z {t}")
-        : Loc.T($"vehicles destroyed: {n}", $"zniszczone pojazdy: {n}");
+        count is not { } n ? Loc.T("vehicles were destroyed")
+        : total is { } t ? Loc.F("vehicles destroyed: {0} of {1}", n, t)
+        : Loc.F("vehicles destroyed: {0}", n);
 
     /// <summary>"https://site/#town=123": the site opens the object from the address (web/js/hash.js).</summary>
     public static string? Link(string siteUrl, RewardKind kind, long entity) =>
@@ -196,41 +156,22 @@ public static class RewardMessages
     public static string SiteHost(string siteUrl) =>
         Uri.TryCreate(siteUrl.Trim(), UriKind.Absolute, out var u) ? u.Host + u.AbsolutePath.TrimEnd('/') : siteUrl.Trim();
 
-    private static string Label(RewardKind kind) => Loc.Pl ? PolishLabel(kind) : kind switch
+    private static string Label(RewardKind kind) => kind switch
     {
-        RewardKind.AdoptTown => "buying a town",
-        RewardKind.BuyIndustry => "buying an industry",
-        RewardKind.BoostTown => "town boost",
-        RewardKind.BoostIndustry => "industry boost",
-        RewardKind.StopLine => "line stop",
-        RewardKind.HoldLine => "line waits at stations",
-        RewardKind.CreateTown => "new town",
-        RewardKind.CreateIndustry => "new industry",
-        RewardKind.StrikeIndustry => "strike",
-        RewardKind.TaxRaid => "tax raid",
-        RewardKind.PremiumFuel => "premium fuel",
-        RewardKind.BadFuel => "watered-down fuel",
-        RewardKind.BrakeSabotage => "brake sabotage",
-        RewardKind.Subsidy => "subsidy",
-        _ => "loan",
-    };
-
-    private static string PolishLabel(RewardKind kind) => kind switch
-    {
-        RewardKind.AdoptTown => "kupno miasta",
-        RewardKind.BuyIndustry => "kupno zakładu",
-        RewardKind.BoostTown => "boost miasta",
-        RewardKind.BoostIndustry => "boost przemysłu",
-        RewardKind.StopLine => "zatrzymanie linii",
-        RewardKind.HoldLine => "linia czeka na stacjach",
-        RewardKind.CreateTown => "nowe miasto",
-        RewardKind.CreateIndustry => "nowy zakład",
-        RewardKind.StrikeIndustry => "strajk",
-        RewardKind.TaxRaid => "nalot skarbówki",
-        RewardKind.PremiumFuel => "paliwo premium",
-        RewardKind.BadFuel => "chrzczone paliwo",
-        RewardKind.BrakeSabotage => "sabotaż hamulców",
-        RewardKind.Subsidy => "dotacja",
-        _ => "kredyt",
+        RewardKind.AdoptTown => Loc.T("buying a town"),
+        RewardKind.BuyIndustry => Loc.T("buying an industry"),
+        RewardKind.BoostTown => Loc.T("town boost"),
+        RewardKind.BoostIndustry => Loc.T("industry boost"),
+        RewardKind.StopLine => Loc.T("line stop"),
+        RewardKind.HoldLine => Loc.T("line waits at stations"),
+        RewardKind.CreateTown => Loc.T("new town"),
+        RewardKind.CreateIndustry => Loc.T("new industry"),
+        RewardKind.StrikeIndustry => Loc.T("strike"),
+        RewardKind.TaxRaid => Loc.T("tax raid"),
+        RewardKind.PremiumFuel => Loc.T("premium fuel"),
+        RewardKind.BadFuel => Loc.T("watered-down fuel"),
+        RewardKind.BrakeSabotage => Loc.T("brake sabotage"),
+        RewardKind.Subsidy => Loc.T("subsidy"),
+        _ => Loc.T("loan"),
     };
 }

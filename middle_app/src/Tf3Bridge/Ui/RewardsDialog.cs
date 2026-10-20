@@ -19,13 +19,11 @@ public sealed class RewardsDialog : Form
     private readonly Label _error = new() { AutoSize = true, ForeColor = Color.Firebrick, MaximumSize = new Size(1060, 0) };
     private readonly CheckBox _chat = new()
     {
-        AutoSize = true, Text = Loc.T("Answer viewers in chat (e.g. \"@viewer town boost Szczecin runs until 12 May 1922\", or why the points came back)",
-            "Odpowiadaj widzom na czacie (np. „@widz boost miasta Szczecin działa do 12 maja 1922”, albo dlaczego punkty wróciły)"),
+        AutoSize = true, Text = Loc.T("Answer viewers in chat (e.g. \"@viewer town boost Szczecin runs until 12 May 1922\", or why the points came back)"),
     };
     private readonly CheckBox _notify = new()
     {
-        AutoSize = true, Text = Loc.T("In-game notification with the Twitch logo after a reward is done (when the points were taken)",
-            "Powiadomienie w grze z logo Twitcha po wykonanej nagrodzie (gdy punkty zostały pobrane)"),
+        AutoSize = true, Text = Loc.T("In-game notification with the Twitch logo after a reward is done (when the points were taken)"),
     };
     private readonly NumericUpDown _notifySeconds = new()
     {
@@ -80,7 +78,7 @@ public sealed class RewardsDialog : Form
         Zones = IndustryZones.Normalize(zones);
         _original = Rewards = rewards;
         ChatMessages = _chat.Checked = chatMessages;
-        Text = Loc.T("Tf3Bridge: channel points rewards", "Tf3Bridge: nagrody za punkty kanału");
+        Text = Loc.T("Tf3Bridge: channel points rewards");
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = MinimizeBox = false;
         ShowInTaskbar = false;
@@ -89,24 +87,24 @@ public sealed class RewardsDialog : Form
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
 
-        var statusLabel = new Label { AutoSize = true, MaximumSize = new Size(1060, 0), ForeColor = SystemColors.GrayText, Text = Loc.T("Status: ", "Stan: ") + status };
+        var statusLabel = new Label { AutoSize = true, MaximumSize = new Size(1060, 0), ForeColor = SystemColors.GrayText, Text = Loc.T("Status: ") + status };
 
-        AddText("title", Loc.T("Title (max 45)", "Tytuł (max 45)"), 170);
-        AddText("prompt", Loc.T("Viewer description (max 200)", "Opis dla widza (max 200)"), 330);
+        AddText("title", Loc.T("Title (max 45)"), 170);
+        AddText("prompt", Loc.T("Viewer description (max 200)"), 330);
         _grid.Columns["prompt"]!.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
-        _grid.Columns.Insert(0, new DataGridViewCheckBoxColumn { Name = "enabled", HeaderText = Loc.T("On", "Wł."), Width = 36 });
-        AddText("cost", Loc.T("Cost", "Koszt"), 65);
+        _grid.Columns.Insert(0, new DataGridViewCheckBoxColumn { Name = "enabled", HeaderText = Loc.T("On"), Width = 36 });
+        AddText("cost", Loc.T("Cost"), 65);
         AddText("cooldown", "Cooldown (s)", 80);
-        AddText("perStream", Loc.T("Limit / stream", "Limit / stream"), 80);
-        AddText("perUser", Loc.T("Limit / viewer", "Limit / widz"), 75);
-        AddText("months", Loc.T("Game months", "Miesiące gry"), 75);
-        AddText("factor", Loc.T("Factor / %", "Mnożnik / %"), 65);
-        AddText("amount", Loc.T("Amount ($)", "Kwota ($)"), 95);
-        _grid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "input", HeaderText = Loc.T("Viewer text", "Tekst od widza"), Width = 80 });
+        AddText("perStream", Loc.T("Limit / stream"), 80);
+        AddText("perUser", Loc.T("Limit / viewer"), 75);
+        AddText("months", Loc.T("Game months"), 75);
+        AddText("factor", Loc.T("Factor / %"), 65);
+        AddText("amount", Loc.T("Amount ($)"), 95);
+        _grid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "input", HeaderText = Loc.T("Viewer text"), Width = 80 });
         // Long headers ("Limit / stream", "Viewer text") wrap instead of being cut off.
         _grid.ColumnHeadersDefaultCellStyle.WrapMode = DataGridViewTriState.True;
         _grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
-        _grid.Columns.Insert(1, new DataGridViewTextBoxColumn { Name = "kind", HeaderText = Loc.T("Action", "Akcja"), Width = 140, ReadOnly = true });
+        _grid.Columns.Insert(1, new DataGridViewTextBoxColumn { Name = "kind", HeaderText = Loc.T("Action"), Width = 140, ReadOnly = true });
 
         foreach (var r in rewards)
         {
@@ -121,10 +119,10 @@ public sealed class RewardsDialog : Form
             if (!RewardKinds.Manual(r.Kind)) Lock(row.Cells["input"]); // the game needs a target name (subsidy and loan: none)
         }
 
-        _zonesGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "industry", HeaderText = Loc.T("Industry", "Zakład"), Width = 170, ReadOnly = true });
+        _zonesGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "industry", HeaderText = Loc.T("Industry"), Width = 170, ReadOnly = true });
         var where = new DataGridViewComboBoxColumn
         {
-            Name = "zone", HeaderText = Loc.T("Where a viewer may build it", "Gdzie widz może go zbudować"), Width = 230, DisplayStyle = DataGridViewComboBoxDisplayStyle.DropDownButton,
+            Name = "zone", HeaderText = Loc.T("Where a viewer may build it"), Width = 230, DisplayStyle = DataGridViewComboBoxDisplayStyle.DropDownButton,
             FlatStyle = FlatStyle.Flat,
         };
         where.Items.AddRange([.. ZoneChoices.Select(ZoneLabel)]);
@@ -138,32 +136,32 @@ public sealed class RewardsDialog : Form
         }
         var zonesTitle = SectionTitle(ZonesTitle);
 
-        var extrasTitle = SectionTitle(Loc.T($"Your \"{ExtraReward.Prefix}…\" rewards enabled with the game", $"Twoje nagrody „{ExtraReward.Prefix}…” włączane razem z grą"));
-        _extrasGrid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "enabled", HeaderText = Loc.T("On", "Wł."), Width = 36 });
-        _extrasGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "title", HeaderText = Loc.T("Title", "Tytuł"), Width = 300, ReadOnly = true });
-        _extrasGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "cost", HeaderText = Loc.T("Cost", "Koszt"), Width = 70, ReadOnly = true });
-        _extrasGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "state", HeaderText = Loc.T("Status", "Stan"), Width = 630, ReadOnly = true });
+        var extrasTitle = SectionTitle(Loc.F("Your \"{0}…\" rewards enabled with the game", ExtraReward.Prefix));
+        _extrasGrid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "enabled", HeaderText = Loc.T("On"), Width = 36 });
+        _extrasGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "title", HeaderText = Loc.T("Title"), Width = 300, ReadOnly = true });
+        _extrasGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "cost", HeaderText = Loc.T("Cost"), Width = 70, ReadOnly = true });
+        _extrasGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "state", HeaderText = Loc.T("Status"), Width = 630, ReadOnly = true });
         foreach (var e in extras)
         {
             var i = _extrasGrid.Rows.Add(e.Enabled, e.Title, e.Cost,
                 e.Switchable
-                    ? Loc.T("Tf3Bridge enables and disables it with the game", "Tf3Bridge włącza i wyłącza ją z grą")
-                    : Loc.T("Twitch does not let Tf3Bridge change it (added by hand in the dashboard)", "Twitch nie pozwala Tf3Bridge jej zmieniać (dodana ręcznie w panelu)"));
+                    ? Loc.T("Tf3Bridge enables and disables it with the game")
+                    : Loc.T("Twitch does not let Tf3Bridge change it (added by hand in the dashboard)"));
             if (!e.Switchable) _extrasGrid.Rows[i].Cells["state"].Style.ForeColor = Color.DarkOrange;
         }
         // The section only matters when the channel has such rewards; an empty one just confuses.
         extrasTitle.Visible = _extrasGrid.Visible = extras.Count > 0;
 
-        var ok = new Button { Text = Loc.T("Save and send to Twitch", "Zapisz i wyślij na Twitcha"), AutoSize = true, MinimumSize = new Size(90, 28) };
-        var cancel = new Button { Text = Loc.T("Cancel", "Anuluj"), DialogResult = DialogResult.Cancel, AutoSize = true, MinimumSize = new Size(90, 28) };
-        var defaults = new Button { Text = Loc.T("Restore defaults", "Przywróć domyślne"), AutoSize = true, MinimumSize = new Size(90, 28) };
-        var help = HelpDialog.Button(this, Loc.T("Channel points rewards: how it works", "Nagrody za punkty kanału: jak to działa"), HelpSections);
+        var ok = new Button { Text = Loc.T("Save and send to Twitch"), AutoSize = true, MinimumSize = new Size(90, 28) };
+        var cancel = new Button { Text = Loc.T("Cancel"), DialogResult = DialogResult.Cancel, AutoSize = true, MinimumSize = new Size(90, 28) };
+        var defaults = new Button { Text = Loc.T("Restore defaults"), AutoSize = true, MinimumSize = new Size(90, 28) };
+        var help = HelpDialog.Button(this, Loc.T("Channel points rewards: how it works"), HelpSections);
         var buttons = HelpDialog.ButtonRow(help, cancel, ok, defaults);
         CancelButton = cancel;
 
         var notifyRow = new FlowLayoutPanel { AutoSize = true, Margin = Padding.Empty, WrapContents = false };
         notifyRow.Controls.AddRange([_notify, _notifySeconds,
-            new Label { AutoSize = true, Text = Loc.T("s on screen (then it stays in the game's notification log)", "s na ekranie (potem zostaje w dzienniku powiadomień gry)"), Margin = new Padding(0, 3, 0, 0) }]);
+            new Label { AutoSize = true, Text = Loc.T("s on screen (then it stays in the game's notification log)"), Margin = new Padding(0, 3, 0, 0) }]);
         _notify.Margin = new Padding(0, 3, 0, 0);
 
         var root = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, Padding = new Padding(14), Dock = DockStyle.Fill };
@@ -201,61 +199,40 @@ public sealed class RewardsDialog : Form
     // Explanations behind the "How does it work?" button (they used to fill the dialog itself).
     private static (string Heading, string Text)[] HelpSections =>
     [
-        (Loc.T("Channel points rewards", "Nagrody za punkty kanału"), Loc.T(
+        (Loc.T("Channel points rewards"), Loc.T(
             "Only these rewards can change the game; the chat is informational only. Tf3Bridge creates them on Twitch itself, "
-            + "enables them while the game sends data and disables them when the game is idle, stopped or Tf3Bridge closes.",
-            "Tylko te nagrody mogą zmieniać grę; czat jest wyłącznie informacyjny. Tf3Bridge sam tworzy je na Twitchu, "
-            + "włącza, gdy gra wysyła dane, i wyłącza, gdy gra stoi, jest zatrzymana albo Tf3Bridge się zamyka.")),
-        (Loc.T("Viewer text and refunds", "Tekst od widza i zwrot punktów"), Loc.T(
+            + "enables them while the game sends data and disables them when the game is idle, stopped or Tf3Bridge closes.")),
+        (Loc.T("Viewer text and refunds"), Loc.T(
             "The viewer types the name of a town, industry or line (for a new town or industry they paste a code from the map on the website). "
-            + "When the target does not exist, is ambiguous, the place is not suitable or the game cannot do the action, the points go back to the viewer.",
-            "Widz wpisuje nazwę miasta, zakładu albo linii (przy nowym mieście i zakładzie wkleja kod z mapy na stronie). "
-            + "Gdy celu nie ma, jest niejednoznaczny, miejsce się nie nadaje albo gra nie wykona akcji, punkty wracają do widza.")),
-        (Loc.T("Viewer description", "Opis dla widza"), Loc.T(
-            "The description can use: {months} (effect duration), {percent} (effect strength), {site} (map address) and {amount} (subsidy or loan amount).",
-            "W opisie można użyć: {months} (czas efektu), {percent} (siła efektu), {site} (adres mapy) i {amount} (kwota dotacji albo kredytu).")),
-        (Loc.T("Sabotage", "Sabotaże"), Loc.T(
-            "Strike, tax raid, watered-down fuel and brake sabotage only work on other viewers' objects. For the tax raid the viewer types the victim's nick.",
-            "Strajk, skarbówka, chrzczone paliwo i sabotaż hamulców działają tylko na obiekty innych widzów. Przy skarbówce widz wpisuje nick ofiary.")),
-        (Loc.T("Factor / %", "Mnożnik / %"), Loc.T(
+            + "When the target does not exist, is ambiguous, the place is not suitable or the game cannot do the action, the points go back to the viewer.")),
+        (Loc.T("Viewer description"), Loc.T(
+            "The description can use: {months} (effect duration), {percent} (effect strength), {site} (map address) and {amount} (subsidy or loan amount).")),
+        (Loc.T("Sabotage"), Loc.T(
+            "Strike, tax raid, watered-down fuel and brake sabotage only work on other viewers' objects. For the tax raid the viewer types the victim's nick.")),
+        (Loc.T("Factor / %"), Loc.T(
             "A factor above 1 is an increase (1.5 = +50%), below 1 a decrease (0.5 = -50%). For brake sabotage it is the largest share of the line's vehicles "
-            + "that disappears (0.5 = up to 50%, always at least 1 vehicle). For the loan this column is the interest rate in % (2 = 2%).",
-            "Mnożnik powyżej 1 to wzrost (1,5 = +50%), poniżej 1 spadek (0,5 = -50%). Przy sabotażu hamulców to największa część pojazdów linii, "
-            + "która zniknie (0,5 = do 50%, zawsze co najmniej 1 pojazd). Przy kredycie ta kolumna to oprocentowanie w % (2 = 2%).")),
-        (Loc.T("Subsidy and loan", "Dotacja i kredyt"), Loc.T(
+            + "that disappears (0.5 = up to 50%, always at least 1 vehicle). For the loan this column is the interest rate in % (2 = 2%).")),
+        (Loc.T("Subsidy and loan"), Loc.T(
             "They give the company the \"Amount\", the viewer types nothing. The loan goes to the Loans tab in the game: the game repays it monthly over the given game months, "
-            + "and TF3 interest is amount × %, spread over the installments. The game allows at most 4 loans at once (including yours).",
-            "Dają firmie „Kwotę”, widz nic nie wpisuje. Kredyt trafia do zakładki Kredyty w grze: gra spłaca go co miesiąc przez podane miesiące gry, "
-            + "a odsetki w TF3 to kwota × %, rozłożone na raty. Gra pozwala mieć najwyżej 4 kredyty naraz (razem z Twoimi).")),
-        (Loc.T("Rewards done by the streamer", "Nagrody wykonywane przez streamera"), Loc.T(
+            + "and TF3 interest is amount × %, spread over the installments. The game allows at most 4 loans at once (including yours).")),
+        (Loc.T("Rewards done by the streamer"), Loc.T(
             "Bomb, line, nature and vehicles do nothing in the game. Tf3Bridge only creates them and enables them with the game; redemptions stay in the Twitch queue, "
-            + "where you do them yourself and accept or refund them. For these you also choose whether the viewer types text.",
-            "Bomba, linia, natura i pojazdy nie robią nic w grze. Tf3Bridge tylko je tworzy i włącza razem z grą, a wykupienia zostają w kolejce Twitcha, "
-            + "gdzie sam je wykonujesz i akceptujesz albo zwracasz. Przy nich wybierasz też, czy widz wpisuje tekst.")),
-        (Loc.T("Limits and time", "Limity i czas"), Loc.T(
-            "Limit 0 = no limit. Effect time is in game months (a month is about 1–1.5 min at 1× speed; while paused the effect waits).",
-            "Limit 0 = bez limitu. Czas efektów jest w miesiącach gry (miesiąc to ok. 1–1,5 min przy prędkości 1×; na pauzie efekt stoi).")),
+            + "where you do them yourself and accept or refund them. For these you also choose whether the viewer types text.")),
+        (Loc.T("Limits and time"), Loc.T(
+            "Limit 0 = no limit. Effect time is in game months (a month is about 1–1.5 min at 1× speed; while paused the effect waits).")),
         (ZonesTitle, Loc.T(
             "Oil rigs, fisheries and dredgers stand only on water anyway, the rest only on land. Tf3Bridge computes the regions from the game terrain within about 1 km: "
             + "mountains are the most rugged land of the map (at most 15%), lowland is almost flat terrain. When the map has no such region "
             + "(e.g. a flat map without mountains), the restriction does not apply. On the website forbidden terrain is red, and a code from such a place is rejected "
-            + "(points go back). How much of the map each region takes, Tf3Bridge writes to the log after the terrain export.",
-            "Platformy, łowiska i pogłębiarki i tak stają tylko na wodzie, reszta tylko na lądzie. Regiony Tf3Bridge liczy z terenu gry w promieniu ok. 1 km: "
-            + "góry to najbardziej pofałdowany ląd mapy (najwyżej 15%), nizina to prawie płaski teren. Gdy danego regionu na mapie nie ma "
-            + "(np. płaska mapa bez gór), ograniczenie nie działa. Na stronie zakazany teren jest czerwony, a kod z takiego miejsca jest odrzucany "
-            + "(punkty wracają). Ile mapy zajmuje każdy region, Tf3Bridge pisze w logu po eksporcie terenu.")),
-        (Loc.T($"Your \"{ExtraReward.Prefix}…\" rewards", $"Twoje nagrody „{ExtraReward.Prefix}…”"), Loc.T(
-            $"Rewards whose title starts with \"{ExtraReward.Prefix}\" and that are none of the Tf3Bridge actions. They do nothing in the game, and redemptions stay "
+            + "(points go back). How much of the map each region takes, Tf3Bridge writes to the log after the terrain export.")),
+        (Loc.F("Your \"{0}…\" rewards", ExtraReward.Prefix), Loc.F(
+            "Rewards whose title starts with \"{0}\" and that are none of the Tf3Bridge actions. They do nothing in the game, and redemptions stay "
             + "in the Twitch queue for you. Tf3Bridge enables the checked ones with the game and disables them when the game sends no data or Tf3Bridge closes. "
             + "The list is read when connecting to Twitch (Tf3Bridge start) and after saving this window. "
-            + "Tf3Bridge cannot change a reward added by hand in the Twitch dashboard (Twitch does not allow it).",
-            $"Nagrody z tytułem zaczynającym się od „{ExtraReward.Prefix}”, które nie są żadną z akcji Tf3Bridge. Nie robią nic w grze, a wykupienia zostają "
-            + "w kolejce Twitcha dla Ciebie. Zaznaczone Tf3Bridge włącza razem z grą i wyłącza, gdy gra nie wysyła danych albo Tf3Bridge się zamyka. "
-            + "Lista jest odczytywana przy połączeniu z Twitchem (start Tf3Bridge) i po zapisaniu tego okna. "
-            + "Nagrody dodanej ręcznie w panelu Twitcha Tf3Bridge nie może zmieniać (Twitch na to nie pozwala).")),
+            + "Tf3Bridge cannot change a reward added by hand in the Twitch dashboard (Twitch does not allow it).", ExtraReward.Prefix)),
     ];
 
-    private static string ZonesTitle => Loc.T("Where viewers may build new industries", "Gdzie widzowie mogą budować nowe zakłady");
+    private static string ZonesTitle => Loc.T("Where viewers may build new industries");
 
     private void AddText(string name, string header, int width) =>
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = name, HeaderText = header, Width = width, SortMode = DataGridViewColumnSortMode.NotSortable });
@@ -280,20 +257,20 @@ public sealed class RewardsDialog : Form
                 int.TryParse(Text(col), NumberStyles.Integer, CultureInfo.CurrentCulture, out value) && value >= min;
 
             var title = Text("title");
-            if (title.Length is 0 or > RewardConfig.MaxTitle) { error = $"{KindLabel(kind)}: " + Loc.T($"the title must have 1–{RewardConfig.MaxTitle} characters.", $"tytuł musi mieć 1–{RewardConfig.MaxTitle} znaków."); return false; }
+            if (title.Length is 0 or > RewardConfig.MaxTitle) { error = $"{KindLabel(kind)}: " + Loc.F("the title must have 1–{0} characters.", RewardConfig.MaxTitle); return false; }
             var prompt = Text("prompt");
-            if (prompt.Length > RewardConfig.MaxPrompt) { error = $"{KindLabel(kind)}: " + Loc.T($"the description may have at most {RewardConfig.MaxPrompt} characters.", $"opis może mieć najwyżej {RewardConfig.MaxPrompt} znaków."); return false; }
+            if (prompt.Length > RewardConfig.MaxPrompt) { error = $"{KindLabel(kind)}: " + Loc.F("the description may have at most {0} characters.", RewardConfig.MaxPrompt); return false; }
             if (!Int("cost", 1, out var cost) || !Int("cooldown", 0, out var cooldown)
                 || !Int("perStream", 0, out var perStream) || !Int("perUser", 0, out var perUser))
             {
-                error = $"{KindLabel(kind)}: " + Loc.T("cost ≥ 1, cooldown and limits ≥ 0 (whole numbers).", "koszt ≥ 1, cooldown i limity ≥ 0 (liczby całkowite).");
+                error = $"{KindLabel(kind)}: " + Loc.T("cost ≥ 1, cooldown and limits ≥ 0 (whole numbers).");
                 return false;
             }
             var months = old.Months;
             var monthsRange = RewardKinds.MonthsRange(kind);
             if (RewardKinds.HasMonths(kind) && (!int.TryParse(Text("months"), out months) || months < monthsRange.Min || months > monthsRange.Max))
             {
-                error = $"{KindLabel(kind)}: " + Loc.T($"game months from {monthsRange.Min} to {monthsRange.Max}.", $"miesiące gry od {monthsRange.Min} do {monthsRange.Max}.");
+                error = $"{KindLabel(kind)}: " + Loc.F("game months from {0} to {1}.", monthsRange.Min, monthsRange.Max);
                 return false;
             }
             var factor = old.Factor;
@@ -302,21 +279,18 @@ public sealed class RewardsDialog : Form
                 || factor < range.Min || factor > range.Max))
             {
                 error = kind == RewardKind.Loan
-                    ? string.Create(CultureInfo.CurrentCulture, $"{KindLabel(kind)}: ") + Loc.T(
-                        string.Create(CultureInfo.CurrentCulture, $"interest from {range.Min} to {range.Max}% (e.g. 2 = 2%)."),
-                        string.Create(CultureInfo.CurrentCulture, $"oprocentowanie od {range.Min} do {range.Max}% (np. 2 = 2%)."))
-                    : $"{KindLabel(kind)}: " + Loc.T(
-                        string.Create(CultureInfo.CurrentCulture, $"factor from {range.Min} to {range.Max} (e.g. {FactorExample(kind, range)})."),
-                        string.Create(CultureInfo.CurrentCulture, $"mnożnik od {range.Min} do {range.Max} (np. {FactorExample(kind, range)})."));
+                    ? string.Create(CultureInfo.CurrentCulture, $"{KindLabel(kind)}: ") + Loc.F(
+                        "interest from {0} to {1}% (e.g. 2 = 2%).", range.Min, range.Max)
+                    : $"{KindLabel(kind)}: " + Loc.F(
+                        "factor from {0} to {1} (e.g. {2}).", range.Min, range.Max, FactorExample(kind, range));
                 return false;
             }
             var amount = old.Amount;
             if (RewardKinds.HasAmount(kind) && (!TryParseAmount(Text("amount"), out amount)
                 || amount < RewardConfig.AmountRange.Min || amount > RewardConfig.AmountRange.Max))
             {
-                error = $"{KindLabel(kind)}: " + Loc.T(
-                    string.Create(CultureInfo.CurrentCulture, $"amount from {RewardConfig.AmountRange.Min:N0} to {RewardConfig.AmountRange.Max:N0} $ (a whole number, e.g. 10,000,000)."),
-                    string.Create(CultureInfo.CurrentCulture, $"kwota od {RewardConfig.AmountRange.Min:N0} do {RewardConfig.AmountRange.Max:N0} $ (liczba całkowita, np. 10 000 000)."));
+                error = $"{KindLabel(kind)}: " + Loc.F(
+                    "amount from {0:N0} to {1:N0} $ (a whole number, e.g. 10,000,000).", RewardConfig.AmountRange.Min, RewardConfig.AmountRange.Max);
                 return false;
             }
             list.Add(new RewardConfig(kind, row.Cells["enabled"].Value is true, title, prompt, cost, cooldown, perStream, perUser, months, factor)
@@ -329,8 +303,8 @@ public sealed class RewardsDialog : Form
     }
 
     private static string FactorExample(RewardKind kind, (double Min, double Max) range) =>
-        kind == RewardKind.BrakeSabotage ? Loc.T("0.5 = up to 50% of vehicles", "0,5 = do 50% pojazdów")
-        : range.Max <= 1 ? Loc.T("0.5 = -50%", "0,5 = -50%") : Loc.T("1.5 = +50%", "1,5 = +50%");
+        kind == RewardKind.BrakeSabotage ? Loc.T("0.5 = up to 50% of vehicles")
+        : range.Max <= 1 ? Loc.T("0.5 = -50%") : Loc.T("1.5 = +50%");
 
     /// <summary>"10 000 000", "10.000.000" or "10000000": separators of thousands do not matter.</summary>
     internal static bool TryParseAmount(string text, out long amount)
@@ -360,34 +334,34 @@ public sealed class RewardsDialog : Form
 
     private static string ZoneLabel(IndustryZone zone) => zone switch
     {
-        IndustryZone.Mountains => Loc.T("only in the mountains", "tylko w górach"),
-        IndustryZone.NearWater => Loc.T("only near water (up to 1 km)", "tylko przy wodzie (do 1 km)"),
-        IndustryZone.Lowland => Loc.T("only on flat lowland", "tylko na płaskiej nizinie"),
-        IndustryZone.Inland => Loc.T("only away from water (over 1 km)", "tylko z dala od wody (ponad 1 km)"),
-        _ => Loc.T("anywhere", "wszędzie"),
+        IndustryZone.Mountains => Loc.T("only in the mountains"),
+        IndustryZone.NearWater => Loc.T("only near water (up to 1 km)"),
+        IndustryZone.Lowland => Loc.T("only on flat lowland"),
+        IndustryZone.Inland => Loc.T("only away from water (over 1 km)"),
+        _ => Loc.T("anywhere"),
     };
 
     public static string KindLabel(RewardKind kind) => kind switch
     {
-        RewardKind.AdoptTown => Loc.T("Buy a town", "Kupno miasta"),
-        RewardKind.BuyIndustry => Loc.T("Buy an industry", "Kupno zakładu"),
-        RewardKind.BoostTown => Loc.T("Town boost", "Boost miasta"),
-        RewardKind.BoostIndustry => Loc.T("Industry boost", "Boost przemysłu"),
-        RewardKind.StopLine => Loc.T("Stop a line (now)", "Stop linii (od razu)"),
-        RewardKind.HoldLine => Loc.T("Line waits at stations", "Linia czeka na stacjach"),
-        RewardKind.CreateTown => Loc.T("New town (map code)", "Nowe miasto (kod z mapy)"),
-        RewardKind.CreateIndustry => Loc.T("New industry (map code)", "Nowy zakład (kod z mapy)"),
-        RewardKind.StrikeIndustry => Loc.T("Strike at an industry", "Strajk w zakładzie"),
-        RewardKind.TaxRaid => Loc.T("Tax raid (nick)", "Nalot skarbówki (nick)"),
-        RewardKind.PremiumFuel => Loc.T("Premium fuel", "Paliwo premium"),
-        RewardKind.BadFuel => Loc.T("Watered-down fuel", "Chrzczone paliwo"),
-        RewardKind.BrakeSabotage => Loc.T("Brake sabotage", "Sabotaż hamulców"),
-        RewardKind.Subsidy => Loc.T("Company subsidy", "Dotacja dla firmy"),
-        RewardKind.Loan => Loc.T("Company loan", "Kredyt dla firmy"),
-        RewardKind.Bomb => Loc.T("Bomb (streamer)", "Bomba (streamer)"),
-        RewardKind.Line => Loc.T("Line (streamer)", "Linia (streamer)"),
-        RewardKind.Nature => Loc.T("Nature (streamer)", "Natura (streamer)"),
-        RewardKind.RoadVehicle => Loc.T("Road vehicle (streamer)", "Pojazd drogowy (streamer)"),
-        _ => Loc.T("Special vehicle (streamer)", "Pojazd specjalny (streamer)"),
+        RewardKind.AdoptTown => Loc.T("Buy a town"),
+        RewardKind.BuyIndustry => Loc.T("Buy an industry"),
+        RewardKind.BoostTown => Loc.T("Town boost"),
+        RewardKind.BoostIndustry => Loc.T("Industry boost"),
+        RewardKind.StopLine => Loc.T("Stop a line (now)"),
+        RewardKind.HoldLine => Loc.T("Line waits at stations"),
+        RewardKind.CreateTown => Loc.T("New town (map code)"),
+        RewardKind.CreateIndustry => Loc.T("New industry (map code)"),
+        RewardKind.StrikeIndustry => Loc.T("Strike at an industry"),
+        RewardKind.TaxRaid => Loc.T("Tax raid (nick)"),
+        RewardKind.PremiumFuel => Loc.T("Premium fuel"),
+        RewardKind.BadFuel => Loc.T("Watered-down fuel"),
+        RewardKind.BrakeSabotage => Loc.T("Brake sabotage"),
+        RewardKind.Subsidy => Loc.T("Company subsidy"),
+        RewardKind.Loan => Loc.T("Company loan"),
+        RewardKind.Bomb => Loc.T("Bomb (streamer)"),
+        RewardKind.Line => Loc.T("Line (streamer)"),
+        RewardKind.Nature => Loc.T("Nature (streamer)"),
+        RewardKind.RoadVehicle => Loc.T("Road vehicle (streamer)"),
+        _ => Loc.T("Special vehicle (streamer)"),
     };
 }

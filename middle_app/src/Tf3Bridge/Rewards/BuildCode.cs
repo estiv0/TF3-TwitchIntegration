@@ -66,36 +66,36 @@ public static partial class BuildCode
         BuildTerrain? terrain = null, IReadOnlyDictionary<string, IndustryZone>? zones = null)
     {
         var m = Code().Match(input);
-        if (!m.Success) return Error(Loc.T("that isn't a code from the map (copy it from the website: the 🏗 button)", "to nie jest kod z mapy (skopiuj go ze strony: przycisk 🏗)"));
+        if (!m.Success) return Error(Loc.T("that isn't a code from the map (copy it from the website: the 🏗 button)"));
         var x = double.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
         var y = double.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture);
         var type = m.Groups[3].Success ? m.Groups[3].Value : null;
-        if (industry && type is null) return Error(Loc.T("that's a town code, but this reward builds an industry", "to kod miasta, a nagroda buduje zakład"));
-        if (!industry && type is not null) return Error(Loc.T("that's an industry code, but this reward founds a town", "to kod zakładu, a nagroda zakłada miasto"));
+        if (industry && type is null) return Error(Loc.T("that's a town code, but this reward builds an industry"));
+        if (!industry && type is not null) return Error(Loc.T("that's an industry code, but this reward founds a town"));
 
         var name = Spaces().Replace(OwnerName.Clean(m.Groups[4].Value).Replace("|", ""), " ").Trim();
-        if (name.Length < MinName) return Error(Loc.T("give a name after the code", "podaj nazwę po kodzie"));
-        if (name.Length > MaxName) return Error(Loc.T($"the name is too long (max {MaxName} characters)", $"nazwa jest za długa (max {MaxName} znaków)"));
+        if (name.Length < MinName) return Error(Loc.T("give a name after the code"));
+        if (name.Length > MaxName) return Error(Loc.F("the name is too long (max {0} characters)", MaxName));
 
         if (bounds is { } b && (x < b.MinX + MapMargin || x > b.MaxX - MapMargin || y < b.MinY + MapMargin || y > b.MaxY - MapMargin))
-            return Error(Loc.T("that spot is outside the map or right at its edge", "to miejsce jest poza mapą albo przy samej krawędzi"));
+            return Error(Loc.T("that spot is outside the map or right at its edge"));
         if (!industry && terrain?.Sites.At(x, y) is { } site && TownSites.TownProblem(site) is { } ground) return Error(ground);
 
         string? file = null;
         if (type is not null)
         {
             file = objects.FirstOrDefault(o => o.Kind == GameObjectKind.Industry && string.Equals(IndustryType(o.File), type, StringComparison.OrdinalIgnoreCase))?.File;
-            if (file is null) return Error(Loc.T($"unknown industry type \"{type}\" (there are none on this map)", $"nieznany rodzaj zakładu „{type}” (na tej mapie takich nie ma)"));
+            if (file is null) return Error(Loc.F("unknown industry type \"{0}\" (there are none on this map)", type));
             var kind = type.ToLowerInvariant();
             if (terrain is not null && (zones ?? IndustryZones.Defaults).TryGetValue(kind, out var zone) && !terrain.Zones.Allows(zone, x, y))
-                return Error(Loc.T($"{IndustryZones.Name(kind)}: this industry type can only be built {IndustryZones.Label(zone)} (forbidden ground is red on the map)",
-                    $"{IndustryZones.Name(kind)}: ten rodzaj zakładu można budować tylko {IndustryZones.Label(zone)} (na mapie zakazany teren jest czerwony)"));
+                return Error(Loc.F("{0}: this industry type can only be built {1} (forbidden ground is red on the map)", IndustryZones.Name(kind), IndustryZones.Label(zone)));
         }
 
         var key = TargetResolver.Normalize(name);
         var same = objects.FirstOrDefault(o => o.Kind == (industry ? GameObjectKind.Industry : GameObjectKind.Town) && TargetResolver.Normalize(o.Name) == key);
         if (same is not null)
-            return Error(Loc.T($"{(industry ? "an industry" : "a town")} named {same.Name} already exists", $"{(industry ? "zakład" : "miasto")} o nazwie {same.Name} już jest"));
+            return Error(industry ? Loc.F("an industry named {0} already exists", same.Name)
+                : Loc.F("a town named {0} already exists", same.Name));
 
         var (fromTown, fromIndustry) = industry ? (IndustryFromTown, IndustryFromIndustry) : (TownFromTown, TownFromIndustry);
         if (TooClose(objects, GameObjectKind.Town, x, y, fromTown) is { } town) return Error(town);
@@ -110,11 +110,9 @@ public static partial class BuildCode
             .DefaultIfEmpty() // MinBy throws on an empty sequence of tuples (e.g. a map without industries)
             .MinBy(o => o.Dist);
         if (nearest.Object is null || nearest.Dist >= min) return null;
-        return Loc.Pl
-            ? string.Create(CultureInfo.InvariantCulture,
-                $"za blisko {(kind == GameObjectKind.Town ? "miasta" : "zakładu")} {nearest.Object.Name} ({nearest.Dist:0} m, a trzeba co najmniej {min:0} m)")
-            : string.Create(CultureInfo.InvariantCulture,
-                $"too close to the {(kind == GameObjectKind.Town ? "town" : "industry")} {nearest.Object.Name} ({nearest.Dist:0} m, at least {min:0} m needed)");
+        return kind == GameObjectKind.Town
+            ? Loc.F("too close to the town {0} ({1:0} m, at least {2:0} m needed)", nearest.Object.Name, nearest.Dist, min)
+            : Loc.F("too close to the industry {0} ({1:0} m, at least {2:0} m needed)", nearest.Object.Name, nearest.Dist, min);
     }
 
     private static Result Error(string why) => new(null, why);

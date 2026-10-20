@@ -9,12 +9,12 @@ namespace Tf3Bridge.Rewards;
 /// <summary><see cref="Warning"/>: active, but Twitch does not let Tf3Bridge switch some TF3 rewards.</summary>
 public enum RewardState { Off, WaitingForLogin, NotAffiliate, Ok, Warning, Inactive, Error }
 
-/// <summary>A status with its text in both languages: <see cref="Message"/> follows a language switch.</summary>
-public sealed record RewardStatus(RewardState State, string En, string Pl)
+/// <summary>A status whose <see cref="Message"/> is translated when shown, so it follows a language switch.</summary>
+public sealed record RewardStatus(RewardState State, Func<string> Text)
 {
-    public RewardStatus(RewardState state, string message) : this(state, message, message) { }
+    public RewardStatus(RewardState state, string message) : this(state, () => message) { }
 
-    public string Message => Loc.T(En, Pl);
+    public string Message => Text();
 }
 
 /// <summary>
@@ -59,7 +59,7 @@ public sealed class RewardService
     private readonly Lock _gate = new();
     private readonly Dictionary<string, Pending> _pending = []; // command id -> redemption
     private RewardSettings _settings;
-    private volatile RewardStatus _status = new(RewardState.Off, "off", "wyłączone");
+    private volatile RewardStatus _status = new(RewardState.Off, () => Loc.T("off"));
     private string? _syncedFor;      // the account the rewards are synced for
     private bool? _active;           // the enabled state last set on Twitch
     private IReadOnlyList<string> _locked = []; // TF3 rewards Twitch won't let Tf3Bridge change
@@ -142,9 +142,9 @@ public sealed class RewardService
 
     /// <summary>Null when rewards may be on: the bridge runs and this run got game data in the last <see cref="GameIdleAfter"/>.</summary>
     internal static string? WhyInactive(bool bridgeRunning, DateTime? lastDynamicUtc, DateTime nowUtc) =>
-        !bridgeRunning ? Loc.T("the bridge is stopped", "most jest zatrzymany")
-        : lastDynamicUtc is not { } last ? Loc.T("no game data (load a save)", "brak danych z gry (wczytaj zapis)")
-        : nowUtc - last >= GameIdleAfter ? Loc.T("the game hasn't sent data for 2 min", "gra nie wysyła danych od 2 min")
+        !bridgeRunning ? Loc.T("the bridge is stopped")
+        : lastDynamicUtc is not { } last ? Loc.T("no game data (load a save)")
+        : nowUtc - last >= GameIdleAfter ? Loc.T("the game hasn't sent data for 2 min")
         : null;
 
     internal async Task TickAsync(CancellationToken ct)
@@ -182,19 +182,18 @@ public sealed class RewardService
     {
         if (_mock)
         {
-            _status = new(RewardState.Ok, "test mode (Twitch CLI): no changes on Twitch", "tryb testowy (Twitch CLI): bez zmian na Twitchu");
+            _status = new(RewardState.Ok, () => Loc.T("test mode (Twitch CLI): no changes on Twitch"));
             return;
         }
         if (_session.UserId is not { } userId)
         {
-            _status = new(RewardState.WaitingForLogin, "waiting for login", "czeka na zalogowanie");
+            _status = new(RewardState.WaitingForLogin, () => Loc.T("waiting for login"));
             _syncedFor = null;
             return;
         }
         if (!_session.CanUseChannelPoints)
         {
-            _status = new(RewardState.NotAffiliate, "channel without Affiliate/Partner: rewards off (\"Simulate reward\" still works)",
-                "kanał bez Affiliate/Partner: nagrody wyłączone (zostaje „Symuluj nagrodę”)");
+            _status = new(RewardState.NotAffiliate, () => Loc.T("channel without Affiliate/Partner: rewards off (\"Simulate reward\" still works)"));
             return;
         }
         try
@@ -217,14 +216,13 @@ public sealed class RewardService
             var s = Settings;
             var enabled = s.Rewards.Count(r => r.Enabled);
             var extras = s.Extras.Count(e => e.Switchable && e.Enabled);
-            var of = Loc.T("of", "z");
+            var of = Loc.T("of");
             var counts = extras > 0 ? $"{enabled} {of} {s.Rewards.Count} + {extras} TF3" : $"{enabled} {of} {s.Rewards.Count}";
             var locked = _locked.Count == 0 ? ""
-                : Loc.T($"; Twitch won't let Tf3Bridge switch: {string.Join(", ", _locked)} (added by hand in the dashboard)",
-                    $"; Twitch nie pozwala Tf3Bridge włączać i wyłączać: {string.Join(", ", _locked)} (dodane ręcznie w panelu)");
-            _status = !active ? new(RewardState.Inactive, $"off on Twitch, because {why} ({counts}){locked}", $"wyłączone na Twitchu, bo {why} ({counts}){locked}")
-                : locked.Length > 0 ? new(RewardState.Warning, $"active: {counts}{locked}", $"aktywne: {counts}{locked}")
-                : new(RewardState.Ok, $"active: {counts}", $"aktywne: {counts}");
+                : Loc.F("; Twitch won't let Tf3Bridge switch: {0} (added by hand in the dashboard)", string.Join(", ", _locked));
+            _status = !active ? new(RewardState.Inactive, () => Loc.F("off on Twitch, because {0} ({1}){2}", why, counts, locked))
+                : locked.Length > 0 ? new(RewardState.Warning, () => Loc.F("active: {0}{1}", counts, locked))
+                : new(RewardState.Ok, () => Loc.F("active: {0}", counts));
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
@@ -262,7 +260,7 @@ public sealed class RewardService
         // Bought just before the rewards were disabled or waiting since the previous run: the game wouldn't carry it out anyway.
         if (!_mock && _whyInactive() is { } why)
         {
-            Refuse(r, kind.Value, Loc.T("the game isn't running: ", "gra nie działa: ") + why);
+            Refuse(r, kind.Value, Loc.T("the game isn't running: ") + why);
             return Task.CompletedTask;
         }
         Process(kind.Value, r.UserInput, r.UserName.Length > 0 ? r.UserName : r.UserLogin,
@@ -293,11 +291,11 @@ public sealed class RewardService
             return o;
         }
 
-        if (RewardKinds.Manual(kind)) return Reject(Loc.T("the streamer carries out this reward, not the game", "tę nagrodę wykonuje streamer, nie gra"));
-        if (!config.Enabled) return Reject(Loc.T("the reward is turned off", "nagroda jest wyłączona"));
-        if (!_queue.IsAvailable) return Reject(Loc.T("no game folder", "brak folderu gry"));
+        if (RewardKinds.Manual(kind)) return Reject(Loc.T("the streamer carries out this reward, not the game"));
+        if (!config.Enabled) return Reject(Loc.T("the reward is turned off"));
+        if (!_queue.IsAvailable) return Reject(Loc.T("no game folder"));
         var owner = OwnerName.Clean(user).Replace("|", "");
-        if (owner.Length == 0) return Reject(Loc.T("empty viewer name", "pusta nazwa widza"));
+        if (owner.Length == 0) return Reject(Loc.T("empty viewer name"));
 
         var objects = GameObjects.Load(_dynamicPath);
         var created = redeemedAt > DateTimeOffset.UtcNow ? DateTimeOffset.UtcNow : redeemedAt;
@@ -314,7 +312,7 @@ public sealed class RewardService
         }
         else if (RewardKinds.Creates(kind))
         {
-            if (objects.Count == 0) return Reject(Loc.T("no game data (is TF3 running?)", "brak danych z gry (czy TF3 działa?)"));
+            if (objects.Count == 0) return Reject(Loc.T("no game data (is TF3 running?)"));
             var parsed = BuildCode.Parse(input, kind == RewardKind.CreateIndustry, objects, MapBounds.Load(_terrainPath), _terrain(), Settings.Zones);
             if (parsed.Place is not { } place) return Reject(parsed.Error!);
             command = place.File is { } file
@@ -328,7 +326,7 @@ public sealed class RewardService
             if (victim.Error is { } error) return Reject(error);
             command = ModCommand.Effect(RewardKinds.Effect(kind)!, victim.Industries[0], config.Months, config.Factor,
                 CommandSource.ChannelPoints, owner, created, victim.Industries, victim.Key);
-            (targetName, link) = (Loc.T($"the industries of viewer {victim.Name} ({victim.Industries.Count})", $"zakłady widza {victim.Name} ({victim.Industries.Count})"),
+            (targetName, link) = (Loc.F("the industries of viewer {0} ({1})", victim.Name, victim.Industries.Count),
                 RewardMessages.OwnerLink(_siteUrl, victim.Key));
         }
         else
@@ -336,12 +334,12 @@ public sealed class RewardService
             var resolved = TargetResolver.Resolve(objects, RewardKinds.Target(kind), input);
             if (resolved.Target is not { } target) return Reject(resolved.Error!);
             if (RewardKinds.Buys(kind) && target.Owner is { } current)
-                return Reject(Loc.T($"{target.Name} already has an owner ({current})", $"{target.Name} ma już właściciela ({current})"));
+                return Reject(Loc.F("{0} already has an owner ({1})", target.Name, current));
             if (RewardKinds.Sabotage(kind))
             {
                 if (target.Owner is not { } victim)
-                    return Reject(Loc.T($"{target.Name} has no owner (only other viewers' objects can be sabotaged)", $"{target.Name} nie ma właściciela (sabotować można tylko obiekty innych widzów)"));
-                if (OwnerIndex.Key(victim) == OwnerIndex.Key(owner)) return Reject(Loc.T($"{target.Name} belongs to you", $"{target.Name} należy do Ciebie"));
+                    return Reject(Loc.F("{0} has no owner (only other viewers' objects can be sabotaged)", target.Name));
+                if (OwnerIndex.Key(victim) == OwnerIndex.Key(owner)) return Reject(Loc.F("{0} belongs to you", target.Name));
             }
             command = kind == RewardKind.BrakeSabotage
                 ? ModCommand.Wreck(target.Entity, config.Factor, CommandSource.ChannelPoints, owner, created)
@@ -366,14 +364,14 @@ public sealed class RewardService
     private static VictimResult Victim(List<GameObject> objects, string input, string buyer)
     {
         var query = TargetResolver.Normalize(input.Trim().TrimStart('@'));
-        if (query.Length == 0) return new("", "", [], Loc.T("no viewer nick given", "nie podano nicku widza"));
+        if (query.Length == 0) return new("", "", [], Loc.T("no viewer nick given"));
         var owned = objects.Where(o => o.Owner is { } w && TargetResolver.Normalize(w) == query).ToList();
-        if (owned.Count == 0) return new("", "", [], Loc.T($"viewer \"{input.Trim()}\" doesn't own anything in the game", $"widz „{input.Trim()}” nie ma nic w grze"));
+        if (owned.Count == 0) return new("", "", [], Loc.F("viewer \"{0}\" doesn't own anything in the game", input.Trim()));
         var name = owned.GroupBy(o => o.Owner!).MaxBy(g => g.Count())!.Key;
         var key = OwnerIndex.Key(name);
-        if (key == OwnerIndex.Key(buyer)) return new(key, name, [], Loc.T("you can't send the tax office after yourself", "nie możesz nasłać skarbówki na siebie"));
+        if (key == OwnerIndex.Key(buyer)) return new(key, name, [], Loc.T("you can't send the tax office after yourself"));
         var industries = owned.Where(o => o.Kind == GameObjectKind.Industry).Select(o => o.Entity).Distinct().ToList();
-        return industries.Count == 0 ? new(key, name, [], Loc.T($"{name} has no industries", $"{name} nie ma zakładów")) : new(key, name, industries, null);
+        return industries.Count == 0 ? new(key, name, [], Loc.F("{0} has no industries", name)) : new(key, name, industries, null);
     }
 
     private void OnCommandCompleted(ModCommand command, ModCommandResult result)
@@ -390,8 +388,8 @@ public sealed class RewardService
         }
         var reason = result.Ok ? null : $"{p.Target}: {Explain(result)}";
         var message = result.Ok
-            ? Loc.T("done: ", "wykonano: ") + p.Target
-                + (result.Until is { } u ? Loc.T(", until ", ", do ") + RewardMessages.Date(u) : "")
+            ? Loc.T("done: ") + p.Target
+                + (result.Until is { } u ? Loc.T(", until ") + RewardMessages.Date(u) : "")
             : reason!;
         // New town / industry: a link to the object by its game id; a pin at the building spot only when the mod didn't give it.
         var link = result.Entity is { } built && RewardKinds.Creates(p.Kind) ? RewardMessages.Link(_siteUrl, p.Kind, built) : p.Link;
@@ -449,25 +447,25 @@ public sealed class RewardService
 
     private static string Explain(ModCommandResult r) => r.Status switch
     {
-        "expired" => Loc.T("the game didn't carry out the command in time", "gra nie wykonała komendy na czas"),
+        "expired" => Loc.T("the game didn't carry out the command in time"),
         // The game keeps the scripts loaded at startup: a new mod file only works after restarting TF3.
         _ when r.Error?.StartsWith("unknown kind ", StringComparison.Ordinal) == true
-            => Loc.T("the game runs an older mod version (restart TF3)", "gra ma starszą wersję moda (uruchom TF3 ponownie)"),
+            => Loc.T("the game runs an older mod version (restart TF3)"),
         _ when r.Error?.StartsWith("already adopted by ", StringComparison.Ordinal) == true
-            => Loc.T("already has an owner (", "ma już właściciela (") + r.Error["already adopted by ".Length..] + ")",
-        "invalid" when r.Error == "line has no vehicles" => Loc.T("the line has no vehicles", "linia nie ma pojazdów"),
-        "invalid" when r.Error == "no industries" => Loc.T("those industries no longer exist", "nie ma już tych zakładów"),
-        "invalid" when r.Error == "unlimited money" => Loc.T("the game has unlimited money", "gra ma nieograniczone pieniądze"),
+            => Loc.T("already has an owner (") + r.Error["already adopted by ".Length..] + ")",
+        "invalid" when r.Error == "line has no vehicles" => Loc.T("the line has no vehicles"),
+        "invalid" when r.Error == "no industries" => Loc.T("those industries no longer exist"),
+        "invalid" when r.Error == "unlimited money" => Loc.T("the game has unlimited money"),
         "invalid" when r.Error?.StartsWith("loan limit", StringComparison.Ordinal) == true
-            => Loc.T("the company already has the most loans the game allows (4)", "firma ma już największą liczbę kredytów w grze (4)"),
+            => Loc.T("the company already has the most loans the game allows (4)"),
         // create.lua
-        "invalid" when r.Error == "on water" => Loc.T("that spot is on water", "to miejsce jest na wodzie"),
-        "invalid" when r.Error == "needs water" => Loc.T("this industry can only be placed on water", "ten zakład stawia się tylko na wodzie"),
-        "invalid" when r.Error == "outside of the map" => Loc.T("that spot is outside the map", "to miejsce jest poza mapą"),
-        "invalid" when r.Error?.StartsWith("no room", StringComparison.Ordinal) == true => Loc.T("the game found no room there", "gra nie znalazła tu miejsca"),
-        "invalid" when r.Error == "town with this name already exists" => Loc.T("a town with this name already exists", "miasto o tej nazwie już jest"),
+        "invalid" when r.Error == "on water" => Loc.T("that spot is on water"),
+        "invalid" when r.Error == "needs water" => Loc.T("this industry can only be placed on water"),
+        "invalid" when r.Error == "outside of the map" => Loc.T("that spot is outside the map"),
+        "invalid" when r.Error?.StartsWith("no room", StringComparison.Ordinal) == true => Loc.T("the game found no room there"),
+        "invalid" when r.Error == "town with this name already exists" => Loc.T("a town with this name already exists"),
         "failed" when r.Error == "game rejected the command"
-            => Loc.T("the game rejected the build (something is in the way: tracks, a road or buildings?)", "gra odrzuciła budowę (coś stoi na drodze: tory, droga albo budynki?)"),
+            => Loc.T("the game rejected the build (something is in the way: tracks, a road or buildings?)"),
         _ => r.Error ?? r.Status,
     };
 
@@ -501,7 +499,7 @@ public sealed class RewardService
                 if (DateTimeOffset.UtcNow - r.RedeemedAt > MaxRedemptionAge)
                 {
                     _log.LogWarning("Refunding old redemption of {Kind} by {User} from {At:g}", kind, r.UserName, r.RedeemedAt.ToLocalTime());
-                    Refuse(redemption, kind, Loc.T("the game wasn't running when the reward was bought", "gra nie działała, gdy nagroda została kupiona"));
+                    Refuse(redemption, kind, Loc.T("the game wasn't running when the reward was bought"));
                     continue;
                 }
                 await HandleRedemptionAsync(redemption);

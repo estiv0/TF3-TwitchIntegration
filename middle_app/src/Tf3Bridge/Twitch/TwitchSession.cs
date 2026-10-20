@@ -4,12 +4,12 @@ namespace Tf3Bridge.Twitch;
 
 public enum TwitchState { NotConfigured, LoggedOut, Checking, Ok, Warning, Error }
 
-/// <summary>A status with its text in both languages: <see cref="Message"/> follows a language switch.</summary>
-public sealed record TwitchStatus(TwitchState State, string En, string Pl)
+/// <summary>A status whose <see cref="Message"/> is translated when shown, so it follows a language switch.</summary>
+public sealed record TwitchStatus(TwitchState State, Func<string> Text)
 {
-    public TwitchStatus(TwitchState state, string message) : this(state, message, message) { }
+    public TwitchStatus(TwitchState state, string message) : this(state, () => message) { }
 
-    public string Message => Loc.T(En, Pl);
+    public string Message => Text();
 }
 
 /// <summary>
@@ -38,9 +38,10 @@ public sealed class TwitchSession
         _storePath = storePath;
         _log = log;
         _account = client is null ? null : TwitchAccountStore.Load(storePath);
-        _status = client is null ? new(TwitchState.NotConfigured, "no Twitch:ClientId in appsettings.json", "brak Twitch:ClientId w appsettings.json")
-            : _account is null ? new(TwitchState.LoggedOut, "not logged in", "niezalogowano")
-            : new(TwitchState.Checking, $"checking account {_account.Login}…", $"sprawdzam konto {_account.Login}…");
+        var login = _account?.Login;
+        _status = client is null ? new(TwitchState.NotConfigured, () => Loc.T("no Twitch:ClientId in appsettings.json"))
+            : _account is null ? new(TwitchState.LoggedOut, () => Loc.T("not logged in"))
+            : new(TwitchState.Checking, () => Loc.F("checking account {0}…", login));
     }
 
     public TwitchStatus Status => _status;
@@ -97,7 +98,7 @@ public sealed class TwitchSession
     {
         var tokens = await Client.PollDeviceAsync(code, ct);
         var info = await Client.ValidateAsync(tokens.AccessToken, ct)
-            ?? throw new TwitchAuthException(Loc.T("Twitch rejected the new token.", "Twitch odrzucił nowy token."), rejected: true);
+            ?? throw new TwitchAuthException(Loc.T("Twitch rejected the new token."), rejected: true);
         var type = await Client.GetBroadcasterTypeAsync(tokens.AccessToken, info.UserId, ct);
         await _lock.WaitAsync(ct);
         try
@@ -119,7 +120,7 @@ public sealed class TwitchSession
         try
         {
             old = _account;
-            Forget("logged out", "wylogowano");
+            Forget(() => Loc.T("logged out"));
         }
         finally { _lock.Release(); }
         if (old is null || _client is null) return;
@@ -142,12 +143,12 @@ public sealed class TwitchSession
         {
             if (_account is null)
             {
-                _status = new(TwitchState.LoggedOut, "not logged in", "niezalogowano");
+                _status = new(TwitchState.LoggedOut, () => Loc.T("not logged in"));
                 return;
             }
             if (!_account.HasScopes(TwitchAuthClient.Scopes))
             {
-                Forget("permissions missing – log in again", "brakuje uprawnień – zaloguj się ponownie");
+                Forget(() => Loc.T("permissions missing – log in again"));
                 return;
             }
             var info = await Client.ValidateAsync(_account.AccessToken, ct);
@@ -163,13 +164,14 @@ public sealed class TwitchSession
         catch (TwitchAuthException ex) when (ex.Rejected)
         {
             _log.LogWarning("Twitch: account rejected: {Message}", ex.Message);
-            Forget("session expired – log in again", "sesja wygasła – zaloguj się ponownie");
+            Forget(() => Loc.T("session expired – log in again"));
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             // No network or an error on Twitch's side: the account stays, we'll try on the next check.
             _log.LogWarning("Twitch: validation failed: {Message}", ex.Message);
-            _status = new(TwitchState.Error, $"{_account?.Login}: couldn't check the account ({ex.Message})", $"{_account?.Login}: nie udało się sprawdzić konta ({ex.Message})");
+            var login = _account?.Login;
+            _status = new(TwitchState.Error, () => Loc.F("{0}: couldn't check the account ({1})", login, ex.Message));
         }
         finally { _lock.Release(); }
     }
@@ -194,22 +196,25 @@ public sealed class TwitchSession
         catch (TwitchAuthException ex) when (ex.Rejected)
         {
             _log.LogWarning("Twitch: refresh rejected: {Message}", ex.Message);
-            Forget("session expired – log in again", "sesja wygasła – zaloguj się ponownie");
+            Forget(() => Loc.T("session expired – log in again"));
             return false;
         }
     }
 
-    private void SetLoggedIn() => _status = _account!.CanUseChannelPoints
-        ? new(TwitchState.Ok, $"{_account.Login} ({_account.BroadcasterType})")
-        : new(TwitchState.Warning, $"{_account.Login}: channel without Affiliate/Partner status, channel points rewards won't work",
-            $"{_account.Login}: kanał bez statusu Affiliate/Partner, nagrody za punkty nie będą działać");
+    private void SetLoggedIn()
+    {
+        var login = _account!.Login;
+        _status = _account.CanUseChannelPoints
+            ? new(TwitchState.Ok, $"{login} ({_account.BroadcasterType})")
+            : new(TwitchState.Warning, () => Loc.F("{0}: channel without Affiliate/Partner status, channel points rewards won't work", login));
+    }
 
-    private void Forget(string en, string pl)
+    private void Forget(Func<string> text)
     {
         _account = null;
         try { TwitchAccountStore.Delete(_storePath); }
         catch (IOException ex) { _log.LogWarning("Twitch: could not delete {Path}: {Message}", _storePath, ex.Message); }
-        _status = new(TwitchState.LoggedOut, en, pl);
+        _status = new(TwitchState.LoggedOut, text);
     }
 
     private TwitchAuthClient Client => _client ?? throw new InvalidOperationException("Twitch:ClientId is not configured.");
