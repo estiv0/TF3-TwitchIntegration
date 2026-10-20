@@ -1,24 +1,4 @@
 {
-  "_commands": {
-    "help": ["!pomoc", "!komendy"],
-    "map": ["!mapa"],
-    "assets": ["!majatek", "!majątek"],
-    "town": ["!miasto"],
-    "industry": ["!zaklad", "!zakład"],
-    "line": ["!linia"],
-    "free": ["!wolne"],
-    "date": ["!data"],
-    "company": ["!firma"],
-    "best": ["!najlepsza", "!najlepszy"],
-    "worst": ["!najgorsza", "!najgorszy"]
-  },
-  "_arguments": {
-    "town": ["miast"],
-    "industr": ["zaklad"],
-    "line": ["lini"],
-    "compan": ["firm"],
-    "viewer": ["widz"]
-  },
   "Tf3Bridge is already running (check its icon in the system tray).": "Tf3Bridge już działa (sprawdź ikonę w zasobniku systemowym).",
   "{0} TF3 commands: !assets [viewer], !town <name>, !industry <name>, !line <name>, !ranking, !free [towns|industries], !best / !worst [line|company], !company, !date, !map. Only channel points change the game.": "{0} Komendy TF3: !majatek [widz], !miasto <nazwa>, !zaklad <nazwa>, !linia <nazwa>, !ranking, !wolne [miasta|zaklady], !najlepsza / !najgorsza [linia|firma], !firma, !data, !mapa. Grę zmieniasz tylko punktami kanału.",
   "{0} the map isn't set up yet.": "{0} mapa nie jest jeszcze ustawiona.",

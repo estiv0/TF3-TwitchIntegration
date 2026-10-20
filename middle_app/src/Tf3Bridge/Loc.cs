@@ -9,7 +9,7 @@ namespace Tf3Bridge;
 /// The code holds only English, which is both the key and the fallback: <c>Loc.T("Save")</c>,
 /// <c>Loc.F("Sent {0} to {1}", a, b)</c> (never <c>$"..."</c> inside), <c>Loc.P(n, "{0} town", "{0} towns")</c>.
 /// Other languages are Locales\&lt;code&gt;.json files embedded in the exe (<c>{ "English": "translation" }</c>, an array
-/// of plural forms for <see cref="P"/>, chat command aliases under <see cref="CommandsKey"/> and <see cref="ArgumentsKey"/>); a text missing there
+/// of plural forms for <see cref="P"/>); a text missing there
 /// stays English. Adding a language = adding a file (see middle_app/README.md).
 /// Default: the Windows language when there is a file for it, English otherwise; the streamer's choice is kept in
 /// %LOCALAPPDATA%\Tf3Bridge\language.txt (<see cref="Load"/>, <see cref="Save"/>).
@@ -18,16 +18,7 @@ public static class Loc
 {
     public const string English = "en";
 
-    /// <summary>Locale file key with the chat command aliases: <c>{ "assets": ["!majatek"] }</c>.</summary>
-    public const string CommandsKey = "_commands";
-
-    /// <summary>Locale file key with prefixes of chat command arguments by their English prefix: <c>{ "town": ["miast"] }</c>.</summary>
-    public const string ArgumentsKey = "_arguments";
-
-    private sealed record Locale(
-        IReadOnlyDictionary<string, string[]> Texts, IReadOnlyDictionary<string, string[]> Commands, IReadOnlyDictionary<string, string[]> Arguments);
-
-    private static readonly IReadOnlyDictionary<string, Locale> Locales = LoadLocales();
+    private static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, string[]>> Locales = LoadLocales();
 
     /// <summary>English first, then the locale files by code.</summary>
     public static IReadOnlyList<string> Languages { get; } = [English, .. Locales.Keys.Order(StringComparer.Ordinal)];
@@ -71,14 +62,6 @@ public static class Loc
 
     /// <summary>Marks an English text for translation without translating it yet (<see cref="T"/> it where it is shown).</summary>
     public static string N(string en) => en;
-
-    /// <summary>Chat command aliases of every locale file (all of them work whatever the app language).</summary>
-    public static IEnumerable<string> CommandAliases(string command) =>
-        Locales.Values.SelectMany(l => l.Commands.GetValueOrDefault(command) ?? []);
-
-    /// <summary>Argument prefixes of every locale file for an English one ("town" -> "miast").</summary>
-    public static IEnumerable<string> ArgumentAliases(string english) =>
-        Locales.Values.SelectMany(l => l.Arguments.GetValueOrDefault(english) ?? []);
 
     /// <summary>Number and date formatting for the current language.</summary>
     public static CultureInfo Culture => CultureFor(Language);
@@ -142,7 +125,7 @@ public static class Loc
         Languages.FirstOrDefault(l => string.Equals(l, code?.Trim(), StringComparison.OrdinalIgnoreCase));
 
     private static string[]? Lookup(string language, string en) =>
-        Locales.TryGetValue(language, out var locale) && locale.Texts.TryGetValue(en, out var t) ? t : null;
+        Locales.TryGetValue(language, out var texts) && texts.TryGetValue(en, out var t) ? t : null;
 
     private static CultureInfo CultureFor(string language)
     {
@@ -151,10 +134,10 @@ public static class Loc
     }
 
     /// <summary>Embedded "locales/&lt;code&gt;.json" files by code (Locales\*.json in the project).</summary>
-    private static Dictionary<string, Locale> LoadLocales()
+    private static Dictionary<string, IReadOnlyDictionary<string, string[]>> LoadLocales()
     {
         var assembly = typeof(Loc).Assembly;
-        var result = new Dictionary<string, Locale>(StringComparer.OrdinalIgnoreCase);
+        var result = new Dictionary<string, IReadOnlyDictionary<string, string[]>>(StringComparer.OrdinalIgnoreCase);
         foreach (var name in assembly.GetManifestResourceNames().Where(n => n.StartsWith("locales/", StringComparison.Ordinal)))
         {
             using var stream = assembly.GetManifestResourceStream(name)!;
@@ -163,21 +146,14 @@ public static class Loc
         return result;
     }
 
-    private static Locale Parse(Stream json)
+    private static Dictionary<string, string[]> Parse(Stream json)
     {
         using var doc = JsonDocument.Parse(json, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
         var texts = new Dictionary<string, string[]>(StringComparer.Ordinal);
-        var commands = new Dictionary<string, string[]>(StringComparer.Ordinal);
-        var arguments = new Dictionary<string, string[]>(StringComparer.Ordinal);
         foreach (var p in doc.RootElement.EnumerateObject())
-        {
-            if (p.Name is CommandsKey or ArgumentsKey)
-                foreach (var c in p.Value.EnumerateObject())
-                    (p.Name == CommandsKey ? commands : arguments)[c.Name] = Strings(c.Value);
-            else if (Strings(p.Value) is { Length: > 0 } values && values.All(v => v.Length > 0))
+            if (Strings(p.Value) is { Length: > 0 } values && values.All(v => v.Length > 0))
                 texts[p.Name] = values; // empty = not translated yet
-        }
-        return new(texts, commands, arguments);
+        return texts;
     }
 
     private static string[] Strings(JsonElement e) => e.ValueKind switch

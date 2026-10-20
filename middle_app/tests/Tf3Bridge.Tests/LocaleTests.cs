@@ -3,7 +3,6 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Tf3Bridge.Chat;
 
 namespace Tf3Bridge.Tests;
 
@@ -50,7 +49,7 @@ public sealed partial class LocaleTests
         var used = keys.Select(k => k.Text).ToHashSet(StringComparer.Ordinal);
 
         var missing = keys.Where(k => !file.ContainsKey(k.Text)).DistinctBy(k => k.Text).Select(k => $"missing: {k.Where} {Json(k.Text)}");
-        var orphans = file.Keys.Where(k => k is not (Loc.CommandsKey or Loc.ArgumentsKey) && !used.Contains(k)).Select(k => $"not in the code: {Json(k)}");
+        var orphans = file.Keys.Where(k => !used.Contains(k)).Select(k => $"not in the code: {Json(k)}");
         var problems = missing.Concat(orphans).ToList();
         Assert.True(problems.Count == 0, $"{language}.json:{Environment.NewLine}{string.Join(Environment.NewLine, problems)}");
     }
@@ -64,7 +63,6 @@ public sealed partial class LocaleTests
         var problems = new List<string>();
         foreach (var (key, value) in file)
         {
-            if (key is Loc.CommandsKey or Loc.ArgumentsKey) continue;
             string[] forms = value.ValueKind == JsonValueKind.Array ? [.. value.EnumerateArray().Select(v => v.GetString() ?? "")]
                 : value.ValueKind == JsonValueKind.String ? [value.GetString()!] : [];
             var expected = plurals.Contains(key) ? Loc.PluralForms(language) : 1;
@@ -87,23 +85,10 @@ public sealed partial class LocaleTests
 
     [Theory]
     [MemberData(nameof(Languages))]
-    public void Locale_file_is_embedded_with_known_commands_and_arguments(string language)
+    public void Locale_file_is_embedded(string language)
     {
         Assert.Contains(language, Loc.Languages);
         _ = CultureInfo.GetCultureInfo(language); // the code must be a culture: number formats and the native name come from it
-        var file = Read(Path.Combine(SourceDir, "Locales", language + ".json"));
-        if (file.TryGetValue(Loc.CommandsKey, out var commands))
-            foreach (var c in commands.EnumerateObject())
-            {
-                Assert.Contains(c.Name, ChatCommandService.Names);
-                Assert.All(c.Value.EnumerateArray(), a => Assert.Matches("^![^\\s!]+$", a.GetString()!));
-            }
-        if (file.TryGetValue(Loc.ArgumentsKey, out var arguments))
-            foreach (var a in arguments.EnumerateObject())
-            {
-                Assert.Contains(a.Name, ChatAnswers.ArgumentWords);
-                Assert.All(a.Value.EnumerateArray(), p => Assert.Matches("^\\S+$", p.GetString()!));
-            }
     }
 
     [Fact]

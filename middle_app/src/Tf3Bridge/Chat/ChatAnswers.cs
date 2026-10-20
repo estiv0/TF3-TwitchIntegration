@@ -148,8 +148,8 @@ internal static class ChatAnswers
     {
         var arg = TargetResolver.Normalize(r.Arg);
         bool towns = true, industries = true;
-        if (IsArg(arg, "town")) industries = false;
-        else if (IsArg(arg, "industr")) towns = false;
+        if (arg.StartsWith("miast", StringComparison.Ordinal) || arg.StartsWith("town", StringComparison.Ordinal)) industries = false;
+        else if (arg.StartsWith("zaklad", StringComparison.Ordinal) || arg.StartsWith("industr", StringComparison.Ordinal)) towns = false;
         else if (arg.Length > 0) return Loc.F("{0} use: !free [towns|industries]", r.Mention);
 
         static bool Free(JsonElement x) => Str(x, "name") is { } n && OwnerName.Split(n).Owner is null;
@@ -221,7 +221,7 @@ internal static class ChatAnswers
     {
         var word = best ? Loc.T("best") : Loc.T("worst");
         var arg = TargetResolver.Normalize(r.Arg);
-        if (arg.Length == 0 || IsArg(arg, "line"))
+        if (arg.Length == 0 || arg.StartsWith("lini", StringComparison.Ordinal) || arg.StartsWith("line", StringComparison.Ordinal))
         {
             var lines = Items(r.Root, "lines")
                 .Select(l => (Line: l, Profit: l.TryGetProperty("stats", out var st) && st.ValueKind == JsonValueKind.Object ? Num(st, "profit12m") : null))
@@ -233,7 +233,8 @@ internal static class ChatAnswers
             var text = Loc.F("{0} {1} line: {2}{3}, profit (12 mo.) {4}.", r.Mention, word, name, by, Money(profit!.Value));
             return Long(l, "id") is { } id && RewardMessages.Link(r.SiteUrl, GameObjectKind.Line, id) is { } link ? $"{text} {link}" : text;
         }
-        if (IsArg(arg, "compan") || IsArg(arg, "viewer"))
+        if (arg.StartsWith("firm", StringComparison.Ordinal) || arg.StartsWith("widz", StringComparison.Ordinal)
+            || arg.StartsWith("compan", StringComparison.Ordinal) || arg.StartsWith("viewer", StringComparison.Ordinal))
         {
             var owners = OwnerIndex.Parse(r.Root).Values.Where(o => o.Profit12m is not null).ToList();
             if (owners.Count == 0) return Loc.F("{0} no viewer has a line with results yet.", r.Mention);
@@ -243,14 +244,6 @@ internal static class ChatAnswers
         }
         return Loc.F("{0} use: !{1} [line|company]", r.Mention, word);
     }
-
-    /// <summary>English prefixes of command arguments; locale files add theirs under <see cref="Loc.ArgumentsKey"/>.</summary>
-    internal static readonly string[] ArgumentWords = ["town", "industr", "line", "compan", "viewer"];
-
-    // A normalized argument starting with the English prefix or with one of the locale files' ("town" / "miast").
-    private static bool IsArg(string arg, string english) =>
-        arg.StartsWith(english, StringComparison.Ordinal)
-        || Loc.ArgumentAliases(english).Any(a => arg.StartsWith(TargetResolver.Normalize(a), StringComparison.Ordinal));
 
     // Active reward effects on the object: "town boost +50% until 12 May 1922 (from ola)".
     private static List<string> Effects(JsonElement root, long entity) =>
