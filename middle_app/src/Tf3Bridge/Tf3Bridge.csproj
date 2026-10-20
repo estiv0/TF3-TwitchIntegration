@@ -38,6 +38,17 @@
     <EmbeddedResource Include="$(LuaModDir)content\**\*" LogicalName="mod/content/%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <!-- The website for LocalWebServer: resource "web/" + path relative to web\. Only the site's own files: no data,
+       no streamer settings (site.json, img/site) and no game artwork (GameIcons extracts it from the player's install). -->
+  <PropertyGroup>
+    <WebSiteDir>$(MSBuildThisFileDirectory)..\..\..\web\</WebSiteDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="$(WebSiteDir)index.html;$(WebSiteDir)config.js" LogicalName="web/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="$(WebSiteDir)css\**\*" LogicalName="web/css/%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="$(WebSiteDir)js\**\*" LogicalName="web/js/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <!-- Translations (Loc): Locales\pl.json -> resource "locales/pl.json"; a new file is a new language. -->
   <ItemGroup>
     <EmbeddedResource Include="Locales\*.json" LogicalName="locales/%(Filename)%(Extension)" />

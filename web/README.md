@@ -35,16 +35,18 @@ python tools\extract_game_icons.py "<game folder>"
 
 Without an argument the script uses `TF3_GAME_DIR` or the default Steam library. `infra/deploy-web.ps1` won't deploy the site without the icons.
 
+The local website served by Tf3Bridge doesn't need the script: Tf3Bridge extracts the same icons from the game into `%LOCALAPPDATA%\Tf3Bridge\web-icons` by itself and serves them when `web/img/` doesn't have them. It also carries a copy of this folder (`index.html`, `config.js`, `css/`, `js/`) inside the exe, so it shows the site without the repository; files in `web/` on disk always win.
+
 ## Running locally
 
-1. Run Tf3Bridge (`middle_app`, Development profile) so the data goes to `web/data/latest/`.
-2. Serve the `web/` folder with a static server:
+1. Run Tf3Bridge (`middle_app`) so the data goes to `web/data/latest/`. It also serves this folder at http://localhost:5080 (the **Website** button), so that's all you need.
+2. Without Tf3Bridge (e.g. working on the site with old data), serve the `web/` folder with a static server:
 
    ```powershell
    .\web\serve.ps1
    ```
 
-   The script runs the `dotnet-serve` tool (installing it if needed) and sets `DOTNET_ROOT` for it, for an SDK in the user folder. Any other static server works too, e.g. the Live Server extension in VS Code.
+   The script runs the `dotnet-serve` tool (installing it if needed) and sets `DOTNET_ROOT` for it, for an SDK in the user folder. It uses the same port, so close Tf3Bridge first or pass `-Port`. Any other static server works too, e.g. the Live Server extension in VS Code.
 3. Open http://localhost:5080.
 
 Opening `index.html` straight from disk won't work, because the browser blocks `fetch` from `file://`.

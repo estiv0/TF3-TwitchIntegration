@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.Win32;
 
 namespace Tf3Bridge;
@@ -58,6 +59,38 @@ public static class SteamLocator
         }
         return null;
     }
+
+    /// <summary>The game install (the folder with base\content), or null when no Steam library has TF3.</summary>
+    public static string? FindGameDir() => FindGameDir(ReadSteamPaths());
+
+    /// <summary>
+    /// Every library from steamapps\libraryfolders.vdf of each Steam install; in it the folder named by
+    /// appmanifest_3493540.acf ("installdir"), or "Transport Fever 3".
+    /// </summary>
+    public static string? FindGameDir(IEnumerable<string> steamPaths)
+    {
+        var libraries = new List<string>();
+        foreach (var steam in steamPaths)
+        {
+            libraries.Add(steam);
+            var vdf = Path.Combine(steam, "steamapps", "libraryfolders.vdf");
+            if (File.Exists(vdf)) libraries.AddRange(VdfValues(File.ReadAllText(vdf), "path"));
+        }
+        foreach (var library in libraries.Select(l => Path.GetFullPath(l)).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var apps = Path.Combine(library, "steamapps");
+            var manifest = Path.Combine(apps, $"appmanifest_{Tf3AppId}.acf");
+            var installDir = File.Exists(manifest) ? VdfValues(File.ReadAllText(manifest), "installdir").FirstOrDefault() : null;
+            var game = Path.Combine(apps, "common", installDir ?? "Transport Fever 3");
+            if (Directory.Exists(Path.Combine(game, "base", "content"))) return game;
+        }
+        return null;
+    }
+
+    // Values of "key" "value" pairs in Valve's KeyValues text format (a backslash is written as two).
+    internal static IEnumerable<string> VdfValues(string vdf, string key) =>
+        Regex.Matches(vdf, $@"""{Regex.Escape(key)}""\s+""((?:[^""\\]|\\.)*)""", RegexOptions.IgnoreCase)
+            .Select(m => m.Groups[1].Value.Replace(@"\\", @"\"));
 
     private static List<string> ReadSteamPaths()
     {

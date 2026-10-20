@@ -94,7 +94,7 @@ For the local setup:
 
 - **Transport Fever 3** (Steam) on **Windows**.
 - **Tf3Bridge**: the published exe is self-contained and needs no .NET install. To build it you need the **.NET 9 SDK** (Windows, WinForms).
-- **Python 3** to extract the game icons for the website.
+- **Python 3** only to extract the game icons for a public website (the local one gets them from Tf3Bridge).
 
 Only for the optional parts:
 
@@ -118,7 +118,9 @@ cd middle_app/src/Tf3Bridge
 dotnet run
 ```
 
-The app finds your Steam folder and the TF3 user data on its own. Inside your checkout it publishes the data to `web/data/`, where the local website reads it.
+The app finds your Steam folder, the TF3 user data and the game install on its own. Inside your checkout it publishes the data to `web/data/` and serves the website at http://localhost:5080.
+
+The exe doesn't need the repository: the website is built into it, and the game icons are extracted from your own game install at the first start (see [step 3](#3-game-icons)). Copy `Tf3Bridge.exe` and `appsettings.json` anywhere, or give them to someone else; outside the repository the data goes to `output\` next to the exe.
 
 ### 2. Enable the mod in the game
 
@@ -128,9 +130,11 @@ To install the mod without Tf3Bridge, build a zip with `lua_mod\pack.ps1` (see [
 
 Start the game. Within a few seconds Tf3Bridge shows the first publish. The **Mod settings…** button sets how often the mod exports and whether it includes vehicles and terrain.
 
-### 3. Extract the game icons
+### 3. Game icons
 
-Vehicle, cargo and station icons are Urban Games artwork, so they aren't in the repository. Extract them from your own game install once after cloning and after game updates:
+Vehicle, cargo and station icons are Urban Games artwork, so they are neither in the repository nor in the exe. Tf3Bridge extracts them from your own game install into `%LOCALAPPDATA%\Tf3Bridge\web-icons` in the background at the first start, and again after game updates. Nothing to do, unless the game is outside your Steam libraries: then set `Bridge:GameDir`.
+
+For a public website the icons have to be in `web/img/` (the deploy script takes them from there). Extract them once after cloning and after game updates:
 
 ```powershell
 python tools\extract_game_icons.py "<path to Transport Fever 3>"
@@ -140,13 +144,11 @@ Without an argument the script uses the `TF3_GAME_DIR` environment variable or t
 
 ### 4. Open the website
 
-```powershell
-.\web\serve.ps1
-```
+Click **Website** in Tf3Bridge or open http://localhost:5080. Tf3Bridge serves the website itself while it runs: files from `web/` on disk first (in your checkout, so edits show up on reload), then the game icons, then the copy built into the exe. The port is `Bridge:WebPort` in `appsettings.json` (0 turns it off).
 
-Then open http://localhost:5080. Any other static file server pointed at `web/` works too; opening `index.html` straight from disk doesn't, because browsers block `fetch` from `file://`.
+Without Tf3Bridge, `.\web\serve.ps1` serves the same folder, and any other static file server pointed at `web/` works too. Opening `index.html` straight from disk doesn't, because browsers block `fetch` from `file://`.
 
-Optionally give the site a name and logo: copy `web/site.example.json` to `web/site.json` and set `title` and `logo` (see [Website settings](#website-settings)).
+Optionally give the site a name and logo: copy `web/site.example.json` to `web/site.json` and set `title` and `logo` (see [Website settings](#website-settings)). Outside the repository put `site.json` (and the logo in `img\site\`) into a `web\` folder next to the exe.
 
 ## Optional: Twitch
 

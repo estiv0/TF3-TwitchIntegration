@@ -17,6 +17,25 @@ public sealed class BridgeOptions
     /// </summary>
     public string OutputDir { get; set; } = "";
 
+    /// <summary>Port of the local website (<see cref="Output.LocalWebServer"/>, http://localhost:WebPort/); 0 = off.</summary>
+    public int WebPort { get; set; } = 5080;
+
+    /// <summary>
+    /// Website files on disk; they win over the copy built into the exe (site.json, img/site/ with the logo,
+    /// or the whole site while working on it). Empty = web/ of the repository the exe sits in, outside it
+    /// web\ next to the exe (see <see cref="ResolveWebDir"/>); it doesn't have to exist.
+    /// </summary>
+    public string WebDir { get; set; } = "";
+
+    /// <summary>
+    /// Transport Fever 3 install, the source of the game icons (<see cref="Output.GameIcons"/>).
+    /// Empty = found in the Steam libraries (<see cref="SteamLocator.FindGameDir()"/>), or "" when none has it.
+    /// </summary>
+    public string GameDir { get; set; } = "";
+
+    /// <summary>Where the game icons are extracted. Empty = %LOCALAPPDATA%\Tf3Bridge\web-icons (set in Program).</summary>
+    public string IconCacheDir { get; set; } = "";
+
     public int PollIntervalMs { get; set; } = 500;
 
     /// <summary>
@@ -57,11 +76,26 @@ public sealed class BridgeOptions
     {
         var baseDir = AppContext.BaseDirectory;
         if (!string.IsNullOrWhiteSpace(dir)) return Path.GetFullPath(dir, baseDir);
-        for (var d = new DirectoryInfo(baseDir); d is not null; d = d.Parent)
+        return FindRepoWebDir() is { } web ? Path.Combine(web, "data") : Path.Combine(baseDir, "output");
+    }
+
+    /// <summary>A configured path wins (relative to the exe folder); empty = the repository's web/, outside it web\ next to the exe.</summary>
+    public static string ResolveWebDir(string dir) =>
+        !string.IsNullOrWhiteSpace(dir) ? Path.GetFullPath(dir, AppContext.BaseDirectory)
+            : FindRepoWebDir() ?? Path.Combine(AppContext.BaseDirectory, "web");
+
+    /// <summary>A configured path wins (relative to the exe folder); empty = found in Steam, or "".</summary>
+    public static string ResolveGameDir(string dir) =>
+        !string.IsNullOrWhiteSpace(dir) ? Path.GetFullPath(dir, AppContext.BaseDirectory) : SteamLocator.FindGameDir() ?? "";
+
+    // Walk up from the exe to the folder containing web/index.html.
+    private static string? FindRepoWebDir()
+    {
+        for (var d = new DirectoryInfo(AppContext.BaseDirectory); d is not null; d = d.Parent)
         {
-            if (File.Exists(Path.Combine(d.FullName, "web", "index.html")))
-                return Path.Combine(d.FullName, "web", "data");
+            var web = Path.Combine(d.FullName, "web");
+            if (File.Exists(Path.Combine(web, "index.html"))) return web;
         }
-        return Path.Combine(baseDir, "output");
+        return null;
     }
 }
