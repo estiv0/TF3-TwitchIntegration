@@ -1,6 +1,6 @@
 # Builds Tf3Bridge.exe into middle_app\dist\ and creates a desktop shortcut.
 # The exe is self-contained single-file (win-x64): it needs no installed .NET, next to it there's only
-# appsettings.json (and an optional appsettings.Local.json). So it can be given to someone else (it finds the mod folder in Steam itself).
+# appsettings.json (Development and Local settings are not published). So it can be given to someone else (it finds the mod folder in Steam itself).
 # The exe looks for web\data upwards from its folder, so in your checkout dist\ has to stay in the repository;
 # outside the repository it publishes to output\ next to itself and serves the website built into it.
 param([switch]$NoShortcut)

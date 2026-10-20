@@ -25,6 +25,8 @@
 
   <ItemGroup>
     <None Update="appsettings*.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Development and Local settings are for runs from source only, never in the published exe -->
+    <None Update="appsettings.Development.json;appsettings.Local.json" CopyToPublishDirectory="Never" />
   </ItemGroup>
 
   <!-- The mod built into the exe: ModInstaller installs/updates it in Steam\userdata\<account>\3493540\local\staging_area.

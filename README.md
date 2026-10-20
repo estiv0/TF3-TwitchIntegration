@@ -164,7 +164,7 @@ In Tf3Bridge click **Twitch…** → **Log in with Twitch**. The app shows a cod
 
 Once logged in, Tf3Bridge connects to EventSub and answers chat commands. On an Affiliate/Partner channel it also creates the channel points rewards; tune them in **Rewards…**. The rewards are enabled only while the game is running with the mod.
 
-Chat replies and reward descriptions can link to your website. Set its address in `middle_app/src/Tf3Bridge/appsettings.Local.json` (gitignored, copied next to the exe by `publish.ps1`):
+Chat replies and reward descriptions can link to your website. Set its address in `middle_app/src/Tf3Bridge/appsettings.Local.json` (gitignored, used when running from source; `publish.ps1` leaves it out, so for the published exe put a copy next to `Tf3Bridge.exe`):
 
 ```json
 { "Twitch": { "SiteUrl": "https://your-site.example/" } }

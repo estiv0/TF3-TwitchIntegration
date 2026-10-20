@@ -34,7 +34,7 @@ infra\publish.ps1
 
 The script builds `middle_app\dist\Tf3Bridge.exe` (the `dist\` folder is in `.gitignore`) and creates a `Tf3Bridge` shortcut on the desktop (`-NoShortcut` skips the shortcut). Close the running app before publishing again.
 
-The exe is self-contained single-file (win-x64, about 55 MB): it needs no installed .NET, and next to it there's `appsettings.json` (and possibly `appsettings.Local.json`, see below). To give it to someone else, `Tf3Bridge.exe` + `appsettings.json` is enough. The bridge finds the mod folder and the game on its own (see `InputDir`, `GameDir`), outside the repository it publishes to `output\` next to the exe and serves the built-in website with the icons from that player's game.
+The exe is self-contained single-file (win-x64, about 55 MB): it needs no installed .NET, and next to it there's only `appsettings.json` (`appsettings.Development.json` and `appsettings.Local.json` are not published). To give it to someone else, `Tf3Bridge.exe` + `appsettings.json` is enough. The bridge finds the mod folder and the game on its own (see `InputDir`, `GameDir`), outside the repository it publishes to `output\` next to the exe and serves the built-in website with the icons from that player's game.
 
 The mod is built into the exe (`lua_mod\` as of build time, `ModInstaller`). At startup the bridge installs or updates it in `Steam\userdata\<account>\3493540\local\staging_area\estiv0_tf3export` (not `mods\`: from there the game only shows Workshop mods): it writes new and changed files, and only deletes those `.lua` files in `content\` that the mod no longer has. So a new exe also updates the mod. If the game is running, the new version only takes effect after the save is loaded again. The bridge doesn't touch a development copy (a junction `staging_area\estiv0_tf3export` → the repository). The `Embedded_mod_is_complete` test makes sure `_content.json` matches the `.lua` files (refresh it with `lua_mod\pack.ps1 -ContentOnly`).
 
@@ -73,7 +73,7 @@ Tests run in Polish by default (a `[ModuleInitializer]` in the test project); En
 
 ## Configuration (`src/Tf3Bridge/appsettings.json`, `Bridge` section)
 
-Put your own values (e.g. `Twitch:SiteUrl`, your website's address) into `src/Tf3Bridge/appsettings.Local.json` next to `appsettings.json`. That file is in `.gitignore`, overrides `appsettings.json` and ends up in `dist` when publishing:
+Put your own values (e.g. `Twitch:SiteUrl`, your website's address) into `src/Tf3Bridge/appsettings.Local.json` next to `appsettings.json`. That file is in `.gitignore`, overrides `appsettings.json` and is read when running from source. Publishing leaves it out of `dist`; for the published exe put a copy next to `Tf3Bridge.exe`:
 
 ```json
 { "Twitch": { "SiteUrl": "https://your-site.example/" } }
