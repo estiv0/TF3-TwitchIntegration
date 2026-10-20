@@ -11,7 +11,11 @@ TF3 (mod) ──app.saveUserdata──▶ ...\3493540\local\tf3export\*.lua
                                output\latest\meta.json      session, seq, game date, edge count
 ```
 
-Output always goes to a local folder (`LocalFolderPublisher`), and optionally also to Azure Blob Storage with the same `latest/*` layout (see "Upload to Azure"). Tf3Bridge also serves the local website at http://localhost:5080 (`LocalWebServer`): the files of `web/` and the published data under `/data/`, so no separate static server is needed. The **Website** button opens it.
+Output always goes to a local folder (`LocalFolderPublisher`), and optionally also to Azure Blob Storage with the same `latest/*` layout (see "Upload to Azure"). Tf3Bridge also serves the local website at http://localhost:5080 (`LocalWebServer`), so no separate static server is needed; the **Website** button opens it. `/data/` is `OutputDir`, and any other path is looked up in this order:
+
+1. `WebDir` on disk: in a checkout the repository's `web/` (edits show up on reload), outside it an optional `web\` next to the exe for `site.json` and `img\site\`;
+2. the game icons (`GameIcons`): `img/{stations,resources,vehicles}/*.png`, extracted in the background from the player's own install into `IconCacheDir`, the same files as `tools/extract_game_icons.py` writes. A stamp of the game packages (size, date) skips the work when nothing changed; a game update extracts them again. The artwork belongs to Urban Games, so it is never built into the exe;
+3. the website built into the exe (`web/index.html`, `config.js`, `css/`, `js/` as of build time).
 
 ## Running
 
@@ -30,7 +34,7 @@ infra\publish.ps1
 
 The script builds `middle_app\dist\Tf3Bridge.exe` (the `dist\` folder is in `.gitignore`) and creates a `Tf3Bridge` shortcut on the desktop (`-NoShortcut` skips the shortcut). Close the running app before publishing again.
 
-The exe is self-contained single-file (win-x64, about 55 MB): it needs no installed .NET, and next to it there's `appsettings.json` (and possibly `appsettings.Local.json`, see below). To give it to someone else, `Tf3Bridge.exe` + `appsettings.json` is enough. The bridge finds the mod folder on its own (see `InputDir`), and outside the repository it publishes to `output\` next to the exe.
+The exe is self-contained single-file (win-x64, about 55 MB): it needs no installed .NET, and next to it there's `appsettings.json` (and possibly `appsettings.Local.json`, see below). To give it to someone else, `Tf3Bridge.exe` + `appsettings.json` is enough. The bridge finds the mod folder and the game on its own (see `InputDir`, `GameDir`), outside the repository it publishes to `output\` next to the exe and serves the built-in website with the icons from that player's game.
 
 The mod is built into the exe (`lua_mod\` as of build time, `ModInstaller`). At startup the bridge installs or updates it in `Steam\userdata\<account>\3493540\local\staging_area\estiv0_tf3export` (not `mods\`: from there the game only shows Workshop mods): it writes new and changed files, and only deletes those `.lua` files in `content\` that the mod no longer has. So a new exe also updates the mod. If the game is running, the new version only takes effect after the save is loaded again. The bridge doesn't touch a development copy (a junction `staging_area\estiv0_tf3export` → the repository). The `Embedded_mod_is_complete` test makes sure `_content.json` matches the `.lua` files (refresh it with `lua_mod\pack.ps1 -ContentOnly`).
 
@@ -80,7 +84,9 @@ Put your own values (e.g. `Twitch:SiteUrl`, your website's address) into `src/Tf
 | `InputDir` | empty: detected from Steam (`SteamLocator`): the Steam folder from the registry, and in it `userdata\<account>\3493540\local\tf3export` of the logged-in account; without a logged-in Steam, the account that last played TF3 with the mod | the folder the mod writes to |
 | `OutputDir` | empty: `web\data` of the repository the exe lives in (searched upwards from the exe folder), i.e. where the local website reads from; outside the repository, `output\` next to the exe. A relative path counts from the exe folder | where to publish `latest/*.json` |
 | `WebPort` | 5080 | port of the local website (`http://localhost:<port>/`, localhost only); 0 = off. When the port is taken (e.g. `web\serve.ps1` is running), the window says so and the bridge works on without it |
-| `WebDir` | empty: `web\` of the repository the exe lives in (searched upwards like `OutputDir`); outside the repository the local website is off | the website files the local website serves; `/data/` always comes from `OutputDir` |
+| `WebDir` | empty: `web\` of the repository the exe lives in (searched upwards like `OutputDir`); outside the repository `web\` next to the exe (it doesn't have to exist) | website files on disk that win over the built-in copy; `/data/` always comes from `OutputDir` |
+| `GameDir` | empty: found in the Steam libraries (`libraryfolders.vdf`, `appmanifest_3493540.acf`) | the Transport Fever 3 install the game icons come from |
+| `IconCacheDir` | empty: `%LOCALAPPDATA%\Tf3Bridge\web-icons` | where the game icons are extracted (`img\…` and `stamp.txt`) |
 | `PollIntervalMs` | 500 | how often to check the folder |
 | `IncompleteFileTimeoutSec` | 30 | a file that still can't be read after this time goes to `InputDir\failed` |
 | `KeepProcessedFiles` | false | moves files to `InputDir\processed` instead of deleting them (debug) |
@@ -309,7 +315,8 @@ middle_app/
     Processing/NetworkState.cs    assembling the network from a dump and diffs
     Processing/JsonRead.cs        safe reads of numbers and strings from JsonNode
     Output/IPublisher.cs          publish target interface
-    Output/LocalWebServer.cs      the local website (HttpListener): web/ + OutputDir under /data/
+    Output/LocalWebServer.cs      the local website (HttpListener): WebDir, game icons, built-in site; OutputDir under /data/
+    Output/GameIcons.cs           game icons from the player's install (TGA → PNG), like tools/extract_game_icons.py
     Output/LocalFolderPublisher.cs
   tests/Tf3Bridge.Tests/          xUnit: reader, network assembly, processor pass, Azure and mod settings, Twitch login, EventSub, command queue, rewards
 ```

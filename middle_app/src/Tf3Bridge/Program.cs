@@ -48,6 +48,9 @@ internal static class Program
             o.InputDir = BridgeOptions.ResolveInputDir(o.InputDir);
             o.OutputDir = BridgeOptions.ResolveOutputDir(o.OutputDir);
             o.WebDir = BridgeOptions.ResolveWebDir(o.WebDir);
+            o.GameDir = BridgeOptions.ResolveGameDir(o.GameDir);
+            if (string.IsNullOrWhiteSpace(o.IconCacheDir))
+                o.IconCacheDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Tf3Bridge", "web-icons");
             if (string.IsNullOrWhiteSpace(o.TerrainCacheFile))
                 o.TerrainCacheFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Tf3Bridge", "terrain-cache.json");
         });
@@ -59,6 +62,7 @@ internal static class Program
         builder.Services.AddSingleton<RewardService>();
         builder.Services.AddSingleton<ChatCommandService>();
         builder.Services.AddSingleton<LocalFolderPublisher>();
+        builder.Services.AddSingleton<GameIcons>();
         builder.Services.AddSingleton<LocalWebServer>();
         builder.Services.AddSingleton<AzureMirror>();
         builder.Services.AddSingleton<IPublisher, MirroringPublisher>();
@@ -75,6 +79,7 @@ internal static class Program
         var chatCommands = host.Services.GetRequiredService<ChatCommandService>(); // chat commands (!...): listens to EventSub from creation
         var web = host.Services.GetRequiredService<LocalWebServer>(); // the local website, independent of Start/Stop
         web.Start();
+        _ = host.Services.GetRequiredService<GameIcons>().UpdateAsync(CancellationToken.None); // in the background; the site works without the icons meanwhile
 
         Application.Run(new MainForm(runner, mirror, host.Services.GetRequiredService<TwitchSession>(), host.Services.GetRequiredService<EventSubClient>(),
             host.Services.GetRequiredService<ModCommandQueue>(), host.Services.GetRequiredService<RewardService>(), chatCommands, web, options, mod, uiLog));

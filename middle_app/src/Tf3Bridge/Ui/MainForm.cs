@@ -483,9 +483,8 @@ public sealed class MainForm : Form
 
     private static string WebText(LocalWebServer web) => web.State switch
     {
-        WebServerState.Running => $"{web.Url}  " + Loc.F("(files from {0})", web.WebDir),
+        WebServerState.Running => $"{web.Url}  " + (web.WebDir.Length > 0 ? Loc.F("(files from {0}, the rest built in)", web.WebDir) : Loc.T("(built in)")),
         WebServerState.PortTaken => Loc.F("(off – port {0} is taken; close the other server or set --Bridge:WebPort=…)", web.Port),
-        WebServerState.NoWebDir => Loc.T("(off – no website folder with index.html; set --Bridge:WebDir=…)"),
         _ => Loc.T("(off – Bridge:WebPort is 0)"),
     };
 
