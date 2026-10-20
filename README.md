@@ -14,6 +14,10 @@ Viewers browse the map on the website, buy towns and industries, boost or sabota
 
 The interfaces of Tf3Bridge and the website are in **English and Polish**.
 
+**Live demo:** [gin.estfosoft.com](https://gin.estfosoft.com/)
+
+![The website: a town with its needs and the earnings of the lines that serve it](docs/screenshots/town.webp)
+
 ## How it works
 
 ```mermaid
@@ -64,6 +68,10 @@ More detail: [docs/architecture.md](docs/architecture.md), [docs/twitch-channel-
 - Badges for active viewer effects (boosts, strikes, stopped lines…) with their end date in game time.
 - A build tool that lets viewers pick a spot for a new town or industry and copy a code for the reward. It checks the same rules as Tf3Bridge (distances, water, slopes, terrain regions per industry type).
 - Shareable links to any object (`#town=…`, `#line=…`, `#owner=…`), an optional Twitch mini player, and an English/Polish switch.
+
+| Line details with fleet, stops and a vehicle tooltip | Station details with its lines |
+|---|---|
+| ![Line details](docs/screenshots/line.webp) | ![Station details](docs/screenshots/station.webp) |
 
 ### Channel points rewards
 
@@ -161,6 +169,18 @@ Chat replies and reward descriptions can link to your website. Set its address i
 ```json
 { "Twitch": { "SiteUrl": "https://your-site.example/" } }
 ```
+
+### How ownership works
+
+Viewers own parts of your world through the object names in the game: `Name | viewer`. There is no separate database; whatever the name in the game says is who owns it right now.
+
+- A viewer **buys** an unowned town or industry with channel points, or **builds** a new one at a spot picked on the website. The mod renames it to `Kraków | viewer`. An object that already has an owner can't be bought; the points are refunded.
+- You can hand out stations and lines yourself: rename them in the game to `Name | viewer`, or use **Test actions…** in Tf3Bridge. Removing the `| viewer` part takes the object back.
+- Owners can **boost** their objects, and other viewers can **sabotage** them (strikes, tax raids, watered-down fuel, brakes). Sabotage only works on objects owned by someone else.
+- The website's **Owners** tab ranks viewers by their estate: a town 100 pts plus its size and growth, an industry 50, a station or line 1, plus points for the vehicles on their lines. A viewer's details show their main town (the largest one), their industries, the combined statistics of their lines and the cargo their vehicles carry right now. `!assets [viewer]` and `!ranking` answer the same in chat.
+- Names are grouped case-insensitively. After a viewer renames their Twitch account, their old objects stay under the old name.
+
+![The Owners tab: a ranking of viewers and one viewer's estate](docs/screenshots/owner.webp)
 
 ## Optional: public website
 
