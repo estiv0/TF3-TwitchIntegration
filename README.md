@@ -10,6 +10,8 @@ The project has three parts:
 
 Viewers browse the map on the website, buy towns and industries, boost or sabotage them with **channel points**, and ask the chat bot about the game. Chat commands only *read* the game; the game itself changes only through channel points rewards, which you control (costs, cooldowns, limits).
 
+**Twitch and Azure are optional.** On their own, the mod, Tf3Bridge and the website run entirely on your PC as a live companion map of your game in the browser: no accounts, no cloud. Add Twitch for viewer interaction and Azure to put the website online.
+
 The interfaces of Tf3Bridge and the website are in **English and Polish**.
 
 ## How it works
@@ -88,13 +90,20 @@ Details and cooldowns: [middle_app/README.md](middle_app/README.md#chat-commands
 
 ## Requirements
 
+For the local setup:
+
 - **Transport Fever 3** (Steam) on **Windows**.
 - **Tf3Bridge**: the published exe is self-contained and needs no .NET install. To build it you need the **.NET 9 SDK** (Windows, WinForms).
-- A **Twitch** account. Channel points rewards need **Affiliate or Partner** status; without it the website and chat commands still work.
-- For a public website: an **Azure** subscription with a Storage account (for the data) and, optionally, a Static Web App (for the site). The setup is designed to be close to free: a few MB of blob data, pennies a month in writes, and Static Web Apps' Free plan. Check current Azure pricing before you deploy.
-- Tools for setup: Azure CLI, Python 3 (game icon extraction) and Node.js (website deployment to Static Web Apps).
+- **Python 3** to extract the game icons for the website.
 
-## Setup
+Only for the optional parts:
+
+- **Twitch**: any account works for chat commands; channel points rewards need **Affiliate or Partner** status.
+- **Public website**: an **Azure** subscription with a Storage account (for the data) and, optionally, a Static Web App (for the site), plus the Azure CLI and Node.js. The setup is designed to be close to free: a few MB of blob data, pennies a month in writes, and Static Web Apps' Free plan. Check current Azure pricing before you deploy.
+
+## Local setup
+
+Everything in this section runs on your PC. At the end you have a live map of your game at http://localhost:5080.
 
 ### 1. Build and start Tf3Bridge
 
@@ -109,23 +118,60 @@ cd middle_app/src/Tf3Bridge
 dotnet run
 ```
 
-The app finds your Steam folder and the TF3 user data on its own.
+The app finds your Steam folder and the TF3 user data on its own. Inside your checkout it publishes the data to `web/data/`, where the local website reads it.
 
-### 2. Install the mod
+### 2. Enable the mod in the game
 
 Nothing to copy: Tf3Bridge carries the mod inside the exe and installs or updates it in TF3's `staging_area` at every start. Enable **TF3 Data Export** when you create or load a game.
 
 To install the mod without Tf3Bridge, build a zip with `lua_mod\pack.ps1` (see [lua_mod/README.md](lua_mod/README.md)).
 
-Start the game. Within a few seconds Tf3Bridge shows the first publish, and the local website (step 7) has data.
+Start the game. Within a few seconds Tf3Bridge shows the first publish. The **Mod settings…** button sets how often the mod exports and whether it includes vehicles and terrain.
 
-### 3. Log in to Twitch
+### 3. Extract the game icons
+
+Vehicle, cargo and station icons are Urban Games artwork, so they aren't in the repository. Extract them from your own game install once after cloning and after game updates:
+
+```powershell
+python tools\extract_game_icons.py "<path to Transport Fever 3>"
+```
+
+Without an argument the script uses the `TF3_GAME_DIR` environment variable or the default Steam library.
+
+### 4. Open the website
+
+```powershell
+.\web\serve.ps1
+```
+
+Then open http://localhost:5080. Any other static file server pointed at `web/` works too; opening `index.html` straight from disk doesn't, because browsers block `fetch` from `file://`.
+
+Optionally give the site a name and logo: copy `web/site.example.json` to `web/site.json` and set `title` and `logo` (see [Website settings](#website-settings)).
+
+## Optional: Twitch
 
 In Tf3Bridge click **Twitch…** → **Log in with Twitch**. The app shows a code and opens `twitch.tv/activate`, where you approve access (device code flow, no password ever goes through the app). The tokens are stored encrypted for your Windows account.
 
-Once logged in, Tf3Bridge connects to EventSub, answers chat commands and, on an Affiliate/Partner channel, creates the rewards. Tune them in **Rewards…**.
+Once logged in, Tf3Bridge connects to EventSub and answers chat commands. On an Affiliate/Partner channel it also creates the channel points rewards; tune them in **Rewards…**. The rewards are enabled only while the game is running with the mod.
 
-### 4. Create the Azure storage
+Chat replies and reward descriptions can link to your website. Set its address in `middle_app/src/Tf3Bridge/appsettings.Local.json` (gitignored, copied next to the exe by `publish.ps1`):
+
+```json
+{ "Twitch": { "SiteUrl": "https://your-site.example/" } }
+```
+
+## Optional: public website
+
+To let viewers open the map, the data goes to cloud storage and the website to a static host.
+
+### Storage backends
+
+| Backend | Status |
+|---|---|
+| Azure Blob Storage | supported |
+| S3-compatible storage | planned |
+
+### Azure Blob Storage
 
 ```powershell
 winget install Microsoft.AzureCLI
@@ -134,16 +180,9 @@ winget install Microsoft.AzureCLI
 
 The account name is 3–24 lower-case letters and digits and must be unique in Azure. The script creates a resource group, a Storage account with a public read-only `live` container and CORS, and prints the container URL and a write-only SAS token valid for a year (`-SasOnly` issues a new one later).
 
-In Tf3Bridge click **Azure…**, paste the URL and the token, **Test connection**, **Save**. From now on every change is mirrored to the container.
+In Tf3Bridge click **Azure…**, paste the URL and the token, **Test connection**, **Save**. From now on every change is mirrored to the container; the local copy in `web/data/` keeps working.
 
-#### Storage backends
-
-| Backend | Status |
-|---|---|
-| Azure Blob Storage | supported |
-| S3-compatible storage | planned |
-
-### 5. Configure the website
+### Website settings
 
 Copy the template and fill in your values:
 
@@ -158,33 +197,9 @@ Copy-Item web\site.example.json web\site.json
 | `twitchUrl` | optional, `https://www.twitch.tv/<channel>`; the stream button and mini player only appear when it's set |
 | `dataUrl` | where the site reads the data when not on localhost: `https://<storageaccount>.blob.core.windows.net/live/latest/` |
 
-Both `web/site.json` and `web/img/site/` are gitignored, so your branding stays out of the repository.
+Both `web/site.json` and `web/img/site/` are gitignored, so your branding stays out of the repository. On localhost the site always reads `web/data/`; to test the cloud data locally, open `http://localhost:5080/?data=<dataUrl>`.
 
-Tell Tf3Bridge where the site lives, so chat replies and reward descriptions can link to it. Create `middle_app/src/Tf3Bridge/appsettings.Local.json` (gitignored, copied next to the exe by `publish.ps1`):
-
-```json
-{ "Twitch": { "SiteUrl": "https://your-site.example/" } }
-```
-
-### 6. Extract the game icons
-
-Vehicle, cargo and station icons are Urban Games artwork, so they aren't in the repository. Extract them from your own game install once after cloning and after game updates:
-
-```powershell
-python tools\extract_game_icons.py "<path to Transport Fever 3>"
-```
-
-Without an argument the script uses the `TF3_GAME_DIR` environment variable or the default Steam library.
-
-### 7. Preview and deploy the website
-
-Preview locally (reads `web/data/` written by Tf3Bridge):
-
-```powershell
-.\web\serve.ps1
-```
-
-Then open http://localhost:5080.
+### Deploying the website
 
 Deploy to **Azure Static Web Apps** (create a Static Web App in the Azure portal first, then copy its deployment token from **Overview → Manage deployment token**):
 
@@ -193,7 +208,7 @@ Deploy to **Azure Static Web Apps** (create a Static Web App in the Azure portal
 .\infra\deploy-web.ps1                          # next times
 ```
 
-Alternatively, host the site as a Storage account static website with `-Target storage`. The script refuses to deploy without the game icons from step 6. Details: [web/README.md](web/README.md#deploying-to-azure).
+Alternatively, host the site as a Storage account static website with `-Target storage`. The script refuses to deploy without the game icons (local setup, step 3). Details: [web/README.md](web/README.md#deploying-to-azure).
 
 `.\infra\make_all.ps1` does a full release in one go: publish Tf3Bridge, zip it and deploy the website.
 
