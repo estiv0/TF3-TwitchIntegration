@@ -45,11 +45,27 @@ dotnet test
 
 ## Language
 
-The app speaks English or Polish. One setting, the **English / Polski** list at the end of the button row, covers everything: the windows, the chat replies, the in-game notifications and the default reward texts. The first start follows the Windows display language (Polish Windows = Polish, anything else = English); the choice is saved in `%LOCALAPPDATA%\Tf3Bridge\language.txt` (`Loc`). The log stays in English.
+The app speaks English and every language that has a file in `src/Tf3Bridge/Locales/` (now: Polish). One setting, the language list at the end of the button row (**English / Polski**, each language under its own name), covers everything: the windows, the chat replies, the in-game notifications and the default reward texts. The first start follows the Windows display language when there is a file for it, English otherwise; the choice is saved in `%LOCALAPPDATA%\Tf3Bridge\language.txt` as the language code (`Loc`). The log stays in English.
 
-The default titles and descriptions of the channel points rewards exist in both languages (`RewardKinds.DefaultsFor`). After a language switch, the rewards whose title or description is still the default of the other language get the default of the new one and go to Twitch right away; texts the streamer changed stay as they are. Chat commands answer to both their English and Polish names regardless of the setting (see "Chat commands").
+The default titles and descriptions of the channel points rewards are translated like any other text (`RewardKinds.DefaultsFor`). After a language switch, the rewards whose title or description is still the default of another language get the default of the new one and go to Twitch right away; texts the streamer changed stay as they are. Chat command names and aliases are not translated: they are defined in `Chat/ChatCommandService.cs` and every alias works regardless of the setting (see "Chat commands").
 
-In the code a text sits next to its translation: `Loc.T("English", "polski")`. Tests run in Polish by default (a `[ModuleInitializer]` in the test project); English tests use `using var _ = Loc.Use(Lang.En);`.
+### How texts work in the code
+
+The code holds only English, which is both the key and the fallback (gettext style):
+
+- `Loc.T("Save")`: a fixed text.
+- `Loc.F("{0} live map: {1}", mention, url)`: a text with values, as a `string.Format` format, so a translation can reorder them. Never pass `$"..."` to `Loc`: the key would change with every value (a test fails on that).
+- `Loc.P(n, "{0} town", "{0} towns")`: a count with the plural form of the language.
+- `Loc.N("TF3: buy a town")`: marks a text that is translated later (`Loc.T(x)` / `Loc.In(language, x)` where it is shown), e.g. tables of names or reward defaults.
+
+Tests run in Polish by default (a `[ModuleInitializer]` in the test project); English tests use `using var _ = Loc.Use("en");`. `LocaleTests` scans the source for the literal keys of `Loc.T` / `Loc.F` / `Loc.P` / `Loc.N` and fails when a locale file misses one of them, has a key the code no longer uses, changes the placeholders (`{0}`, `{months}`, …) or has the wrong number of plural forms. So after adding or changing an English text, add it to every locale file too.
+
+### Adding a language
+
+1. Copy `src/Tf3Bridge/Locales/pl.json` to `<code>.json`, where `<code>` is the two-letter language code (`de.json`, `cs.json`, …; it must be a .NET culture: number formats and the name in the list come from it).
+2. Translate the values, never the keys. Keep the placeholders: `{0}`, `{1}` (may move inside the sentence) and `{months}`, `{percent}`, `{site}`, `{amount}` in reward descriptions; a literal brace in a `Loc.F` text is written `{{` / `}}`. A value left as `""` is not translated yet and shows in English.
+3. Plurals (`"{0} town": [...]`) are arrays with one form per plural category of the language, in the order of the rule in `Loc.Rule`: English-like languages 2 (one, other), Polish, Czech, Slovak, Russian, Ukrainian, Croatian, Serbian 3, Japanese, Chinese, Korean 1. A language with another rule needs a line in `Loc.Rule`.
+4. Build and run the tests (`dotnet test`). The file is embedded in the exe (`Locales\*.json` in `Tf3Bridge.csproj`), so the language shows up in the list without other changes.
 
 ## Configuration (`src/Tf3Bridge/appsettings.json`, `Bridge` section)
 

@@ -97,7 +97,7 @@ public sealed class ModCommandQueue
                 ModCommandResult? r = null;
                 if (results?.TryGetValue(c.Id, out var found) == true) r = found;
                 else if (now - c.Created > GiveUpAfter) r = new ModCommandResult(c.Id, "expired",
-                    Loc.T("the game didn't pick up the command (is TF3 running with the mod on?)", "gra nie odebrała komendy (czy TF3 działa z włączonym modem?)"));
+                    Loc.T("the game didn't pick up the command (is TF3 running with the mod on?)"));
                 if (r is null) continue;
                 _pending.RemoveAt(i);
                 _recent[c.Id] = r;

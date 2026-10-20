@@ -41,7 +41,7 @@ public sealed class LanguageTests : IDisposable
     [Fact]
     public void Help_is_in_english_and_lists_the_english_command_names()
     {
-        using var _ = Loc.Use(Lang.En);
+        using var _ = Loc.Use("en");
 
         Assert.Equal("@Kermit33 TF3 commands: !assets [viewer], !town <name>, !industry <name>, !line <name>, !ranking, "
             + "!free [towns|industries], !best / !worst [line|company], !company, !date, !map. Only channel points change the game.",
@@ -52,7 +52,7 @@ public sealed class LanguageTests : IDisposable
     public void Commands_answer_to_english_and_polish_names_in_the_current_language()
     {
         // A new service each time: a command has a cooldown and the same answer is not repeated.
-        using (Loc.Use(Lang.En))
+        using (Loc.Use("en"))
         {
             Assert.Equal("@Kermit33 estiv0: 2 towns (Szczecin – main, Barcin), 1 industry (Browar), 2 lines, 16 vehicles, "
                 + "line profit (12 mo.) $833,881. Map: https://tf3.example.com/#owner=estiv0",
@@ -66,7 +66,7 @@ public sealed class LanguageTests : IDisposable
     [Fact]
     public void Redemption_answer_and_game_notification_are_in_english()
     {
-        using var _ = Loc.Use(Lang.En);
+        using var _ = Loc.Use("en");
         var boost = RewardKinds.Defaults.Single(r => r.Kind == RewardKind.BoostTown);
 
         Assert.Equal("@viewer town boost Szczecin (+50%) runs until 12 May 1922 (in-game date).",
@@ -82,7 +82,7 @@ public sealed class LanguageTests : IDisposable
     public void Industry_names_follow_the_language()
     {
         Assert.Equal("Kopalnia węgla", IndustryZones.Name("coal_mine"));
-        using var _ = Loc.Use(Lang.En);
+        using var _ = Loc.Use("en");
         Assert.Equal("Coal Mine", IndustryZones.Name("coal_mine"));
     }
 
@@ -95,7 +95,7 @@ public sealed class LanguageTests : IDisposable
             Rewards = [.. polish.Rewards.Select(r => r.Kind == RewardKind.StopLine ? r with { Title = "Stop!", Prompt = "Mój opis" } : r)],
         };
 
-        using var _ = Loc.Use(Lang.En);
+        using var _ = Loc.Use("en");
         var english = custom.Normalized();
         var defaults = RewardKinds.Defaults;
 
@@ -112,7 +112,7 @@ public sealed class LanguageTests : IDisposable
         var session = new TwitchSession(null, Path.Combine(_dir, "twitch.json"), NullLogger.Instance);
 
         Assert.Equal("brak Twitch:ClientId w appsettings.json", session.Status.Message);
-        using var _ = Loc.Use(Lang.En);
+        using var _ = Loc.Use("en");
         Assert.Equal("no Twitch:ClientId in appsettings.json", session.Status.Message);
     }
 
@@ -121,12 +121,15 @@ public sealed class LanguageTests : IDisposable
     {
         var path = Path.Combine(_dir, "language.txt");
         Assert.Null(Loc.Load(path));
-        Loc.Save(Lang.En, path);
-        Assert.Equal(Lang.En, Loc.Load(path));
+        Loc.Save("en", path);
+        Assert.Equal("en", Loc.Load(path));
+        File.WriteAllText(path, "Pl"); // written by the versions with a language enum
+        Assert.Equal("pl", Loc.Load(path));
         File.WriteAllText(path, "klingon");
         Assert.Null(Loc.Load(path));
 
-        Assert.Equal(Lang.Pl, Loc.FromCulture(CultureInfo.GetCultureInfo("pl-PL")));
-        Assert.Equal(Lang.En, Loc.FromCulture(CultureInfo.GetCultureInfo("de-DE")));
+        Assert.Equal("pl", Loc.FromCulture(CultureInfo.GetCultureInfo("pl-PL")));
+        Assert.Equal(["English", "Polski"], Loc.Languages.Select(Loc.NativeName)); // the language list in the main window
+        Assert.Equal("en", Loc.FromCulture(CultureInfo.GetCultureInfo("de-DE")));
     }
 }

@@ -16,9 +16,9 @@ public static class TargetResolver
     public static Result Resolve(IEnumerable<GameObject> objects, GameObjectKind kind, string input)
     {
         var query = Normalize(input);
-        if (query.Length == 0) return new(null, Loc.T("no name given", "nie podano nazwy"));
+        if (query.Length == 0) return new(null, Loc.T("no name given"));
         var candidates = objects.Where(o => o.Kind == kind).Select(o => (Object: o, Key: Normalize(o.Name))).ToList();
-        if (candidates.Count == 0) return new(null, Loc.T("no game data (is TF3 running?)", "brak danych z gry (czy TF3 działa?)"));
+        if (candidates.Count == 0) return new(null, Loc.T("no game data (is TF3 running?)"));
 
         foreach (var match in new Func<string, bool>[] { k => k == query, k => k.StartsWith(query, StringComparison.Ordinal), k => k.Contains(query, StringComparison.Ordinal) })
         {
@@ -27,10 +27,10 @@ public static class TargetResolver
             if (found.Count > 1)
             {
                 var list = string.Join(", ", found.Take(5).Select(o => o.Name)) + (found.Count > 5 ? "…" : "");
-                return new(null, Loc.T($"\"{input.Trim()}\" matches several: {list}", $"„{input.Trim()}” pasuje do kilku: {list}"));
+                return new(null, Loc.F("\"{0}\" matches several: {1}", input.Trim(), list));
             }
         }
-        return new(null, Loc.T($"\"{input.Trim()}\" not found", $"nie znaleziono „{input.Trim()}”"));
+        return new(null, Loc.F("\"{0}\" not found", input.Trim()));
     }
 
     /// <summary>Lower case, no diacritics (ł → l too), single spaces.</summary>

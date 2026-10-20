@@ -260,15 +260,15 @@ public sealed class ChatCommandTests : IDisposable
     [InlineData(12, "12 miast")]
     [InlineData(22, "22 miasta")]
     public void Polish_plurals(int n, string expected) =>
-        Assert.Equal(expected, ChatAnswers.Count(n, "town", "towns", "miasto", "miasta", "miast"));
+        Assert.Equal(expected, ChatAnswers.Towns(n));
 
     [Theory]
     [InlineData(1, "1 town")]
     [InlineData(3, "3 towns")]
     public void English_plurals(int n, string expected)
     {
-        using var _ = Loc.Use(Lang.En);
-        Assert.Equal(expected, ChatAnswers.Count(n, "town", "towns", "miasto", "miasta", "miast"));
+        using var _ = Loc.Use("en");
+        Assert.Equal(expected, ChatAnswers.Towns(n));
     }
 }
 

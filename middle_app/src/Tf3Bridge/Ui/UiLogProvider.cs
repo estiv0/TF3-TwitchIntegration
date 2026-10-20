@@ -44,7 +44,7 @@ public readonly record struct LogLine(DateTime Time, LogLevel Level, string Text
         var level = Level switch
         {
             LogLevel.Warning => "UWAGA ",
-            LogLevel.Error or LogLevel.Critical => Loc.T("ERROR ", "BŁĄD  "),
+            LogLevel.Error or LogLevel.Critical => Loc.T("ERROR "),
             _ => "",
         };
         return $"{Time:HH:mm:ss}  {level}{Text}";

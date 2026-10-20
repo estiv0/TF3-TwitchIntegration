@@ -20,8 +20,7 @@ internal static class Program
         using var mutex = new Mutex(true, @"Local\Tf3Bridge", out var firstInstance);
         if (!firstInstance)
         {
-            MessageBox.Show(Loc.T("Tf3Bridge is already running (check its icon in the system tray).",
-                "Tf3Bridge już działa (sprawdź ikonę w zasobniku systemowym)."), "Tf3Bridge",
+            MessageBox.Show(Loc.T("Tf3Bridge is already running (check its icon in the system tray)."), "Tf3Bridge",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }

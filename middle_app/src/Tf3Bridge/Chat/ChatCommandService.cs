@@ -111,7 +111,7 @@ public sealed class ChatCommandService
         var asker = new ChatAsker(m.ChatterName.Length > 0 ? m.ChatterName : m.ChatterLogin, m.ChatterLogin);
         if (!command.NeedsData) return command.Run(new ChatRequest(asker, arg, _siteUrl));
         using var doc = LoadDynamic();
-        if (doc is null) return Loc.T($"@{asker.Name} I have no game data yet.", $"@{asker.Name} nie mam jeszcze danych z gry.");
+        if (doc is null) return Loc.F("@{0} I have no game data yet.", asker.Name);
         var age = _time.GetUtcNow() - new DateTimeOffset(File.GetLastWriteTimeUtc(_dynamicPath), TimeSpan.Zero);
         return command.Run(new ChatRequest(asker, arg, _siteUrl, doc.RootElement, age));
     }
