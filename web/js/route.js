@@ -313,12 +313,24 @@ export class RouteGraph {
       }
       ends.push({ na, ...clipLeg(steps, stops[i], stops[j]) });
     }
+    // a stop at a node: the leg ends on one edge and the next one starts on another, on its own lane - like the curves
+    // within a leg, they're cut where they run past each other and joined (link) instead of leaving a gap
+    for (let i = 0; i < stops.length; i++) {
+      const e = ends[i], n = ends[(i + 1) % stops.length];
+      if (!e.to || !n.from || !e.curves.length || !n.curves.length) continue;
+      const pair = [e.curves[e.curves.length - 1], n.curves[0]];
+      trimOverlap(pair, 1);
+      [e.curves[e.curves.length - 1], n.curves[0]] = pair;
+      e.to = pair[0][3];
+      n.from = pair[1][0];
+      e.link = true;
+    }
 
     for (let i = 0; i < stops.length; i++) {
       const j = (i + 1) % stops.length;
-      const { na, curves, from } = ends[i];
-      const a = from ?? stops[i];
-      const b = ends[i].to ?? ends[j].from ?? stops[j];
+      const { na, curves, from, link } = ends[i];
+      const a = from ?? ends[(i + stops.length - 1) % stops.length].to ?? stops[i];
+      const b = link ? ends[j].from : ends[i].to ?? ends[j].from ?? stops[j];
       const first = poly.length;
       poly.push(a);
       path.moveTo(a.x, a.y);
@@ -336,6 +348,7 @@ export class RouteGraph {
           for (const t of BEZIER_SAMPLES) poly.push(curvePoint(c, t));
           poly.push(c[3]);
         }
+        if (link) joinCurves(path, poly, curves[curves.length - 1], ends[j].curves[0]);
       } else if (curves && na && !from) {
         path.lineTo(na.x, na.y);
         poly.push(na);
