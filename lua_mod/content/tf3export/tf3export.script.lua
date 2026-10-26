@@ -23,6 +23,7 @@ local terrain = ug_require "terrain.lua"
 local commands = ug_require "commands.lua"
 local effects = ug_require "effects.lua"
 local footprint = ug_require "footprint.lua"
+local routes = ug_require "routes.lua"
 
 local cfg = {
 	dynamicEveryDays = 2,          -- export of towns, industry, stations, lines and vehicles (game time)...
@@ -41,6 +42,9 @@ local cfg = {
 	vehiclePositionsMaxMs = 30,    -- positions are collected in chunks within the frame budget; if together they take longer
 	                               -- (averaged over 3 exports), they're turned off until the end of the session (log: "vehicle positions")
 	footprints = true,             -- areas of stations, depots and warehouses in the network export (footprint.lua); false = off
+	routes = true,                 -- real line routes from the vehicles' paths in the network export (routes.lua); false = off
+	routesEveryWallSec = 180,      -- how often to read the vehicles' paths; a network delta only when a route changed
+	routesBudgetMs = 2,            -- work time on reading the paths per frame
 	benchmark = false,             -- a one-off measurement of the write format (bench.lua), results in docs
 	terrainStepM = 20,             -- heightmap sample spacing (m)
 	terrainMaxSide = 2048,         -- at most this many samples per side (a bigger map -> a bigger step);
@@ -81,6 +85,9 @@ local S = {
 	lastDynamicWall = nil,
 	rows = nil,              -- id -> encoded edge row from the last write
 	fpRows = nil,            -- construction id -> encoded footprint row from the last write
+	routeRows = nil,         -- line id -> encoded route row from the last write
+	routeJob = nil,          -- the current pass over the vehicles' paths (routes.lua)
+	lastRoutesWall = nil,    -- when the last pass started
 	net = nil,               -- the current network build task
 	netVersionSeen = nil,    -- the last handled netVersion value from the shared state
 	netDirtyWall = nil,      -- when we noticed the change (debounce)
@@ -114,6 +121,8 @@ local function newSession(now)
 	S.seqDynamic, S.seqNetwork = 0, 0
 	S.lastDynamicTime, S.lastDynamicWall = nil, nil
 	S.rows, S.fpRows, S.net, S.netDirtyWall, S.lastNetworkWall = nil, nil, nil, nil, nil
+	S.routeRows, S.routeJob, S.lastRoutesWall = nil, nil, nil
+	routes.reset()
 	S.seqTerrain, S.terrain, S.terrainSig, S.lastTerrainCheckWall = 0, nil, nil, nil
 	S.lineStats, S.lineStatsKey, S.prevYear = {}, nil, nil
 	S.profitTotals, S.profitTotalsYear = {}, nil
@@ -445,35 +454,39 @@ local function header(kind, net, extra)
 	return json.encode(h):sub(1, -2) -- without the closing brace
 end
 
+-- changed rows and removed ids of new against old (old = nil: everything is new)
+local function diff(new, old)
+	local changed, removed = {}, {}
+	for id, row in pairs(new) do
+		if old == nil or old[id] ~= row then changed[#changed + 1] = row end
+	end
+	for id in pairs(old or {}) do
+		if new[id] == nil then removed[#removed + 1] = id end
+	end
+	table.sort(removed)
+	return changed, removed
+end
+
 local function finishNetwork(net)
 	local t = util.clock()
 	local kind, content, summary
-
-	-- changed rows and removed ids of new against old (old = nil: everything is new)
-	local function diff(new, old)
-		local changed, removed = {}, {}
-		for id, row in pairs(new) do
-			if old == nil or old[id] ~= row then changed[#changed + 1] = row end
-		end
-		for id in pairs(old or {}) do
-			if new[id] == nil then removed[#removed + 1] = id end
-		end
-		table.sort(removed)
-		return changed, removed
-	end
+	local routeRows = cfg.routes and routes.rows() or {}
 
 	if S.rows == nil then
 		local parts = diff(net.rows)
 		local fps = diff(net.fpRows)
+		local rts = diff(routeRows)
 		S.seqNetwork = S.seqNetwork + 1
 		kind = "network"
 		content = header(kind, net) .. ',"edges":[' .. table.concat(parts, ",") .. ']'
-			.. ',"footprints":[' .. table.concat(fps, ",") .. "]}"
-		summary = string.format("network #%d (full): %d edges, %d footprints", S.seqNetwork, #parts, #fps)
+			.. ',"footprints":[' .. table.concat(fps, ",") .. ']'
+			.. ',"routes":[' .. table.concat(rts, ",") .. "]}"
+		summary = string.format("network #%d (full): %d edges, %d footprints, %d routes", S.seqNetwork, #parts, #fps, #rts)
 	else
 		local changed, removed = diff(net.rows, S.rows)
 		local fpChanged, fpRemoved = diff(net.fpRows, S.fpRows)
-		if #changed == 0 and #removed == 0 and #fpChanged == 0 and #fpRemoved == 0 then
+		local rtChanged, rtRemoved = diff(routeRows, S.routeRows)
+		if #changed == 0 and #removed == 0 and #fpChanged == 0 and #fpRemoved == 0 and #rtChanged == 0 and #rtRemoved == 0 then
 			S.rows, S.fpRows = net.rows, net.fpRows
 			if net.reason == "periodic" then
 				util.log(string.format("network: no change (%s, %d edges)", net.reason, net.count))
@@ -486,12 +499,14 @@ local function finishNetwork(net)
 			.. ',"changed":[' .. table.concat(changed, ",") .. ']'
 			.. ',"removed":' .. json.encode(removed)
 			.. ',"footprints":[' .. table.concat(fpChanged, ",") .. ']'
-			.. ',"footprintsRemoved":' .. json.encode(fpRemoved) .. "}"
-		summary = string.format("networkDelta #%d: %d changed, %d removed, footprints %d changed, %d removed",
-			S.seqNetwork, #changed, #removed, #fpChanged, #fpRemoved)
+			.. ',"footprintsRemoved":' .. json.encode(fpRemoved)
+			.. ',"routes":[' .. table.concat(rtChanged, ",") .. ']'
+			.. ',"routesRemoved":' .. json.encode(rtRemoved) .. "}"
+		summary = string.format("networkDelta #%d: %d changed, %d removed, footprints %d changed, %d removed, routes %d changed, %d removed",
+			S.seqNetwork, #changed, #removed, #fpChanged, #fpRemoved, #rtChanged, #rtRemoved)
 	end
 
-	S.rows, S.fpRows = net.rows, net.fpRows
+	S.rows, S.fpRows, S.routeRows = net.rows, net.fpRows, routeRows
 	writer.write(kind, S.session, S.seqNetwork, content)
 	util.log(string.format("%s (%s, %d skipped), work %.1f ms (footprints %.1f ms) over %.1f s, write %.1f ms, %d B",
 		summary, net.reason, net.skipped, net.work * 1000, net.fpWork * 1000, util.clock() - net.t0,
@@ -551,6 +566,45 @@ local function stepNetwork()
 	net.work = net.work + (util.clock() - start)
 	S.net = nil
 	finishNetwork(net)
+end
+
+---------------------------------------------------------------- line routes
+-- Every routesEveryWallSec a pass over the vehicles' paths (routes.lua) in chunks (routesBudgetMs per frame), only
+-- while no network work is going on; then a networkDelta with only the changed routes - nothing when none changed.
+local function writeRoutesDelta(now)
+	local rows = routes.rows()
+	local changed, removed = diff(rows, S.routeRows)
+	if #changed == 0 and #removed == 0 then return 0 end
+	S.seqNetwork = S.seqNetwork + 1
+	local content = header("networkDelta", { gameTime = now }, { base = S.seqNetwork - 1 })
+		.. ',"changed":[],"removed":[],"footprints":[],"footprintsRemoved":[]'
+		.. ',"routes":[' .. table.concat(changed, ",") .. ']'
+		.. ',"routesRemoved":' .. json.encode(removed) .. "}"
+	S.routeRows = rows
+	writer.write("networkDelta", S.session, S.seqNetwork, content)
+	util.log(string.format("networkDelta #%d: routes %d changed, %d removed (vehicle paths), %d B",
+		S.seqNetwork, #changed, #removed, #content))
+	return #changed + #removed
+end
+
+local function updateRoutes(now, wall)
+	if not cfg.routes or S.net or S.rows == nil then return end
+	if S.routeJob then
+		local job = S.routeJob
+		local start = util.clock()
+		local done = routes.step(job, start + cfg.routesBudgetMs / 1000, function(id) return S.rows[id] ~= nil end)
+		job.work = job.work + (util.clock() - start)
+		if done then
+			S.routeJob = nil
+			if writeRoutesDelta(now) == 0 then
+				util.log(string.format("routes: no change (%d vehicles, %d legs read, work %.1f ms)", #job.items, job.legs, job.work * 1000))
+			end
+		end
+	elseif S.lastRoutesWall == nil or wall - S.lastRoutesWall >= cfg.routesEveryWallSec then
+		S.lastRoutesWall = wall
+		S.routeJob = routes.start()
+		S.routeJob.work = 0
+	end
 end
 
 ---------------------------------------------------------------- terrain export
@@ -726,6 +780,13 @@ local script = {
 		elseif not paused and wall - (S.lastNetworkWall or 0) >= cfg.networkSafetyEveryWallSec then
 			S.lastNetworkWall = wall
 			startNetwork(now, "periodic")
+		end
+
+		-- line routes are a new API: an error turns them off for this session instead of breaking guiUpdate
+		local okRoutes, errRoutes = pcall(updateRoutes, now, wall)
+		if not okRoutes then
+			cfg.routes, S.routeJob = false, nil
+			util.log("routes failed, disabled for this session: " .. tostring(errRoutes))
 		end
 
 		-- terrain is a new, unverified API: an error turns it off for this session instead of breaking guiUpdate

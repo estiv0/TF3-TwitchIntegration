@@ -25,6 +25,7 @@ lua_mod/                              → in the game: staging_area/estiv0_tf3ex
     tf3export.script.lua  main script: schedule, session, export (global data())
     collectors.lua        collectors: player, towns, industries, warehouses, stations, lines, vehicles, edges, footprint targets
     footprint.lua         areas of stations, depots and warehouses (their ground lots), for the network export
+    routes.lua            real line routes assembled from the vehicles' paths (MOVE_PATH), for the network export
     json.lua              JSON encoder (escaping, table.concat, null for NaN)
     util.lua              safe API access, enums -> names, game time, log
     writer.lua            writing: app.saveUserdata or the game log (fallback)
@@ -86,7 +87,7 @@ The middle app extracts `json = "..."`, reverses Lua escaping (`\"`, `\\`, `\n`,
   - `stations[]`: one row per station construction `{ id, kind, industry, warehouse, carriers[], name, file, pos, owner, passengers, cargo, groups[], stations[] }`, where `kind` is `RAIL`, `ROAD`, `WATER`, `AIR` (rarely `TRAM`, `OTHER` = an unrecognized industry station), and `industry` / `warehouse` is the id of the industry / warehouse when the station is part of it, determined from the construction path, and for stations from mods from `carriers` (the carriers of the whole station group). Stops (no construction, `small_stops`, `underground_station`) are skipped;
   - a line stop (`lines[].stops[]`) has `entity` = the station entity, which can be matched to `stations[].stations`;
   - a line's `carrier` comes from its vehicles, and when the line has no vehicles, from the kind of its stations.
-- **`network`**: `{ v, kind, session, seq, gameTime, fields[], edges[][], footprints[][] }`. Each edge is an array of values in the order given by `fields`:
+- **`network`**: `{ v, kind, session, seq, gameTime, fields[], edges[][], footprints[][], routes[][] }`. Each edge is an array of values in the order given by `fields`:
   - `id`, `node0`, `node1`
   - positions and tangents
   - `road`: `STREET` or `TRACK`
@@ -95,10 +96,11 @@ The middle app extracts `json = "..."`, reverses Lua escaping (`\"`, `\\`, `\n`,
   - `width`: m, the sum of the edge's `laneConfigs` widths, sidewalks included (streets ~11-26 m, a track 4 m); the website draws streets at this width
 
   `footprints` are the areas of constructions (`footprint.lua`, `cfg.footprints`): `[constructionId, type, polygons]`, where `type` is the station kind (`RAIL`, `ROAD`, `TRAM`, `WATER`, `AIR`, `OTHER`), `WAREHOUSE` or `DEPOT` (stops and stations of industries and warehouses are left out), and `polygons` = `[[x1, y1, x2, y2, …], …]` in world meters (0.5 m): the solid ground lots (`LOT_LIST`) of its subconstructions, usually one per module (a warehouse = entrance + one per store). Without lots, one polygon: the convex hull of the ground corners of its models (`MODEL_INSTANCE_LIST` + `modelRep` `boundingInfo`, without lamps and lights). A modular rail station's lots only cover the squares by the building, not the platforms. Computed after the edges, one construction at a time within the frame budget.
-- **`networkDelta`**: `{ v, kind, session, seq, base, gameTime, fields[], changed[][], removed[], footprints[][], footprintsRemoved[] }`
+  `routes` are the real routes of the player's lines (`routes.lua`, `cfg.routes`): `[lineId, legs]`, where `legs` has one entry per stop (in line order): the leg arriving at that stop from the previous one as edge ids in driving order (lanes through junctions left out; the direction on each edge follows from continuity, because the path's `dir` is per lane and was `true` also against the edge), or `false` when no vehicle has driven it yet. A leg is read from a vehicle on its way (`EN_ROUTE`) to that stop (`MOVE_PATH.path.edges`, which only covers the current leg) and kept until a vehicle drives it differently; a line's legs are dropped when its stops change. Read every `cfg.routesEveryWallSec` (180 s) within `cfg.routesBudgetMs` per frame; when a route row changed, the mod writes a `networkDelta` with only `routes` (empty edge and footprint lists).
+- **`networkDelta`**: `{ v, kind, session, seq, base, gameTime, fields[], changed[][], removed[], footprints[][], footprintsRemoved[], routes[][], routesRemoved[] }`
   - `changed` are added or changed edges, in the same row format as `edges`;
   - `removed` are the IDs of removed edges;
-  - `footprints` / `footprintsRemoved`: the same for footprints (rows / construction ids);
+  - `footprints` / `footprintsRemoved`, `routes` / `routesRemoved`: the same for footprints and routes (rows / ids);
   - `base` is the `seq` of the version the diff applies to. `network` and `networkDelta` share the `seq` counter, so `base = seq - 1`.
 
   The receiver applies diffs in order. If a `seq` is missing, it waits for a new full dump, which comes with the next session.
@@ -194,7 +196,7 @@ In the game log (`crash_dump\stdout.txt`) look for `[tf3export]` lines:
 - `new session … (writer mode 'userdata'|'log')`: the start of a session;
 - `dynamic #N: work … ms in … frames (max … ms/frame), … s wall; vehicles …, positions …, details … (… vehicles), stations …, lines …, line stats … (… lines), towns …, industries …, warehouses …, player …, encode …, write … ms; … B`: total work time and the worst frame, plus step times. A step that alone exceeds the budget (e.g. `towns`) is a candidate for splitting into chunks;
 - `vehicle positions: … ms for … vehicles (max … ms) - disabled for this session`: vehicle positions turned off automatically because together they took too long;
-- `network #N (full): … edges, … footprints (initial, …)` and `networkDelta #N: … changed, … removed, footprints … changed, … removed (build event, …)`, with the footprint time in `work … ms (footprints … ms)`;
+- `network #N (full): … edges, … footprints, … routes (initial, …)` and `networkDelta #N: … changed, … removed, footprints … changed, … removed (build event, …)`, with the footprint time in `work … ms (footprints … ms)`; `networkDelta #N: routes … changed, … removed (vehicle paths)` after reading the paths, or `routes: no change (… vehicles, … legs read, work … ms)`;
 - `network: no change (periodic|build event, …)`: the rebuild found no changes;
 - `saveUserdata failed: …`: a write error, after which the mod switches to the log;
 - `settings: key=value, …`: settings loaded from Tf3Bridge that differ from the previous ones.

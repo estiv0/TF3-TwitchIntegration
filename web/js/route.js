@@ -1,8 +1,9 @@
 // A line's route over the network: a graph from the network.json edges, stops snapped to the nearest
 // nodes of the right type (track / street) in the same connected piece of the network, segments between
 // stops searched with A*.
-// The game doesn't export the line path, so this is an approximation: the shortest way; on tracks with the direction
-// of travel (no U-turns at switches, through a stop onwards in the same direction), on streets without it.
+// Legs the mod read from the vehicles' paths (network.routes, routes.lua) are drawn as the game drives them; the
+// rest is an approximation: the shortest way; on tracks with the direction of travel (no U-turns at switches,
+// through a stop onwards in the same direction), on streets without it.
 // Coordinates as in map.js: (x, -y) from the game world.
 
 const SNAP_DISTANCE = 300; // m - further from the network a stop is connected with a straight line
@@ -19,6 +20,7 @@ export class RouteGraph {
     const f = Object.fromEntries(network.fields.map((name, i) => [name, i]));
     this.nodes = new Map(); // id -> { x, y, adj: [{ to, edge, len }] }
     this.edges = [];
+    this.edgeById = new Map(); // edge id -> edge (for the legs from the game)
 
     const node = (id, x, y) => {
       let n = this.nodes.get(id);
@@ -42,6 +44,7 @@ export class RouteGraph {
         + Math.hypot(x1 - edge.c1x, y1 - edge.c1y);
       const len = (chord + poly) / 2;
       this.edges.push(edge);
+      this.edgeById.set(e[f.id], edge);
 
       // the direction leaving the node (dx, dy) and entering the target node (ax, ay): the edge tangents
       const t0x = e[f.tx0], t0y = -e[f.ty0], t1x = e[f.tx1], t1y = -e[f.ty1];
@@ -259,7 +262,9 @@ export class RouteGraph {
   // whether the line is on screen, and for vehicle movement; cum = the distance from the start to each point,
   // length = the loop length) + legs: stop index on the line -> { start, end, first, last }, the segment
   // leading to it from the previous stop (distances along the loop and indices in poly). Stops without a position are skipped.
-  routeLine(line) {
+  // gameLegs (network.routes): per stop index the leg arriving at it as edge ids in driving order (older exports: signed)
+  // or false; used only when it matches the line's stops, a leg with an edge missing from the network is computed instead.
+  routeLine(line, gameLegs) {
     const all = line.stops ?? [];
     const index = [];  // index in stops (after filtering) -> stop index on the line
     const stops = [];
@@ -274,15 +279,23 @@ export class RouteGraph {
 
     const road = ROAD_FOR_CARRIER[line.carrier] ?? (line.carrier ? null : this.guessRoad(stops[0]));
     const candidates = stops.map((s) => (road ? this.nearestNodes(s.x, s.y, road) : []));
-    const directed = DIRECTED.has(road) ? this.directedLegs(stops, road) : [];
+    const game = gameLegs?.length === all.length ? gameLegs.map((ids) => this.gameSteps(ids)) : [];
+    const allKnown = game.length > 0 && game.every(Boolean);
+    const directed = DIRECTED.has(road) && !allKnown ? this.directedLegs(stops, road) : [];
     const poly = [];
 
     for (let i = 0; i < stops.length; i++) {
       const j = (i + 1) % stops.length;
       const a = stops[i], b = stops[j];
-      // when it's impossible on the directional network: the shortest way without direction
+      // the leg as the game drives it; otherwise computed, and when it's impossible on the directional network:
+      // the shortest way without direction
       let na = directed[i]?.from, steps = directed[i]?.steps;
-      if (!directed[i]) {
+      const known = game[index[j]];
+      if (known) {
+        steps = known;
+        const e = known[0].edge;
+        na = known[0].forward ? { x: e.x0, y: e.y0 } : { x: e.x1, y: e.y1 };
+      } else if (!directed[i]) {
         const pair = this.snapPair(candidates[i], candidates[j], road);
         na = pair?.[0];
         steps = pair ? this.path(pair[0], pair[1], road) : null;
@@ -310,6 +323,34 @@ export class RouteGraph {
     for (let i = 1; i < poly.length; i++) cum[i] = cum[i - 1] + Math.hypot(poly[i].x - poly[i - 1].x, poly[i].y - poly[i - 1].y);
     for (const [k, { first, last }] of legs) legs.set(k, { first, last, start: cum[first], end: cum[last] });
     return { path, stops, bbox: bboxOf(poly), poly, cum, length: cum[poly.length - 1], legs };
+  }
+
+  // A leg from the game (edge ids in driving order) as [{ edge, forward }] steps; null when unknown or an edge isn't in
+  // the network. The direction comes from continuity: an edge starts at the end of the previous one (the first one ends
+  // next to the second). The game's own direction flag is per lane, not per edge, so it doesn't tell us.
+  gameSteps(ids) {
+    if (!ids?.length) return null;
+    const edges = [];
+    for (const id of ids) {
+      const edge = this.edgeById.get(Math.abs(id));
+      if (!edge) return null;
+      edges.push(edge);
+    }
+    const d = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+    const near = (x, y, e) => Math.min(d(x, y, e.x0, e.y0), d(x, y, e.x1, e.y1));
+    const steps = [];
+    edges.forEach((edge, i) => {
+      let forward;
+      if (i === 0) {
+        const next = edges[1];
+        forward = !next || near(edge.x1, edge.y1, next) <= near(edge.x0, edge.y0, next);
+      } else {
+        const p = steps[i - 1], px = p.forward ? p.edge.x1 : p.edge.x0, py = p.forward ? p.edge.y1 : p.edge.y0;
+        forward = d(px, py, edge.x0, edge.y0) <= d(px, py, edge.x1, edge.y1);
+      }
+      steps.push({ edge, forward });
+    });
+    return steps;
   }
 
   // A line without vehicles has no known carrier - pick the network type closer to the first stop.

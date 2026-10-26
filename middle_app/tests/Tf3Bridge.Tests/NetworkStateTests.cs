@@ -59,6 +59,25 @@ public class NetworkStateTests
     }
 
     [Fact]
+    public void RoutesFollowFullAndDelta()
+    {
+        var state = new NetworkState();
+        var full = Full("s1", 1, 10);
+        full["routes"] = new JsonArray(new JsonArray(7L, new JsonArray(new JsonArray(10L, -11L), false)));
+        state.ApplyFull(full);
+
+        // a routes-only delta (no edge changes), as the mod writes after reading the vehicles' paths
+        var delta = Delta("s1", 2, 1, [], []);
+        delta["routes"] = new JsonArray(new JsonArray(8L, new JsonArray(new JsonArray(12L))));
+        delta["routesRemoved"] = new JsonArray(7L);
+        Assert.Equal(DeltaResult.Applied, state.ApplyDelta(delta));
+
+        var routes = state.ToJson()["routes"]!.AsArray();
+        Assert.Equal([8L], routes.Select(r => r![0]!.GetValue<long>()));
+        Assert.Equal(1, state.EdgeCount);
+    }
+
+    [Fact]
     public void SnapshotWithoutFootprintsHasEmptyList()
     {
         var state = new NetworkState();

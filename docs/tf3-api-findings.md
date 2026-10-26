@@ -213,3 +213,14 @@ Probes: `docs/probes/footprint-probe.lua` and `footprint-probe2.lua` (console, o
 - **Ground lots (used):** the subconstructions (not the construction) have `LOT_LIST` (`ComponentType.LOT_LIST` = 17, missing from the Teal definitions): `lots[]` with `vertices` (`Vec2f`, world coordinates), `triangles`, `texKey`, `solid`. Solid lots are the module areas (a warehouse: `entrance.gtex`, `wh_flatbed.gtex`, `wh_bulk.gtex`; harbor/stations: `industry_floor.gtex`, asphalt, gravel; airfield: runway, hangar, terminal); non-solid ones are borders (`street_border`, `pedestrian_connection_border`, ~50-100 vertices). This matches the area the game highlights; a modular rail station's lots only cover the squares by the building, not the platforms. Probe: `footprint-probe3.lua`.
 - **Outline from models (fallback):** `MODEL_INSTANCE_LIST.fatInstances` (`modelId`, `transf`) of the construction and its `subconstructions`, with `api.res.modelRep.get(modelId).boundingInfo` (`bbMin`/`bbMax`, local). `thinInstances` were empty everywhere. Examples: road depot 56×41 m, warehouse 90×82 m, modular rail station 34×202 m, modular harbor 120×204 m (with the pier), airfield 405×176 m (852 models). Its convex hull is too coarse (a T-shaped warehouse becomes a triangle), and lamps/lights have bounding boxes with the light cone (lamp post 22×25 m, `ind_light_huge` 90×82 m), so `footprint.lua` uses it only without lots, and without lamps.
 - **Street width:** `BASE_EDGE.laneConfigs[i].width` is filled for every edge, sidewalks included (e.g. `[2,5,5,2]` = 14 m, `[3,5,4,4,5,3]` = 24 m, `[3,20,3]` = 26 m); tracks have one 4 m lane. `typeIndex` is -1 for streets. The sum of lane widths is the street width.
+
+## Vehicle routes: MOVE_PATH (2026-10-26)
+
+Probe: `docs/probes/route-probe.lua` (output with `[route]`).
+
+- Road vehicles (buses) have `MOVE_PATH`; the vehicles of a 2-stop line without it were probably trains/ships (not checked further).
+- `MOVE_PATH.path.edges[i]` is a userdata `{ edgeId = { entity, index }, dir = boolean }` - **not** the documented `{EdgeId, boolean}` pair (`[1]`/`[2]` are nil).
+- `edgeId.entity` is either a street edge we export (has `BASE_EDGE`) or an entity without `BASE_EDGE` (presumably the lanes through a junction node); `index` is the lane within that entity's `TRANSPORT_NETWORK` (a street edge had 8 TN edges, 4 nodes).
+- `dir` is the direction along the **lane** (TN edge), not along our `BASE_EDGE`: it was `true` for every entry, also where the bus drove against the edge. Taking it as the edge direction drew loops on the map; the website orients each edge by continuity with the previous one instead.
+- The path covers only the current leg: 15 edges for a bus heading to its next stop, `dyn.pathPos.edgeIndex` = 11 (it was ~3/4 along). A whole line has to be assembled from the legs of several vehicles over time.
+- ⚠️ `debugPrint` of a `TRANSPORT_NETWORK.edges[i]` element **crashed the game** (minidump). Don't dump those.

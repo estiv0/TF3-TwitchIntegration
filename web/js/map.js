@@ -163,6 +163,7 @@ export class MapView {
     this.lines = new Map();     // id -> line from dynamic.json
     this.graph = null;          // RouteGraph - for working out line routes
     this.routeCache = new Map(); // line id -> { key, route }
+    this.gameRoutes = new Map(); // line id -> legs read from the vehicles (network.routes, see route.js routeLine)
     this.linesView = null;      // { match(line) } - the Lines tab: draw all lines on screen
     this.visibleKey = null;     // the last reported set of lines on screen (so it isn't reported every frame)
     this.visibleIds = new Set(); // lines drawn by drawVisibleLines in the last frame
@@ -218,6 +219,7 @@ export class MapView {
 
     this.paths = paths;
     this.footprints = footprintsOf(network);
+    this.gameRoutes = new Map((network.routes ?? []).map(([id, legs]) => [id, legs]));
     this.graph = new RouteGraph(network);
     this.routeCache.clear();
     this.vehiclesDirty = true; // new routes - vehicles jump onto them without animation
@@ -905,7 +907,7 @@ export class MapView {
     const key = JSON.stringify([line.carrier, (line.stops ?? []).map((s) => s.pos)]);
     const cached = this.routeCache.get(id);
     if (cached?.key === key) return cached.route;
-    const route = this.graph.routeLine(line);
+    const route = this.graph.routeLine(line, this.gameRoutes.get(id));
     this.routeCache.set(id, { key, route });
     return route;
   }
