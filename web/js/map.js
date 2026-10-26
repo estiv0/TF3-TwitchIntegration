@@ -437,7 +437,14 @@ export class MapView {
   }
 
   // ---------------------------------------------------------------- drawing
+  // Something on the map changed (view, data, layers, selection, hover): the static layer is drawn again.
   requestDraw() {
+    this.staticDirty = true;
+    this.requestFrame();
+  }
+
+  // A frame of the vehicle / connection animation: the map under them is taken from the static layer.
+  requestFrame() {
     if (this.frame) return;
     this.frame = requestAnimationFrame(() => {
       this.frame = 0;
@@ -445,15 +452,59 @@ export class MapView {
     });
   }
 
+  // The map is drawn in two parts: the static layer (terrain, footprints, network, lines - thousands of curves, the
+  // costly part) to an offscreen canvas, only when something changed; and on top of it, every frame, the rest.
   draw() {
-    const { ctx, dpr, w, h, view } = this;
-    const css = (name) => this.theme[name];
-    this.theme = readTheme();
+    const { ctx, dpr } = this;
+    const theme = readTheme();
+    const themeKey = Object.values(theme).join("|"); // a theme switch doesn't go through requestDraw
+    this.theme = theme;
     const now = performance.now();
     // The connections of the cargo pointed at / selected industry replace the lines and vehicles (they move on, just not drawn).
     const links = this.industryLinks();
     const vehicles = this.showVehicles ? this.positionVehicles(now) : [];
     this.vehicles = links ? [] : vehicles;
+    const focus = links ? null : this.objectFocus();
+
+    const layer = (this.layer ??= document.createElement("canvas"));
+    if (layer.width !== this.canvas.width || layer.height !== this.canvas.height) {
+      layer.width = this.canvas.width;
+      layer.height = this.canvas.height;
+      this.staticDirty = true;
+    }
+    if (this.staticDirty || themeKey !== this.themeKey) {
+      this.staticDirty = false;
+      this.themeKey = themeKey;
+      this.ctx = layer.getContext("2d");
+      try {
+        this.drawStatic(focus);
+      } finally {
+        this.ctx = ctx;
+      }
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.drawImage(layer, 0, 0);
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (links) this.drawLinksView(links, now);
+    else this.drawObjects(focus);
+    this.drawMarker();
+    this.drawPin();
+
+    if ((links || this.showVehicles && now < this.animUntil) && !this.animTimer) {
+      this.animTimer = setTimeout(() => {
+        this.animTimer = 0;
+        this.requestFrame();
+      }, ANIM_FRAME_MS);
+    }
+  }
+
+  // The static layer (into this.ctx): background, terrain, footprints, the network and the lines (focus: objectFocus,
+  // null - the connections view, without lines).
+  drawStatic(focus) {
+    const { ctx, dpr, w, h, view } = this;
+    const css = (name) => this.theme[name];
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = css("--map-bg");
     ctx.fillRect(0, 0, w, h);
@@ -511,34 +562,31 @@ export class MapView {
       ctx.setLineDash([]);
     }
 
+    if (!focus) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    if (links) this.drawLinksView(links, now);
-    else this.drawObjects();
-    this.drawMarker();
-    this.drawPin();
-
-    if ((links || this.showVehicles && now < this.animUntil) && !this.animTimer) {
-      this.animTimer = setTimeout(() => {
-        this.animTimer = 0;
-        this.requestDraw();
-      }, ANIM_FRAME_MS);
-    }
+    ctx.globalAlpha = focus.alpha;
+    if (this.linesView) this.drawVisibleLines(focus.hotLine, focus.selLines);
+    else for (const id of focus.selLines) this.drawLine(id);
+    ctx.globalAlpha = 1;
   }
 
-  // Lines, industries, warehouses, stations, vehicles and towns: the normal map, without the selected industry's connections.
-  drawObjects() {
-    const { ctx } = this;
-    // A point pointed at in the list, or a line pointed at in the panel or via a vehicle on the map (then together
-    // with the selected object, e.g. a town): the rest semi-transparent, the pointed ones last, in full color.
-    // The vehicles of the pointed or selected line are drawn last, the others dimmed.
+  // A point pointed at in the list, or a line pointed at in the panel or via a vehicle on the map (then together
+  // with the selected object, e.g. a town): the rest semi-transparent (alpha), the pointed ones last, in full color.
+  // The vehicles of the pointed or selected line (focusLines) are drawn last, the others dimmed.
+  objectFocus() {
     const hotLine = this.hotLine();
     const spotLine = this.spotLine(hotLine);
     const spot = this.spotItem(spotLine === null ? this.listHover : this.selected);
     const selLines = this.selectedLines();
     const focusLines = hotLine !== null ? new Set([hotLine]) : selLines;
-    ctx.globalAlpha = spot || spotLine !== null ? DIM : 1;
-    if (this.linesView) this.drawVisibleLines(hotLine, selLines);
-    else for (const id of selLines) this.drawLine(id);
+    return { hotLine, spotLine, spot, selLines, focusLines, alpha: spot || spotLine !== null ? DIM : 1 };
+  }
+
+  // Industries, warehouses, stations, vehicles and towns over the lines of the static layer: the normal map, without
+  // the selected industry's connections.
+  drawObjects({ spotLine, spot, focusLines, alpha }) {
+    const { ctx } = this;
+    ctx.globalAlpha = alpha;
     if (this.showIndustries) this.drawIndustries(spot);
     if (this.showWarehouses) this.drawWarehouses(spot);
     if (this.showStations) this.drawStops();
