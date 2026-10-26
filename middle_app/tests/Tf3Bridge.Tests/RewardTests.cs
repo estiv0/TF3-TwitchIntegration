@@ -691,6 +691,20 @@ public sealed class RewardTests : IDisposable
         Assert.Contains("\"status\":\"FULFILLED\"", patch.Body);
     }
 
+    [Fact]
+    public async Task The_same_redemption_is_carried_out_once()
+    {
+        var service = await SyncedService();
+        var rewardId = service.Settings.TwitchIds[RewardKind.Subsidy];
+        var redemption = new ChannelPointsRedemption("red1", rewardId, "", 0, "7", "widz", "Widz", "", DateTimeOffset.UtcNow);
+
+        // EventSub, then the backlog after a resync: Twitch still lists it as UNFULFILLED while the game works on it
+        await service.HandleRedemptionForTestAsync(redemption);
+        await service.HandleRedemptionForTestAsync(redemption);
+
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(QueueText, "kind = \"subsidy\""));
+    }
+
     // ------------------------------------------------------------------ in-game notification
 
     // The notification goes to the queue in the background (after Twitch answers), so we wait for the file.

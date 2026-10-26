@@ -58,6 +58,9 @@ public sealed class RewardService
     private readonly ILogger _log;
     private readonly Lock _gate = new();
     private readonly Dictionary<string, Pending> _pending = []; // command id -> redemption
+    // Twitch redemption ids already taken on in this run: EventSub may deliver one twice and the backlog
+    // (after a resync, e.g. saving settings) still sees it as UNFULFILLED while the game carries it out.
+    private readonly HashSet<string> _handled = [];
     private RewardSettings _settings;
     private volatile RewardStatus _status = new(RewardState.Off, () => Loc.T("off"));
     private string? _syncedFor;      // the account the rewards are synced for
@@ -257,6 +260,7 @@ public sealed class RewardService
         var kind = KindOf(r.RewardId);
         if (kind is null) return Task.CompletedTask; // not our reward
         if (RewardKinds.Manual(kind.Value)) return Task.CompletedTask; // stays in the Twitch queue for the streamer
+        if (!FirstTime(r.Id)) return Task.CompletedTask;
         // Bought just before the rewards were disabled or waiting since the previous run: the game wouldn't carry it out anyway.
         if (!_mock && _whyInactive() is { } why)
         {
@@ -266,6 +270,16 @@ public sealed class RewardService
         Process(kind.Value, r.UserInput, r.UserName.Length > 0 ? r.UserName : r.UserLogin,
             r.RedeemedAt, new Origin(new Redemption(r.RewardId, r.Id), r.UserLogin.Length > 0 ? r.UserLogin : r.UserName, Chat: true), r.Id);
         return Task.CompletedTask;
+    }
+
+    private bool FirstTime(string redemptionId)
+    {
+        lock (_gate)
+        {
+            if (_handled.Add(redemptionId)) return true;
+        }
+        _log.LogInformation("Redemption {Id} already handled, skipped", redemptionId);
+        return false;
     }
 
     internal Task HandleRedemptionForTestAsync(ChannelPointsRedemption r) => HandleRedemptionAsync(r);
@@ -499,6 +513,8 @@ public sealed class RewardService
                 var redemption = new ChannelPointsRedemption(r.Id, rewardId, "", 0, "", r.UserLogin, r.UserName, r.UserInput, r.RedeemedAt);
                 if (DateTimeOffset.UtcNow - r.RedeemedAt > MaxRedemptionAge)
                 {
+                    // Carried out earlier in this run but not closed (Twitch error): a refund would give the points back too.
+                    if (!FirstTime(r.Id)) continue;
                     _log.LogWarning("Refunding old redemption of {Kind} by {User} from {At:g}", kind, r.UserName, r.RedeemedAt.ToLocalTime());
                     Refuse(redemption, kind, Loc.T("the game wasn't running when the reward was bought"));
                     continue;
