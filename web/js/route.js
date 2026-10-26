@@ -11,6 +11,9 @@ const SNAP_CANDIDATES = 8; // how many of a stop's nearest nodes we consider whe
 const STOP_RADIUS = 60; // m - nodes of a directional network this close to the stop belong to the station (platforms)
 const STOP_EDGE_MARGIN = 10; // m - a stop this far beyond the edge's half width lies on that edge (a street stop at the curb)
 const STOP_EDGE_STEPS = 3; // how many steps at each end of a leg can carry its stop (a path starts a bit before the stop)
+// A station stands beside its platform tracks (up to a few tens of m from the stop), and the game's path of a train
+// starts a dozen steps before the platform - on a directional network the stop is searched for further.
+const STATION_REACH = { steps: 16, margin: STOP_RADIUS };
 
 // Line carrier -> the type of edge it runs on (WATER/AIR: a straight line).
 const ROAD_FOR_CARRIER = { RAIL: "TRACK", ROAD: "STREET", TRAM: "STREET" };
@@ -286,6 +289,7 @@ export class RouteGraph {
     const game = gameLegs?.length === all.length ? gameLegs.map((ids) => this.gameSteps(ids)) : [];
     const allKnown = game.length > 0 && game.every(Boolean);
     const directed = DIRECTED.has(road) && !allKnown ? this.directedLegs(stops, road) : [];
+    const reach = DIRECTED.has(road) ? STATION_REACH : undefined;
     const poly = [];
 
     // each leg as curves; it starts and ends at the stop itself or at the point on the edge the stop stands on
@@ -298,7 +302,7 @@ export class RouteGraph {
       const known = game[index[j]];
       if (known) {
         // a path read mid-way (after loading a game the vehicles plan from where they are) misses the start of the leg
-        const clip = clipLeg(known, stops[i], stops[j]);
+        const clip = clipLeg(known, stops[i], stops[j], reach);
         const start = clip.curves[0]?.[0];
         if (clip.from || (start && Math.hypot(start.x - stops[i].x, start.y - stops[i].y) <= 2 * STOP_RADIUS)) {
           ends.push({ na: null, ...clip });
@@ -311,7 +315,7 @@ export class RouteGraph {
         na = pair?.[0];
         steps = pair ? this.path(pair[0], pair[1], road) : null;
       }
-      ends.push({ na, ...clipLeg(steps, stops[i], stops[j]) });
+      ends.push({ na, ...clipLeg(steps, stops[i], stops[j], reach) });
     }
     // a stop at a node: the leg ends on one edge and the next one starts on another, on its own lane - like the curves
     // within a leg, they're cut where they run past each other and joined (link) instead of leaving a gap
@@ -451,20 +455,21 @@ const BEZIER_SAMPLES = [0.25, 0.5, 0.75];
 // The steps of a leg as cubic curves [p0, c0, c1, p1] in driving order: { curves, from, to }. A stop standing on an edge
 // near the start (end) of the leg cuts the leg there - a street stop is in the middle of an edge, and the game's path
 // covers that whole edge, sometimes with the one before it: from (to) is that point on the edge and the steps before
-// (after) it are dropped. Otherwise from / to are null and the leg is joined to the stop with a straight line.
-function clipLeg(steps, a, b) {
+// (after) it are dropped; a station cuts it on its platform track (reach: how many steps and how far from the edge).
+// Otherwise from / to are null and the leg is joined to the stop with a straight line.
+function clipLeg(steps, a, b, reach = { steps: STOP_EDGE_STEPS, margin: STOP_EDGE_MARGIN }) {
   if (!steps) return { curves: null, from: null, to: null };
   const n = steps.length;
   const onEdge = (p, k0, k1) => {
     let best = null;
     for (let k = Math.max(0, k0); k < Math.min(n, k1); k++) {
       const e = steps[k].edge, c = closestOnEdge(e, p);
-      if (c.d <= e.width / 2 + STOP_EDGE_MARGIN && (!best || c.d < best.d)) best = { k, t: c.t };
+      if (c.d <= e.width / 2 + reach.margin && (!best || c.d < best.d)) best = { k, t: c.t, d: c.d };
     }
     return best;
   };
-  const sa = onEdge(a, 0, STOP_EDGE_STEPS);
-  const sb = onEdge(b, Math.max(sa?.k ?? 0, n - STOP_EDGE_STEPS), n);
+  const sa = onEdge(a, 0, reach.steps);
+  const sb = onEdge(b, Math.max(sa?.k ?? 0, n - reach.steps), n);
   const k0 = sa?.k ?? 0, k1 = sb?.k ?? n - 1;
   const curves = [];
   let from = null, to = null;
