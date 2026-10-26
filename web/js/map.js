@@ -4,6 +4,7 @@
 import { cargoImg, fmtInt, industryOfStation, rgb, stationImg, townSize, warehouseOfStation } from "./format.js";
 import { RouteGraph, pointAtDistance, projectOnLeg, routeInRect } from "./route.js";
 import { t } from "./i18n.js";
+import { frameStart, perfInfo, timed } from "./perf.js";
 
 const RAW_INDUSTRIES = new Set([
   "coal_mine", "iron_ore_mine", "quarry", "forest", "farm", "oil_well",
@@ -455,16 +456,21 @@ export class MapView {
   // The map is drawn in two parts: the static layer (terrain, footprints, network, lines - thousands of curves, the
   // costly part) to an offscreen canvas, only when something changed; and on top of it, every frame, the rest.
   draw() {
+    frameStart();
+    timed("frame", () => this.drawFrame());
+  }
+
+  drawFrame() {
     const { ctx, dpr } = this;
-    const theme = readTheme();
+    const theme = timed("frame/theme", readTheme);
     const themeKey = Object.values(theme).join("|"); // a theme switch doesn't go through requestDraw
     this.theme = theme;
     const now = performance.now();
     // The connections of the cargo pointed at / selected industry replace the lines and vehicles (they move on, just not drawn).
-    const links = this.industryLinks();
-    const vehicles = this.showVehicles ? this.positionVehicles(now) : [];
+    const links = timed("frame/links", () => this.industryLinks());
+    const vehicles = this.showVehicles ? timed("frame/vehicle positions", () => this.positionVehicles(now)) : [];
     this.vehicles = links ? [] : vehicles;
-    const focus = links ? null : this.objectFocus();
+    const focus = links ? null : timed("frame/focus", () => this.objectFocus());
 
     const layer = (this.layer ??= document.createElement("canvas"));
     if (layer.width !== this.canvas.width || layer.height !== this.canvas.height) {
@@ -477,20 +483,22 @@ export class MapView {
       this.themeKey = themeKey;
       this.ctx = layer.getContext("2d");
       try {
-        this.drawStatic(focus);
+        timed("frame/static", () => this.drawStatic(focus));
       } finally {
         this.ctx = ctx;
       }
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
-    ctx.drawImage(layer, 0, 0);
+    timed("frame/static copy", () => ctx.drawImage(layer, 0, 0));
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    if (links) this.drawLinksView(links, now);
-    else this.drawObjects(focus);
-    this.drawMarker();
-    this.drawPin();
+    if (links) timed("frame/links view", () => this.drawLinksView(links, now));
+    else timed("frame/objects", () => this.drawObjects(focus));
+    timed("frame/marker, pin", () => {
+      this.drawMarker();
+      this.drawPin();
+    });
 
     if ((links || this.showVehicles && now < this.animUntil) && !this.animTimer) {
       this.animTimer = setTimeout(() => {
@@ -509,16 +517,16 @@ export class MapView {
     ctx.fillStyle = css("--map-bg");
     ctx.fillRect(0, 0, w, h);
 
-    if (this.terrain && (this.showTerrain || this.overlay)) {
+    if (this.terrain && (this.showTerrain || this.overlay)) timed("frame/static/terrain", () => {
       const s = view.scale, t = this.terrain;
       ctx.setTransform(s * dpr, 0, 0, s * dpr, (w / 2 - view.x * s) * dpr, (h / 2 - view.y * s) * dpr);
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = "high";
       if (this.showTerrain) ctx.drawImage(t.image, t.x, t.y, t.w, t.h);
       if (this.overlay) ctx.drawImage(this.overlay, t.x, t.y, t.w, t.h);
-    }
+    });
 
-    if (this.footprints.length) {
+    if (this.footprints.length) timed("frame/static/footprints", () => {
       // under the network, so the tracks and roads of a station run over its area
       const s = view.scale;
       ctx.setTransform(s * dpr, 0, 0, s * dpr, (w / 2 - view.x * s) * dpr, (h / 2 - view.y * s) * dpr);
@@ -536,9 +544,9 @@ export class MapView {
         ctx.stroke(f.path);
       }
       ctx.globalAlpha = 1;
-    }
+    });
 
-    if (this.paths) {
+    if (this.paths) timed("frame/static/network", () => {
       const s = view.scale;
       ctx.setTransform(s * dpr, 0, 0, s * dpr, (w / 2 - view.x * s) * dpr, (h / 2 - view.y * s) * dpr);
       ctx.lineCap = "round";
@@ -560,13 +568,15 @@ export class MapView {
       stroke(this.paths.trackTunnel, css("--map-track-tunnel"), 1.5, [4, 3]);
       stroke(this.paths.track, css("--map-track"), Math.max(1.5, Math.min(5, 8 * s)));
       ctx.setLineDash([]);
-    }
+    });
 
     if (!focus) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.globalAlpha = focus.alpha;
-    if (this.linesView) this.drawVisibleLines(focus.hotLine, focus.selLines);
-    else for (const id of focus.selLines) this.drawLine(id);
+    timed("frame/static/lines", () => {
+      if (this.linesView) this.drawVisibleLines(focus.hotLine, focus.selLines);
+      else for (const id of focus.selLines) this.drawLine(id);
+    });
     ctx.globalAlpha = 1;
   }
 
@@ -587,20 +597,23 @@ export class MapView {
   drawObjects({ spotLine, spot, focusLines, alpha }) {
     const { ctx } = this;
     ctx.globalAlpha = alpha;
-    if (this.showIndustries) this.drawIndustries(spot);
-    if (this.showWarehouses) this.drawWarehouses(spot);
-    if (this.showStations) this.drawStops();
-    if (this.showStations) this.drawStations(spot);
+    if (this.showIndustries) timed("frame/objects/industries", () => this.drawIndustries(spot));
+    if (this.showWarehouses) timed("frame/objects/warehouses", () => this.drawWarehouses(spot));
+    if (this.showStations) timed("frame/objects/stops", () => this.drawStops());
+    if (this.showStations) timed("frame/objects/stations", () => this.drawStations(spot));
     // vehicles of other lines dimmed once (when the rest of the map is already dimmed - no extra DIM)
-    if (this.showVehicles) this.drawVehicles((v) => !focusLines.has(v.line), !focusLines.size || ctx.globalAlpha < 1 ? 1 : DIM);
-    this.drawTowns(spot);
+    if (this.showVehicles) timed("frame/objects/vehicles", () => this.drawVehicles((v) => !focusLines.has(v.line), !focusLines.size || ctx.globalAlpha < 1 ? 1 : DIM));
+    timed("frame/objects/towns", () => this.drawTowns(spot));
     ctx.globalAlpha = 1;
-    if (spotLine !== null) this.drawLine(spotLine);
-    if (this.showVehicles && focusLines.size) this.drawVehicles((v) => focusLines.has(v.line));
-    if (spot?.kind === "industry") this.drawIndustry(spot);
-    else if (spot?.kind === "warehouse") this.drawWarehouse(spot);
-    else if (spot?.kind === "station") this.drawStation(spot);
-    else if (spot?.kind === "town") this.drawTown(spot, null);
+    timed("frame/objects/pointed", () => {
+      if (spotLine !== null) this.drawLine(spotLine);
+      if (this.showVehicles && focusLines.size) this.drawVehicles((v) => focusLines.has(v.line));
+      if (spot?.kind === "industry") this.drawIndustry(spot);
+      else if (spot?.kind === "warehouse") this.drawWarehouse(spot);
+      else if (spot?.kind === "station") this.drawStation(spot);
+      else if (spot?.kind === "town") this.drawTown(spot, null);
+    });
+    perfInfo("vehicles", this.vehicles.length);
   }
 
   // ---------------------------------------------------------------- connections of an industry / a cargo
@@ -967,21 +980,22 @@ export class MapView {
     const [minX, minY] = this.toWorld(0, 0);
     const [maxX, maxY] = this.toWorld(this.w, this.h);
     const rect = { minX, minY, maxX, maxY };
-    const visible = [...this.lines.values()]
+    const visible = timed("frame/static/lines/routes, on screen", () => [...this.lines.values()]
       .filter((l) => this.linesView.match(l) && routeInRect(this.lineRoute(l.id), rect))
-      .sort((a, b) => (a.vehicleCount ?? 0) - (b.vehicleCount ?? 0)); // the busiest on top
+      .sort((a, b) => (a.vehicleCount ?? 0) - (b.vehicleCount ?? 0))); // the busiest on top
+    perfInfo("lines on screen", `${visible.length} of ${this.lines.size}`);
 
     // The pointed line: the others semi-transparent, it on top and 50% wider.
     this.visibleIds = new Set(visible.map((l) => l.id));
     const hot = hotLine !== null && this.visibleIds.has(hotLine) ? hotLine : null;
     if (selLines.size) for (const id of selLines) this.drawLine(id);
-    else {
+    else timed("frame/static/lines/stroke", () => {
       const alpha = this.ctx.globalAlpha; // already dimmed when a town / industry / station is pointed at
       this.ctx.globalAlpha = hot === null ? alpha : DIM;
       for (const l of visible) if (l.id !== hot) this.drawLine(l.id, true);
       this.ctx.globalAlpha = alpha;
       if (hot !== null) this.drawLine(hot, true, 1.5);
-    }
+    });
 
     const key = visible.map((l) => l.id).sort((a, b) => a - b).join(",");
     if (key !== this.visibleKey) {
