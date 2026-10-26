@@ -101,6 +101,19 @@ local function vehicleLeg(v, isEdge)
 	return tv.stopIndex, out
 end
 
+local function entryId(entry) return type(entry) == "table" and entry[1] or entry end
+
+-- Whether leg is the end of old, shorter: a path read mid-way - after loading a game the vehicles plan from where
+-- they are, so the path misses the start of the leg. The known whole leg is kept then.
+local function isTail(leg, old)
+	if not old or #leg >= #old then return false end
+	local shift = #old - #leg
+	for i = 1, #leg do
+		if entryId(leg[i]) ~= entryId(old[i + shift]) then return false end
+	end
+	return true
+end
+
 -- Reads vehicles within the budget; true when the pass is done.
 function R.step(job, deadline, isEdge)
 	while job.i <= #job.items do
@@ -108,7 +121,7 @@ function R.step(job, deadline, isEdge)
 		job.i = job.i + 1
 		local line = lines[lineId]
 		local ok, stop, leg = pcall(vehicleLeg, v, isEdge)
-		if ok and stop and line and stop < line.n then
+		if ok and stop and line and stop < line.n and not isTail(leg, line.legs[stop]) then
 			line.legs[stop] = leg
 			job.legs = job.legs + 1
 		end

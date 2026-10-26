@@ -295,13 +295,18 @@ export class RouteGraph {
       const j = (i + 1) % stops.length;
       // the leg as the game drives it; otherwise computed, and when it's impossible on the directional network:
       // the shortest way without direction
-      let na = directed[i]?.from, steps = directed[i]?.steps;
       const known = game[index[j]];
       if (known) {
-        steps = known;
-        const e = known[0].edge;
-        na = known[0].forward ? { x: e.x0, y: e.y0 } : { x: e.x1, y: e.y1 };
-      } else if (!directed[i]) {
+        // a path read mid-way (after loading a game the vehicles plan from where they are) misses the start of the leg
+        const clip = clipLeg(known, stops[i], stops[j]);
+        const start = clip.curves[0]?.[0];
+        if (clip.from || (start && Math.hypot(start.x - stops[i].x, start.y - stops[i].y) <= 2 * STOP_RADIUS)) {
+          ends.push({ na: null, ...clip });
+          continue;
+        }
+      }
+      let na = directed[i]?.from, steps = directed[i]?.steps;
+      if (!directed[i]) {
         const pair = this.snapPair(candidates[i], candidates[j], road);
         na = pair?.[0];
         steps = pair ? this.path(pair[0], pair[1], road) : null;
@@ -322,7 +327,10 @@ export class RouteGraph {
           path.lineTo(curves[0][0].x, curves[0][0].y);
           poly.push(curves[0][0]);
         }
-        for (const c of curves) {
+        for (let k = 0; k < curves.length; k++) {
+          const c = curves[k];
+          // moved onto lanes, curves no longer meet at the node: joined by a turn across the junction
+          if (k > 0) joinCurves(path, poly, curves[k - 1], c);
           path.bezierCurveTo(c[1].x, c[1].y, c[2].x, c[2].y, c[3].x, c[3].y);
           // a few points from the curve, so vehicles on long arcs don't cut the corner
           for (const t of BEZIER_SAMPLES) poly.push(curvePoint(c, t));
@@ -487,6 +495,36 @@ function offsetCurve(c, off) {
   const n0 = normal(c[0], c[1], c[0], c[3]), n1 = normal(c[2], c[3], c[0], c[3]);
   const move = (p, nv) => ({ x: p.x + nv.x, y: p.y + nv.y });
   return [move(c[0], n0), move(c[1], n0), move(c[2], n1), move(c[3], n1)];
+}
+
+// Joins the end of curve prev to the start of curve next (both on lanes, a junction or a lane change apart): a quadratic
+// turn through where their directions meet, otherwise (parallel lanes, a sharp turn, a U-turn) a cubic leaving and
+// entering along the lanes. Adds the points to poly.
+function joinCurves(path, poly, prev, next) {
+  const p = prev[3], q = next[0];
+  const wx = q.x - p.x, wy = q.y - p.y, gap = Math.hypot(wx, wy);
+  if (gap < 0.05) return;
+  const unit = (a, b, fa, fb) => {
+    let dx = b.x - a.x, dy = b.y - a.y;
+    if (Math.hypot(dx, dy) < 1e-6) { dx = fb.x - fa.x; dy = fb.y - fa.y; }
+    const len = Math.hypot(dx, dy) || 1;
+    return { x: dx / len, y: dy / len };
+  };
+  const dp = unit(prev[2], prev[3], prev[0], prev[3]), dq = unit(next[0], next[1], next[0], next[3]);
+  const cross = dp.x * dq.y - dp.y * dq.x;
+  // p + s * dp = q - u * dq
+  const s = (wx * dq.y - wy * dq.x) / cross, u = (dp.x * wy - dp.y * wx) / cross;
+  if (Math.abs(cross) > 1e-3 && s > 0 && u > 0 && s <= 2 * gap + 5 && u <= 2 * gap + 5) {
+    const cx = p.x + s * dp.x, cy = p.y + s * dp.y;
+    path.quadraticCurveTo(cx, cy, q.x, q.y);
+    poly.push({ x: (p.x + 2 * cx + q.x) / 4, y: (p.y + 2 * cy + q.y) / 4 });
+  } else {
+    const k = gap / 2;
+    const c = [p, { x: p.x + dp.x * k, y: p.y + dp.y * k }, { x: q.x - dq.x * k, y: q.y - dq.y * k }, q];
+    path.bezierCurveTo(c[1].x, c[1].y, c[2].x, c[2].y, q.x, q.y);
+    for (const t of BEZIER_SAMPLES) poly.push(curvePoint(c, t));
+  }
+  poly.push(q);
 }
 
 function curveTangent([p0, p1, p2, p3], t) {
