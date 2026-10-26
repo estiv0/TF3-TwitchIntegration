@@ -107,6 +107,9 @@ const sidebar = new Sidebar($("#sidebar"), $("#detail"), {
   onHoverCargo(kind, id, cargo, dir) {
     map.hoverCargo(kind, id, cargo, dir);
   },
+  onShowList() {
+    setSheet(true);
+  },
 });
 
 initSidebarResize($(".layout"), $(".sidebar-resize"));

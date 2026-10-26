@@ -13,10 +13,11 @@ import { industryInputs, industryKind, industryOutputs, isInputStock } from "./m
 import { ownerKey, ownersIndex } from "./owners.js";
 
 export class Sidebar {
-  constructor(root, detail, { windows, onPick, onStop, onClose, onPins, onLinesView, onHoverItem, onHoverCargo }) {
+  constructor(root, detail, { windows, onPick, onStop, onClose, onPins, onLinesView, onHoverItem, onHoverCargo, onShowList }) {
     this.root = root;
     this.windows = windows;         // FloatingWindows (js/float.js): positions of the detail windows
     this.onPick = onPick;
+    this.onShowList = onShowList;   // the panel opened a list by itself (phone: slide the panel out)
     this.onStop = onStop;
     this.onPins = onPins;           // a change of pinned objects -> the map highlights them
     this.onLinesView = onLinesView; // { match } or null - what the map should draw on the Lines tab
@@ -41,6 +42,7 @@ export class Sidebar {
     this.viewportBtn = root.querySelector("[data-viewport]");
     this.typeFilter = { lines: "", stations: "" }; // carrier / station kind filter, "" = all
     this.industryFilter = { mode: "out", cargo: "" }; // industry list: produces ("out") / consumes ("in") a cargo
+    this.industryOrigin = null;                    // { kind, id }: industry list by distance from it (a cargo clicked in its details)
     this.townSort = "size";                        // town list: "size", "profit" (line earnings), "growth"
     this.earnings = { towns: new Map(), outside: null }; // townEarnings()
     this.stationLines = new Map();                 // station id -> lines
@@ -64,6 +66,12 @@ export class Sidebar {
       const sort = e.target.closest("[data-sort]");
       if (sort) {
         this.townSort = sort.dataset.sort;
+        this.renderCarriers();
+        this.renderList();
+        return;
+      }
+      if (e.target.closest("[data-near-clear]")) {
+        this.industryOrigin = null;
         this.renderCarriers();
         this.renderList();
         return;
@@ -171,6 +179,16 @@ export class Sidebar {
       const line = e.target.closest("[data-line]");
       if (line) {
         this.onPick("line", Number(line.dataset.line));
+        return;
+      }
+      // A cargo of a town / industry: the Industry list of who can supply it (a need) or take it (a product), nearest first.
+      const cargo = e.target.closest("[data-cargo]");
+      if (cargo && (cardKind === "town" || cardKind === "industry")) {
+        this.industryFilter = { mode: cargo.dataset.dir === "in" ? "out" : "in", cargo: cargo.dataset.cargo };
+        this.industryOrigin = { kind: cardKind, id: cardId };
+        this.search.value = this.filter = "";
+        this.showTab("industries");
+        this.onShowList?.();
         return;
       }
       // The owner in an object's details and the objects in an owner's details.
@@ -367,13 +385,18 @@ export class Sidebar {
     } else if (this.tab === "industries") {
       const { mode, cargo } = this.industryFilter;
       const hasCargo = (i) => !cargo || industryCargos(i, mode).has(cargo);
-      html = [...d.industries].filter((i) => hasCargo(i) && matchItem(i)).sort((a, b) => (b.level ?? 0) - (a.level ?? 0))
+      // From a cargo clicked in the details: nearest to that town / industry first, with the distance; otherwise by level.
+      const from = this.industryOrigin && this.findItem(this.industryOrigin)?.pos;
+      const dist = (i) => (from && i.pos ? Math.hypot(i.pos[0] - from[0], i.pos[1] - from[1]) : Infinity);
+      const order = from ? (a, b) => dist(a) - dist(b) : (a, b) => (b.level ?? 0) - (a.level ?? 0);
+      const value = (i) => (from ? t("list.km", { n: fmtDec(dist(i) / 1000) }) : t("list.level", { n: i.level ?? "–" }));
+      html = [...d.industries].filter((i) => hasCargo(i) && matchItem(i)).sort(order)
         .map((i) => `
           <li class="row" data-kind="industry" data-id="${i.id}" aria-current="${isSel("industry", i.id)}">
             ${industryBadge(i)}
             <span class="row-name">${esc(i.name)}</span>
             ${effectBadges(i)}
-            <span class="row-value">${esc(t("list.level", { n: i.level ?? "–" }))}</span>
+            <span class="row-value">${esc(value(i))}</span>
           </li>`).join("");
     } else if (this.tab === "stations") {
       const kind = this.typeFilter.stations;
@@ -466,7 +489,12 @@ export class Sidebar {
     const cargos = [...counts].sort(([a], [b]) => cargoName(a).localeCompare(cargoName(b), locale()));
     const all = `<button type="button" data-ind-cargo="" aria-pressed="${!f.cargo}">${esc(t("filter.all"))}`
       + `<span>${fmtInt(this.dynamic?.industries?.length ?? 0)}</span></button>`;
-    return `<div class="filter-modes">${modeBtn("out")}${modeBtn("in")}</div>${all}${cargos.map(cargoBtn).join("")}`;
+    const origin = this.industryOrigin && this.findItem(this.industryOrigin);
+    const near = origin
+      ? `<div class="filter-near">${esc(t("industry.near", { name: origin.name ?? "" }))}`
+        + `<button type="button" data-near-clear title="${esc(t("industry.nearClear"))}" aria-label="${esc(t("industry.nearClear"))}">×</button></div>`
+      : "";
+    return `${near}<div class="filter-modes">${modeBtn("out")}${modeBtn("in")}</div>${all}${cargos.map(cargoBtn).join("")}`;
   }
 
   // ---------------------------------------------------------------- details
