@@ -36,6 +36,38 @@ public class NetworkStateTests
         Assert.Equal(5.5, edges[1]![1]!.GetValue<double>());
     }
 
+    private static JsonArray Footprint(long id, string type, double x) =>
+        new(id, type, new JsonArray(new JsonArray(x, 0.0, x + 10, 0.0, x + 10, 10.0)));
+
+    [Fact]
+    public void FootprintsFollowFullAndDelta()
+    {
+        var state = new NetworkState();
+        var full = Full("s1", 1, 10);
+        full["footprints"] = new JsonArray(Footprint(100, "RAIL", 0), Footprint(200, "WAREHOUSE", 50));
+        state.ApplyFull(full);
+
+        var delta = Delta("s1", 2, 1, [], []);
+        delta["footprints"] = new JsonArray(Footprint(200, "WAREHOUSE", 60), Footprint(300, "DEPOT", 90));
+        delta["footprintsRemoved"] = new JsonArray(100);
+        state.ApplyDelta(delta);
+
+        var footprints = state.ToJson()["footprints"]!.AsArray();
+        Assert.Equal([200L, 300L], footprints.Select(f => f![0]!.GetValue<long>()));
+        Assert.Equal(60.0, footprints[0]![2]![0]![0]!.GetValue<double>());
+        Assert.Equal(1, state.EdgeCount);
+    }
+
+    [Fact]
+    public void SnapshotWithoutFootprintsHasEmptyList()
+    {
+        var state = new NetworkState();
+        state.ApplyFull(Full("s1", 1, 10));
+
+        Assert.Equal(0, state.FootprintCount);
+        Assert.Empty(state.ToJson()["footprints"]!.AsArray());
+    }
+
     [Fact]
     public void DeltaWithoutFullSnapshotIsRejected()
     {

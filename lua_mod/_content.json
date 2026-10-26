@@ -9,6 +9,7 @@
         "tf3export/commands.lua",
         "tf3export/create.lua",
         "tf3export/effects.lua",
+        "tf3export/footprint.lua",
         "tf3export/icons/twitch_32@2x.tga",
         "tf3export/icons/twitch@2x.tga",
         "tf3export/json.lua",

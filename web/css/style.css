@@ -28,6 +28,7 @@
   --station-tram: #f06fb0;
   --station-water: #33c4e8;
   --station-air: #ffcc4d;
+  --depot: #8b97a8;        /* depot outlines (no icon) */
   --pin: #ff5d6c;
   --link-supply: #3ddc84;  /* connections of the selected industry: from suppliers */
   --link-consume: #4a9dff; /* ... and to consumers */

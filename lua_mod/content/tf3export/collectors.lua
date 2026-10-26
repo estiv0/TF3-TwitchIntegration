@@ -600,6 +600,44 @@ function C.stations()
 	return out, kindOf
 end
 
+---------------------------------------------------------------- footprints (network)
+-- Constructions whose area the map draws (footprint.lua), as { id, type }: stations with their kind (RAIL, ROAD...,
+-- OTHER) - without stops and without stations of industries and warehouses, whose icons stand for them -
+-- "WAREHOUSE" and "DEPOT". Sorted by id.
+function C.footprintTargets()
+	local out, seen = {}, {}
+	local function add(id, type)
+		if id and id > 0 and not seen[id] then seen[id] = true; out[#out + 1] = { id, type } end
+	end
+
+	local warehouses = C.warehouseConstructions()
+	for constrId in pairs(warehouses) do add(constrId, "WAREHOUSE") end
+
+	local ok, map = pcall(function() return api.engine.system.streetConnectorSystem.getStation2ConstructionMap() end)
+	if ok and map then
+		for _, constrId in util.pairs(map) do
+			if constrId and constrId > 0 and not seen[constrId] then
+				local constr = util.comp(constrId, ct.CONSTRUCTION)
+				local file = constr and util.scalar(constr.fileName)
+				file = file and tostring(file)
+				if not isStop(file) and not stationIndustry(constrId, constr) and not stationWarehouse(constrId, warehouses) then
+					add(constrId, stationKind({}, file) or "OTHER")
+				else
+					seen[constrId] = true
+				end
+			end
+		end
+	end
+
+	for _, d in ipairs(util.entities(ct.VEHICLE_DEPOT)) do
+		local okD, constrId = pcall(function() return api.engine.system.streetConnectorSystem.getConstructionEntityForDepot(d) end)
+		if okD then add(constrId, "DEPOT") end
+	end
+
+	table.sort(out, function(a, b) return a[1] < b[1] end)
+	return out
+end
+
 ---------------------------------------------------------------- lines and vehicles
 function C.vehicles()
 	local out = {}

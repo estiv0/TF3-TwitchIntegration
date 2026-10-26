@@ -45,7 +45,7 @@ function townNeeds(town) {
 const COLOR_VARS = ["--map-bg", "--map-street", "--map-street-tunnel", "--map-track", "--map-track-tunnel",
   "--industry-raw", "--industry-processing", "--warehouse", "--town", "--town-label", "--accent", "--font", "--panel",
   "--station-rail", "--station-road", "--station-tram", "--station-water", "--station-air", "--pin",
-  "--link-supply", "--link-consume"];
+  "--link-supply", "--link-consume", "--depot"];
 
 // Station icons: from this scale a circle with an icon, below it just a dot in the kind's color.
 const STATION_ICON_SCALE = 0.05;
@@ -57,6 +57,7 @@ const WAITING_ICON_PX = 16; // the passenger icon next to the number waiting
 const OUTPUT_ICON_PX = 30; // production icons above the industry
 const PIN_HEAD_Y = 22;      // the pin head is this many px above the chosen point
 const DIM = 0.3;            // opacity of the rest of the map when one object is pointed at in the panel list
+const FOOTPRINT_FILL = 0.18, FOOTPRINT_LINE = 0.6; // opacity of the station / warehouse / depot outlines
 const MIN_SCALE = 0.005, MAX_SCALE = 20;
 // Vehicle movement between data batches: frames every ANIM_FRAME_MS (30 fps is enough, and the whole map
 // is redrawn); a longer gap in the data (a background tab, the game paused) - no animation, a jump.
@@ -87,6 +88,30 @@ function stopsOf(dynamic) {
     }
   }
   return [...byGroup.values()];
+}
+
+// Areas of stations, warehouses and depots (network.footprints: [constructionId, type, polygons], a polygon =
+// a ground lot [x1, y1, x2, y2, ...] in world meters), one Path2D per color, in path coordinates. Type = the station
+// kind (RAIL, ROAD...), WAREHOUSE or DEPOT; the mod leaves out stations of industries and warehouses.
+function footprintsOf(network) {
+  const out = new Map(); // color var -> { path, layer }
+  for (const [, type, polys] of network.footprints ?? []) {
+    const color = type === "WAREHOUSE" ? "--warehouse" : type === "DEPOT" ? "--depot" : `--station-${String(type).toLowerCase()}`;
+    let f = out.get(color);
+    if (!f) out.set(color, f = { path: new Path2D(), layer: type === "WAREHOUSE" ? "warehouses" : "stations" });
+    for (const pts of polys ?? []) {
+      const n = pts.length >> 1;
+      if (n < 3) continue;
+      // one winding for all lots, so overlapping ones don't cancel out under the nonzero fill rule
+      let area = 0;
+      for (let i = 0, j = n - 1; i < n; j = i++) area += pts[2 * j] * pts[2 * i + 1] - pts[2 * i] * pts[2 * j + 1];
+      const at = (k) => (area < 0 ? n - 1 - k : k);
+      f.path.moveTo(pts[2 * at(0)], -pts[2 * at(0) + 1]);
+      for (let k = 1; k < n; k++) f.path.lineTo(pts[2 * at(k)], -pts[2 * at(k) + 1]);
+      f.path.closePath();
+    }
+  }
+  return [...out.entries()].map(([color, f]) => ({ color, ...f }));
 }
 
 function readTheme() {
@@ -121,6 +146,7 @@ export class MapView {
     this.showWarehouses = true;
     this.stations = [];         // train stations, harbors, airports (no stops)
     this.stops = [];            // street stops from the line stops (stopsOf)
+    this.footprints = [];       // [{ color, path, layer }] - areas of stations, warehouses, depots (footprintsOf, network)
     this.showStations = true;
     this.vehicleData = [];      // dynamic.vehicles
     this.vehicleAnim = new Map(); // vehicle id -> movement along the line route (retargetVehicles)
@@ -182,6 +208,7 @@ export class MapView {
     }
 
     this.paths = paths;
+    this.footprints = footprintsOf(network);
     this.graph = new RouteGraph(network);
     this.routeCache.clear();
     this.vehiclesDirty = true; // new routes - vehicles jump onto them without animation
@@ -427,6 +454,26 @@ export class MapView {
       ctx.imageSmoothingQuality = "high";
       if (this.showTerrain) ctx.drawImage(t.image, t.x, t.y, t.w, t.h);
       if (this.overlay) ctx.drawImage(this.overlay, t.x, t.y, t.w, t.h);
+    }
+
+    if (this.footprints.length) {
+      // under the network, so the tracks and roads of a station run over its area
+      const s = view.scale;
+      ctx.setTransform(s * dpr, 0, 0, s * dpr, (w / 2 - view.x * s) * dpr, (h / 2 - view.y * s) * dpr);
+      ctx.lineJoin = "round";
+      ctx.lineWidth = 1 / s;
+      const shown = { stations: this.showStations, warehouses: this.showWarehouses };
+      for (const f of this.footprints) {
+        if (!shown[f.layer]) continue;
+        const color = css(f.color) || css("--accent");
+        ctx.fillStyle = color;
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = FOOTPRINT_FILL;
+        ctx.fill(f.path);
+        ctx.globalAlpha = FOOTPRINT_LINE;
+        ctx.stroke(f.path);
+      }
+      ctx.globalAlpha = 1;
     }
 
     if (this.paths) {

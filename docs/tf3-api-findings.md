@@ -202,3 +202,14 @@ It also remains to check whether `#list` and 1-based indexing work on the result
 - So the mod and Tf3Bridge write everything to `local\towns_industries\` with a `tf3export_` prefix
   (`util.USERDATA_DIR` / `util.FILE_PREFIX`, `SteamLocator.UserdataDir` / `FilePrefix`). `mod_presets` is out,
   because its contents show up as mod presets in the menu; `towns_industries` only shows up in the map editor import.
+
+## Construction footprints and street widths (2026-10-26)
+
+Probes: `docs/probes/footprint-probe.lua` and `footprint-probe2.lua` (console, output with `[probe]` / `[probe2]` in `stdout.txt`).
+
+- `CONSTRUCTION.frozenEdges` of stations, depots and industries holds only **one** edge (the one connecting the construction to the road); harbors and warehouses have none. Useless for an outline, and harbors/warehouses didn't bump `netVersion` - since footprints are in the network export, `touchesNetwork` also reacts to constructions with `stations`, `depots` or a `/warehouses/` file.
+- `BOUNDING_VOLUME.bbox` is axis-aligned in world coordinates (and its z reaches below the terrain), so it's much too big for a rotated construction.
+- `CONSTRUCTION.transf` is a `Mat4f` indexable `t[1..16]`: x axis `t[1], t[2]`, y axis `t[5], t[6]`, position `t[13], t[14], t[15]`.
+- **Ground lots (used):** the subconstructions (not the construction) have `LOT_LIST` (`ComponentType.LOT_LIST` = 17, missing from the Teal definitions): `lots[]` with `vertices` (`Vec2f`, world coordinates), `triangles`, `texKey`, `solid`. Solid lots are the module areas (a warehouse: `entrance.gtex`, `wh_flatbed.gtex`, `wh_bulk.gtex`; harbor/stations: `industry_floor.gtex`, asphalt, gravel; airfield: runway, hangar, terminal); non-solid ones are borders (`street_border`, `pedestrian_connection_border`, ~50-100 vertices). This matches the area the game highlights; a modular rail station's lots only cover the squares by the building, not the platforms. Probe: `footprint-probe3.lua`.
+- **Outline from models (fallback):** `MODEL_INSTANCE_LIST.fatInstances` (`modelId`, `transf`) of the construction and its `subconstructions`, with `api.res.modelRep.get(modelId).boundingInfo` (`bbMin`/`bbMax`, local). `thinInstances` were empty everywhere. Examples: road depot 56×41 m, warehouse 90×82 m, modular rail station 34×202 m, modular harbor 120×204 m (with the pier), airfield 405×176 m (852 models). Its convex hull is too coarse (a T-shaped warehouse becomes a triangle), and lamps/lights have bounding boxes with the light cone (lamp post 22×25 m, `ind_light_huge` 90×82 m), so `footprint.lua` uses it only without lots, and without lamps.
+- **Street width:** `BASE_EDGE.laneConfigs[i].width` is filled for every edge, sidewalks included (e.g. `[2,5,5,2]` = 14 m, `[3,5,4,4,5,3]` = 24 m, `[3,20,3]` = 26 m); tracks have one 4 m lane. `typeIndex` is -1 for streets. The sum of lane widths is the street width.

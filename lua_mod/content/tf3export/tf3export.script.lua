@@ -22,6 +22,7 @@ local bench = ug_require "bench.lua"
 local terrain = ug_require "terrain.lua"
 local commands = ug_require "commands.lua"
 local effects = ug_require "effects.lua"
+local footprint = ug_require "footprint.lua"
 
 local cfg = {
 	dynamicEveryDays = 2,          -- export of towns, industry, stations, lines and vehicles (game time)...
@@ -39,6 +40,7 @@ local cfg = {
 	vehicleDetails = true,         -- vehicle model, age, maintenance state and capacity; false = off
 	vehiclePositionsMaxMs = 30,    -- positions are collected in chunks within the frame budget; if together they take longer
 	                               -- (averaged over 3 exports), they're turned off until the end of the session (log: "vehicle positions")
+	footprints = true,             -- areas of stations, depots and warehouses in the network export (footprint.lua); false = off
 	benchmark = false,             -- a one-off measurement of the write format (bench.lua), results in docs
 	terrainStepM = 20,             -- heightmap sample spacing (m)
 	terrainMaxSide = 2048,         -- at most this many samples per side (a bigger map -> a bigger step);
@@ -78,6 +80,7 @@ local S = {
 	lastDynamicTime = nil,
 	lastDynamicWall = nil,
 	rows = nil,              -- id -> encoded edge row from the last write
+	fpRows = nil,            -- construction id -> encoded footprint row from the last write
 	net = nil,               -- the current network build task
 	netVersionSeen = nil,    -- the last handled netVersion value from the shared state
 	netDirtyWall = nil,      -- when we noticed the change (debounce)
@@ -110,7 +113,7 @@ local function newSession(now)
 	S.session = string.format("%08x%04x", t % 0x100000000, math.random(0, 0xffff))
 	S.seqDynamic, S.seqNetwork = 0, 0
 	S.lastDynamicTime, S.lastDynamicWall = nil, nil
-	S.rows, S.net, S.netDirtyWall, S.lastNetworkWall = nil, nil, nil, nil
+	S.rows, S.fpRows, S.net, S.netDirtyWall, S.lastNetworkWall = nil, nil, nil, nil, nil
 	S.seqTerrain, S.terrain, S.terrainSig, S.lastTerrainCheckWall = 0, nil, nil, nil
 	S.lineStats, S.lineStatsKey, S.prevYear = {}, nil, nil
 	S.profitTotals, S.profitTotalsYear = {}, nil
@@ -419,9 +422,13 @@ end
 --   * no previous map -> a full "network" dump,
 --   * otherwise         -> a "networkDelta" with added/changed rows
 --                          and the IDs of removed edges (nothing if there are no changes).
+-- After the edges the footprints (footprint.lua) of stations, depots and warehouses, the same way:
+-- id -> encoded row [id, type, polygons], in the full dump as "footprints", in a delta as changed "footprints"
+-- and "footprintsRemoved" ids.
 -- The snapshot isn't atomic: building in the meantime can give a mixed state.
 local function startNetwork(now, reason)
 	S.net = { ids = collectors.edgeIds(), i = 1, rows = {}, count = 0, skipped = 0,
+		targets = nil, fi = 1, fpRows = {}, fpWork = 0,
 		gameTime = now, t0 = util.clock(), work = 0, reason = reason }
 end
 
@@ -442,41 +449,52 @@ local function finishNetwork(net)
 	local t = util.clock()
 	local kind, content, summary
 
+	-- changed rows and removed ids of new against old (old = nil: everything is new)
+	local function diff(new, old)
+		local changed, removed = {}, {}
+		for id, row in pairs(new) do
+			if old == nil or old[id] ~= row then changed[#changed + 1] = row end
+		end
+		for id in pairs(old or {}) do
+			if new[id] == nil then removed[#removed + 1] = id end
+		end
+		table.sort(removed)
+		return changed, removed
+	end
+
 	if S.rows == nil then
-		local parts = {}
-		for _, row in pairs(net.rows) do parts[#parts + 1] = row end
+		local parts = diff(net.rows)
+		local fps = diff(net.fpRows)
 		S.seqNetwork = S.seqNetwork + 1
 		kind = "network"
-		content = header(kind, net) .. ',"edges":[' .. table.concat(parts, ",") .. "]}"
-		summary = string.format("network #%d (full): %d edges", S.seqNetwork, #parts)
+		content = header(kind, net) .. ',"edges":[' .. table.concat(parts, ",") .. ']'
+			.. ',"footprints":[' .. table.concat(fps, ",") .. "]}"
+		summary = string.format("network #%d (full): %d edges, %d footprints", S.seqNetwork, #parts, #fps)
 	else
-		local changed, removed = {}, {}
-		for id, row in pairs(net.rows) do
-			if S.rows[id] ~= row then changed[#changed + 1] = row end
-		end
-		for id in pairs(S.rows) do
-			if net.rows[id] == nil then removed[#removed + 1] = id end
-		end
-		if #changed == 0 and #removed == 0 then
-			S.rows = net.rows
+		local changed, removed = diff(net.rows, S.rows)
+		local fpChanged, fpRemoved = diff(net.fpRows, S.fpRows)
+		if #changed == 0 and #removed == 0 and #fpChanged == 0 and #fpRemoved == 0 then
+			S.rows, S.fpRows = net.rows, net.fpRows
 			if net.reason == "periodic" then
 				util.log(string.format("network: no change (%s, %d edges)", net.reason, net.count))
 			end
 			return
 		end
 		S.seqNetwork = S.seqNetwork + 1
-		table.sort(removed)
 		kind = "networkDelta"
 		content = header(kind, net, { base = S.seqNetwork - 1 })
 			.. ',"changed":[' .. table.concat(changed, ",") .. ']'
-			.. ',"removed":' .. json.encode(removed) .. "}"
-		summary = string.format("networkDelta #%d: %d changed, %d removed", S.seqNetwork, #changed, #removed)
+			.. ',"removed":' .. json.encode(removed)
+			.. ',"footprints":[' .. table.concat(fpChanged, ",") .. ']'
+			.. ',"footprintsRemoved":' .. json.encode(fpRemoved) .. "}"
+		summary = string.format("networkDelta #%d: %d changed, %d removed, footprints %d changed, %d removed",
+			S.seqNetwork, #changed, #removed, #fpChanged, #fpRemoved)
 	end
 
-	S.rows = net.rows
+	S.rows, S.fpRows = net.rows, net.fpRows
 	writer.write(kind, S.session, S.seqNetwork, content)
-	util.log(string.format("%s (%s, %d skipped), work %.1f ms over %.1f s, write %.1f ms, %d B",
-		summary, net.reason, net.skipped, net.work * 1000, util.clock() - net.t0,
+	util.log(string.format("%s (%s, %d skipped), work %.1f ms (footprints %.1f ms) over %.1f s, write %.1f ms, %d B",
+		summary, net.reason, net.skipped, net.work * 1000, net.fpWork * 1000, util.clock() - net.t0,
 		(util.clock() - t) * 1000, #content))
 
 	if cfg.benchmark and kind == "network" then
@@ -502,6 +520,33 @@ local function stepNetwork()
 			net.work = net.work + (util.clock() - start)
 			return
 		end
+	end
+	-- footprints: a construction with many models (an airport) takes a few ms, so one at a time
+	if cfg.footprints then
+		local fpStart = util.clock()
+		if net.targets == nil then
+			-- new API: an error leaves the network without footprints instead of stopping it
+			local ok, targets = pcall(collectors.footprintTargets)
+			if not ok then util.log("footprint targets failed: " .. tostring(targets)) end
+			net.targets = ok and targets or {}
+		end
+		while net.fi <= #net.targets do
+			local id, fpType = net.targets[net.fi][1], net.targets[net.fi][2]
+			net.fi = net.fi + 1
+			local ok, polys = pcall(footprint.compute, id)
+			if ok and polys then
+				net.fpRows[id] = json.encode({ id, fpType, polys })
+			elseif not ok and not net.fpError then
+				net.fpError = true
+				util.log("footprint failed for " .. tostring(id) .. ": " .. tostring(polys))
+			end
+			if util.clock() >= deadline then
+				net.fpWork = net.fpWork + (util.clock() - fpStart)
+				net.work = net.work + (util.clock() - start)
+				return
+			end
+		end
+		net.fpWork = net.fpWork + (util.clock() - fpStart)
 	end
 	net.work = net.work + (util.clock() - start)
 	S.net = nil
@@ -569,9 +614,16 @@ end
 -- param = { proposal, proposalData, resultEntities (post only), playerInitiated }
 local function hasItems(v) return #util.list(v) > 0 end
 
-local function hasFrozenEdges(constructionEntity)
+-- A construction in the network export: with its own edges, or with a footprint (a station, depot or warehouse -
+-- harbors and warehouses have no frozen edges).
+local function inNetworkExport(constructionEntity)
 	local c = util.comp(constructionEntity, util.ct.CONSTRUCTION)
-	return c ~= nil and hasItems(util.field(c, "frozenEdges"))
+	if c == nil then return false end
+	if hasItems(util.field(c, "frozenEdges")) or hasItems(util.field(c, "stations")) or hasItems(util.field(c, "depots")) then
+		return true
+	end
+	local file = util.scalar(util.field(c, "fileName"))
+	return file ~= nil and string.find(tostring(file), "/warehouses/", 1, true) ~= nil
 end
 
 local function touchesNetwork(name, param)
@@ -582,14 +634,14 @@ local function touchesNetwork(name, param)
 		return true
 	end
 	if name == "onPreBuildProposal" then
-		-- removed constructions still exist: a station/depot with its own edges?
+		-- removed constructions still exist: a station/depot/warehouse?
 		for _, e in ipairs(util.list(util.field(proposal, "toRemove"))) do
-			if hasFrozenEdges(e) then return true end
+			if inNetworkExport(e) then return true end
 		end
 	else
 		-- added constructions already exist as result entities
 		for _, e in ipairs(util.list(util.field(param, 3))) do
-			if hasFrozenEdges(e) then return true end
+			if inNetworkExport(e) then return true end
 		end
 	end
 	return false

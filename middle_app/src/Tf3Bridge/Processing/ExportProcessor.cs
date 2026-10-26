@@ -219,7 +219,8 @@ public sealed class ExportProcessor(IOptions<BridgeOptions> options, IPublisher 
             {
                 _network.ApplyFull(doc);
                 changed = true;
-                logger.LogInformation("network #{Seq}: full snapshot, {Edges} edges", file.Seq, _network.EdgeCount);
+                logger.LogInformation("network #{Seq}: full snapshot, {Edges} edges, {Footprints} footprints",
+                    file.Seq, _network.EdgeCount, _network.FootprintCount);
             }
             else
             {
