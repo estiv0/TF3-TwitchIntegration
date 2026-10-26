@@ -52,8 +52,32 @@ function R.start()
 	return { items = items, i = 1, legs = 0 }
 end
 
--- The leg a vehicle drives now: stop index, { edge ids in driving order } (lanes through junctions and repeated
--- edges - a lane change - left out), or nil. isEdge(id) says whether id is an exported edge. The path entry's dir is
+-- edgeId.index is the lane's index in its entity's TRANSPORT_NETWORK.edges, counted from 0
+local LANE_INDEX_BASE = 1
+
+-- The middle of the lane edgeId.index of edge entity e (world x, y rounded to 0.1 m), or nil. Only .geometry and
+-- calcPosition are read: a debugPrint of a TN edge crashed the game (docs/tf3-api-findings.md).
+local function laneMid(e, index)
+	if type(index) ~= "number" then return nil end
+	local tn = util.comp(e, ct.TRANSPORT_NETWORK)
+	local te = tn and field(field(tn, "edges"), index + LANE_INDEX_BASE)
+	local geom = te and field(te, "geometry")
+	if not geom then return nil end
+	local ok, p = pcall(api.engine.util.transport.calcPosition, geom, 0.5)
+	if not ok or not p then
+		local ok2, r = pcall(api.type.EdgeGeometry.calcPos, geom, 0.5) -- position, tangent, second derivative
+		if not ok2 or not r then return nil end
+		p = field(r, 1) or r
+	end
+	local x, y = field(p, "x"), field(p, "y")
+	if type(x) ~= "number" or type(y) ~= "number" then return nil end
+	return math.floor(x * 10 + 0.5) / 10, math.floor(y * 10 + 0.5) / 10
+end
+
+-- The leg a vehicle drives now: stop index, { edges in driving order } (lanes through junctions and repeated
+-- edges - a lane change - left out), or nil. An edge is { id, x, y } with the middle of the lane the vehicle drives
+-- on there (the first edge: the lane it starts on, the others: the lane it leaves on - at a stop, the stop's lane),
+-- or just the id when the lane can't be read. isEdge(id) says whether id is an exported edge. The path entry's dir is
 -- the direction of the lane, not of our edge (true also when driving against the edge), so it isn't exported; the
 -- website orients the edges by continuity.
 local function vehicleLeg(v, isEdge)
@@ -66,8 +90,10 @@ local function vehicleLeg(v, isEdge)
 	for _, pe in ipairs(util.list(path and field(path, "edges"))) do
 		local id = field(pe, "edgeId")
 		local e = id and field(id, "entity")
-		if e and e ~= last and isEdge(e) then
-			out[#out + 1] = e
+		if e and isEdge(e) and (e ~= last or #out > 1) then
+			local x, y = laneMid(e, field(id, "index"))
+			local entry = x and { e, x, y } or e
+			if e == last then out[#out] = entry else out[#out + 1] = entry end
 			last = e
 		end
 	end

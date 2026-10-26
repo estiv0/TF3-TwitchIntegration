@@ -264,9 +264,10 @@ export class RouteGraph {
   // The Path2D of the line route (a closed loop, as in the game) + bbox + the polyline in order (poly: for checking
   // whether the line is on screen, and for vehicle movement; cum = the distance from the start to each point,
   // length = the loop length) + legs: stop index on the line -> { start, end, first, last }, the segment
-  // leading to it from the previous stop (distances along the loop and indices in poly). Stops without a position are skipped.
-  // gameLegs (network.routes): per stop index the leg arriving at it as edge ids in driving order (older exports: signed)
-  // or false; used only when it matches the line's stops, a leg with an edge missing from the network is computed instead.
+  // leading to it from the previous stop (distances along the loop and indices in poly). Stops without a position are skipped;
+  // stops = where the line stops (on its lane when known).
+  // gameLegs (network.routes): per stop index the leg arriving at it as edges in driving order - [id, x, y] with the
+  // middle of the vehicle's lane, or a bare id (older exports: signed) - or false; used only when it matches the line's stops, a leg with an edge missing from the network is computed instead.
   routeLine(line, gameLegs) {
     const all = line.stops ?? [];
     const index = [];  // index in stops (after filtering) -> stop index on the line
@@ -339,11 +340,13 @@ export class RouteGraph {
       legs.set(index[j], { first, last: poly.length - 1 }); // last = index of point b (the start of the next one)
       if (j !== 0) poly.pop(); // b is the first point of the next leg
     }
+    // where the line stops: on the street at the lane of the stop when the leg was cut there, otherwise the stop itself
+    const marks = stops.map((s, i) => ends[i].from ?? ends[(i + stops.length - 1) % stops.length].to ?? s);
 
     const cum = new Float64Array(poly.length);
     for (let i = 1; i < poly.length; i++) cum[i] = cum[i - 1] + Math.hypot(poly[i].x - poly[i - 1].x, poly[i].y - poly[i - 1].y);
     for (const [k, { first, last }] of legs) legs.set(k, { first, last, start: cum[first], end: cum[last] });
-    return { path, stops, bbox: bboxOf(poly), poly, cum, length: cum[poly.length - 1], legs };
+    return { path, stops: marks, bbox: bboxOf(poly), poly, cum, length: cum[poly.length - 1], legs };
   }
 
   // A leg from the game (edge ids in driving order) as [{ edge, forward }] steps; null when unknown or an edge isn't in
@@ -351,11 +354,14 @@ export class RouteGraph {
   // next to the second). The game's own direction flag is per lane, not per edge, so it doesn't tell us.
   gameSteps(ids) {
     if (!ids?.length) return null;
-    const edges = [];
-    for (const id of ids) {
+    const edges = [], lanes = [];
+    for (const entry of ids) {
+      // [id, x, y]: the middle of the lane the vehicle drives on (game world coordinates); a bare id: lane unknown
+      const [id, x, y] = Array.isArray(entry) ? entry : [entry];
       const edge = this.edgeById.get(Math.abs(id));
       if (!edge) return null;
       edges.push(edge);
+      lanes.push(x != null ? { x, y: -y } : null);
     }
     const d = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
     const near = (x, y, e) => Math.min(d(x, y, e.x0, e.y0), d(x, y, e.x1, e.y1));
@@ -369,7 +375,7 @@ export class RouteGraph {
         const p = steps[i - 1], px = p.forward ? p.edge.x1 : p.edge.x0, py = p.forward ? p.edge.y1 : p.edge.y0;
         forward = d(px, py, edge.x0, edge.y0) <= d(px, py, edge.x1, edge.y1);
       }
-      steps.push({ edge, forward });
+      steps.push({ edge, forward, lane: lanes[i] });
     });
     return steps;
   }
@@ -440,14 +446,52 @@ function clipLeg(steps, a, b) {
   const sb = onEdge(b, Math.max(sa?.k ?? 0, n - STOP_EDGE_STEPS), n);
   const k0 = sa?.k ?? 0, k1 = sb?.k ?? n - 1;
   const curves = [];
+  let from = null, to = null;
   for (let k = k0; k <= k1; k++) {
-    const { edge: e, forward } = steps[k];
+    const { edge: e, forward, lane } = steps[k];
     let t0 = forward ? 0 : 1, t1 = forward ? 1 : 0;
     if (k === k0 && sa) t0 = sa.t;
     if (k === k1 && sb) t1 = sb.t;
-    if (t0 !== t1) curves.push(subCurve(e, t0, t1));
+    // on the lane the vehicle drives on: the offset is to the right of the edge, the curve goes in driving order
+    const off = laneOffset(e, lane);
+    const c = offsetCurve(subCurve(e, t0, t1), t0 <= t1 ? off : -off);
+    if (k === k0 && sa) from = c[0];
+    if (k === k1 && sb) to = c[3];
+    if (t0 !== t1) curves.push(c);
   }
-  return { curves, from: sa ? edgePoint(steps[k0].edge, sa.t) : null, to: sb ? edgePoint(steps[k1].edge, sb.t) : null };
+  return { curves, from, to };
+}
+
+// How far (m) the lane through point lane lies to the right of edge e's centre line (looking from node0 to node1);
+// 0 without a lane, or when the point isn't on the street (it belongs to another edge).
+function laneOffset(e, lane) {
+  if (!lane) return 0;
+  const { t, d } = closestOnEdge(e, lane);
+  if (d > e.width / 2 + 1) return 0;
+  const p = edgePoint(e, t), tan = curveTangent(edgeCurve(e), t), len = Math.hypot(tan.x, tan.y);
+  if (!(len > 0)) return 0;
+  // right of the direction in map coordinates (y down): the normal (-ty, tx)
+  return ((lane.x - p.x) * -tan.y + (lane.y - p.y) * tan.x) / len;
+}
+
+// Cubic curve c moved off sideways by off m (to the right of its direction): the ends along their normals, each
+// control point with its end - close enough for street curves.
+function offsetCurve(c, off) {
+  if (!off) return c;
+  const normal = (a, b, fa, fb) => {
+    let dx = b.x - a.x, dy = b.y - a.y;
+    if (Math.hypot(dx, dy) < 1e-6) { dx = fb.x - fa.x; dy = fb.y - fa.y; }
+    const len = Math.hypot(dx, dy) || 1;
+    return { x: -dy / len * off, y: dx / len * off };
+  };
+  const n0 = normal(c[0], c[1], c[0], c[3]), n1 = normal(c[2], c[3], c[0], c[3]);
+  const move = (p, nv) => ({ x: p.x + nv.x, y: p.y + nv.y });
+  return [move(c[0], n0), move(c[1], n0), move(c[2], n1), move(c[3], n1)];
+}
+
+function curveTangent([p0, p1, p2, p3], t) {
+  const u = 1 - t, a = 3 * u * u, b = 6 * u * t, c = 3 * t * t;
+  return { x: a * (p1.x - p0.x) + b * (p2.x - p1.x) + c * (p3.x - p2.x), y: a * (p1.y - p0.y) + b * (p2.y - p1.y) + c * (p3.y - p2.y) };
 }
 
 // The parameter t of the point of edge e nearest to p, and the distance: { t, d }.
