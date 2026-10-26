@@ -944,7 +944,18 @@ C.EDGE_FIELDS = {
 	"road",   -- "STREET" / "TRACK"
 	"type",   -- "NORMAL" / "BRIDGE" / "TUNNEL"
 	"owner",  -- 0 = no owner (town/world)
+	"width",  -- m, the sum of BASE_EDGE.laneConfigs widths (sidewalks included; a track = 4), 0 = unknown
 }
+
+-- The edge width: the lanes from left to right, sidewalks included (docs/tf3-api-findings.md).
+local function edgeWidth(e)
+	local sum = 0
+	for _, lane in ipairs(util.list(e.laneConfigs)) do
+		local w = util.field(lane, "width")
+		if type(w) == "number" then sum = sum + w end
+	end
+	return util.round(sum, 1)
+end
 
 -- List of the IDs of all edges (streets + tracks).
 -- BASE_EDGE can't be listed with getEntitiesWithComponent, so we collect the edges
@@ -980,6 +991,7 @@ function C.edge(id)
 		util.enumName("RoadType", e.roadType, util.ROAD_TYPES),
 		util.enumName("BaseEdgeType", e.type, util.EDGE_TYPES),
 		util.owner(id) or 0,
+		edgeWidth(e),
 	}
 end
 

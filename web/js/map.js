@@ -58,6 +58,7 @@ const OUTPUT_ICON_PX = 30; // production icons above the industry
 const PIN_HEAD_Y = 22;      // the pin head is this many px above the chosen point
 const DIM = 0.3;            // opacity of the rest of the map when one object is pointed at in the panel list
 const FOOTPRINT_FILL = 0.18, FOOTPRINT_LINE = 0.6; // opacity of the station / warehouse / depot outlines
+const STREET_MIN_PX_PER_M = 1 / 8; // zoomed out: a 12 m street 1.5 px, a 24 m avenue 3 px
 const MIN_SCALE = 0.005, MAX_SCALE = 20;
 // Vehicle movement between data batches: frames every ANIM_FRAME_MS (30 fps is enough, and the whole map
 // is redrawn); a longer gap in the data (a background tab, the game paused) - no animation, a jump.
@@ -137,7 +138,7 @@ export class MapView {
     this.marker = null;         // { x, y, label, radius, ok } - the building spot (js/build.js)
 
     this.view = { x: 0, y: 0, scale: 0.02 };
-    this.paths = null;          // { street, streetTunnel, track, trackTunnel }
+    this.paths = null;          // { streets (width -> Path2D), streetTunnel, track, trackTunnel }
     this.bbox = null;           // network extent in path coordinates
     this.towns = [];
     this.industries = [];
@@ -188,7 +189,8 @@ export class MapView {
   // ---------------------------------------------------------------- data
   setNetwork(network) {
     const f = Object.fromEntries(network.fields.map((name, i) => [name, i]));
-    const paths = { street: new Path2D(), streetTunnel: new Path2D(), track: new Path2D(), trackTunnel: new Path2D() };
+    // streets: width in m (rounded) -> Path2D; 0 = an older export without widths
+    const paths = { streets: new Map(), streetTunnel: new Path2D(), track: new Path2D(), trackTunnel: new Path2D() };
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
     for (const e of network.edges) {
@@ -196,8 +198,15 @@ export class MapView {
       // A TF edge is a Hermite curve (positions + tangents) -> Bezier: c = p ± t/3
       const c0x = x0 + e[f.tx0] / 3, c0y = y0 - e[f.ty0] / 3;
       const c1x = x1 - e[f.tx1] / 3, c1y = y1 + e[f.ty1] / 3;
-      const key = (e[f.road] === "TRACK" ? "track" : "street") + (e[f.type] === "TUNNEL" ? "Tunnel" : "");
-      const p = paths[key];
+      const tunnel = e[f.type] === "TUNNEL";
+      let p;
+      if (e[f.road] === "TRACK") p = tunnel ? paths.trackTunnel : paths.track;
+      else if (tunnel) p = paths.streetTunnel;
+      else {
+        const width = Math.round(e[f.width] ?? 0);
+        p = paths.streets.get(width);
+        if (!p) paths.streets.set(width, p = new Path2D());
+      }
       p.moveTo(x0, y0);
       p.bezierCurveTo(c0x, c0y, c1x, c1y, x1, y1);
 
@@ -490,7 +499,11 @@ export class MapView {
         ctx.stroke(path);
       };
       stroke(this.paths.streetTunnel, css("--map-street-tunnel"), 1, [3, 3]);
-      stroke(this.paths.street, css("--map-street"), Math.max(1, Math.min(4, 6 * s)));
+      // real width when zoomed in; zoomed out at least STREET_MIN_PX_PER_M px per meter, so a main road stays wider
+      for (const [width, path] of this.paths.streets) {
+        const px = width ? Math.max(width * s, 1, width * STREET_MIN_PX_PER_M) : Math.max(1, Math.min(4, 6 * s));
+        stroke(path, css("--map-street"), px);
+      }
       stroke(this.paths.trackTunnel, css("--map-track-tunnel"), 1.5, [4, 3]);
       stroke(this.paths.track, css("--map-track"), Math.max(1.5, Math.min(5, 8 * s)));
       ctx.setLineDash([]);

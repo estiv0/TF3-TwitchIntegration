@@ -92,6 +92,7 @@ The middle app extracts `json = "..."`, reverses Lua escaping (`\"`, `\\`, `\n`,
   - `road`: `STREET` or `TRACK`
   - `type`: `NORMAL`, `BRIDGE` or `TUNNEL`
   - `owner`: 0 means a town or the world
+  - `width`: m, the sum of the edge's `laneConfigs` widths, sidewalks included (streets ~11-26 m, a track 4 m); the website draws streets at this width
 
   `footprints` are the areas of constructions (`footprint.lua`, `cfg.footprints`): `[constructionId, type, polygons]`, where `type` is the station kind (`RAIL`, `ROAD`, `TRAM`, `WATER`, `AIR`, `OTHER`), `WAREHOUSE` or `DEPOT` (stops and stations of industries and warehouses are left out), and `polygons` = `[[x1, y1, x2, y2, …], …]` in world meters (0.5 m): the solid ground lots (`LOT_LIST`) of its subconstructions, usually one per module (a warehouse = entrance + one per store). Without lots, one polygon: the convex hull of the ground corners of its models (`MODEL_INSTANCE_LIST` + `modelRep` `boundingInfo`, without lamps and lights). A modular rail station's lots only cover the squares by the building, not the platforms. Computed after the edges, one construction at a time within the frame budget.
 - **`networkDelta`**: `{ v, kind, session, seq, base, gameTime, fields[], changed[][], removed[], footprints[][], footprintsRemoved[] }`
