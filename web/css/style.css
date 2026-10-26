@@ -29,6 +29,8 @@
   --station-water: #33c4e8;
   --station-air: #ffcc4d;
   --pin: #ff5d6c;
+  --link-supply: #3ddc84;  /* connections of the selected industry: from suppliers */
+  --link-consume: #4a9dff; /* ... and to consumers */
 
   --radius: 10px;
   color-scheme: dark;
@@ -455,6 +457,10 @@ button { font: inherit; color: inherit; }
   background: var(--bg); border: 1px solid var(--border); font-size: 12px;
 }
 .chips li span { color: var(--muted); }
+/* the map shows the suppliers of this need / the consumers of this product */
+.chips li[data-cargo] { cursor: help; }
+.chips li[data-dir="in"]:hover { border-color: var(--link-supply); }
+.chips li[data-dir="out"]:hover { border-color: var(--link-consume); }
 .detail h2 .swatch { display: inline-block; vertical-align: middle; }
 .stops { margin: 0; padding-left: 22px; font-size: 13px; line-height: 1.6; }
 .stops li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }

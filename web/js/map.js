@@ -3,6 +3,7 @@
 
 import { cargoImg, fmtInt, industryOfStation, rgb, stationImg, townSize, warehouseOfStation } from "./format.js";
 import { RouteGraph, pointAtDistance, projectOnLeg, routeInRect } from "./route.js";
+import { t } from "./i18n.js";
 
 const RAW_INDUSTRIES = new Set([
   "coal_mine", "iron_ore_mine", "quarry", "forest", "farm", "oil_well",
@@ -25,9 +26,26 @@ export function industryOutputs(ind) {
   return outputs;
 }
 
+// An older export has no input flag: the input is the stock of a cargo the industry doesn't produce.
+export const isInputStock = (s, produced) => s.input ?? !produced.has(s.cargo);
+
+/** Cargo the industry needs (its input stocks, boosters included). */
+export function industryInputs(ind) {
+  const produced = new Set(industryOutputs(ind).keys());
+  return new Set((ind.stocks ?? []).filter((s) => isInputStock(s, produced)).map((s) => s.cargo));
+}
+
+/** Cargo the town asks for (cargoNeeds of its zones, supply with demand). */
+function townNeeds(town) {
+  const needs = new Set((town.cargoNeeds ?? []).flatMap((group) => Object.keys(group ?? {})));
+  for (const s of town.supply ?? []) if (s.demand > 0) needs.add(s.cargo);
+  return needs;
+}
+
 const COLOR_VARS = ["--map-bg", "--map-street", "--map-street-tunnel", "--map-track", "--map-track-tunnel",
   "--industry-raw", "--industry-processing", "--warehouse", "--town", "--town-label", "--accent", "--font", "--panel",
-  "--station-rail", "--station-road", "--station-tram", "--station-water", "--station-air", "--pin"];
+  "--station-rail", "--station-road", "--station-tram", "--station-water", "--station-air", "--pin",
+  "--link-supply", "--link-consume"];
 
 // Station icons: from this scale a circle with an icon, below it just a dot in the kind's color.
 const STATION_ICON_SCALE = 0.05;
@@ -45,6 +63,10 @@ const MIN_SCALE = 0.005, MAX_SCALE = 20;
 const ANIM_FRAME_MS = 33;
 const UPDATE_MS_MIN = 2000, UPDATE_MS_MAX = 30000, SNAP_AFTER_MS = 60000;
 const ON_ROUTE_M = 40; // a vehicle position this close to the line route = it drives along it (animation along the route)
+// Connections of the selected industry: arrows every LINK_ARROW_GAP px along the curve, moving LINK_SPEED px/s
+// towards the receiver; the curve bends sideways by LINK_BEND of its length, so A->B and B->A don't overlap.
+// Cargo icons in the middle of the curves only up to LINK_ICONS_MAX connections (more would be a cloud of the same icons).
+const LINK_ARROW_GAP = 70, LINK_SPEED = 45, LINK_BEND = 0.18, LINK_ICON_PX = 18, LINK_ICONS_MAX = 15;
 
 // Colors from CSS (the theme) read once per frame, not for every object.
 // Street stops: line stops (dynamic.lines[].stops) that don't belong to any station
@@ -127,6 +149,9 @@ export class MapView {
     this.hovered = null;
     this.fitted = false;
     this.frame = 0;
+    this.cargoHover = null;     // { key, kind, id, cargo, dir } - the cargo pointed at in the details (hoverCargo)
+    this.cargoView = null;      // the view from before hoverCargo zoomed out - restored when the pointer leaves
+    this.linksCache = null;     // { key, industries, towns, links } - industryLinks() for the cargo / selected industry
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
@@ -167,7 +192,7 @@ export class MapView {
 
   setDynamic(dynamic) {
     this.towns = (dynamic.towns ?? []).filter((t) => t.pos).map((t) => ({
-      kind: "town", id: t.id, data: t, px: t.pos[0], py: -t.pos[1],
+      kind: "town", id: t.id, data: t, px: t.pos[0], py: -t.pos[1], needs: townNeeds(t),
       r: Math.max(4, Math.min(14, 2 + Math.sqrt(townSize(t)) * 0.4)),
     })).sort((a, b) => b.r - a.r);
 
@@ -182,6 +207,7 @@ export class MapView {
 
     this.industries = (dynamic.industries ?? []).filter((i) => i.pos).map((i) => ({
       kind: "industry", id: i.id, data: i, px: i.pos[0], py: -i.pos[1], type: industryKind(i),
+      produces: new Set(industryOutputs(i).keys()), needs: industryInputs(i),
       outputs: [...industryOutputs(i).keys()].map(cargoImg).filter(Boolean),
     }));
 
@@ -324,6 +350,7 @@ export class MapView {
       this.onLayers?.();
     }
     this.selected = { kind, id };
+    if (kind === "industry" && this.fitLinks()) return;
     this.view.scale = Math.max(this.view.scale, 0.25);
     this.centerOn(item.px, item.py);
   }
@@ -385,7 +412,10 @@ export class MapView {
     const css = (name) => this.theme[name];
     this.theme = readTheme();
     const now = performance.now();
-    this.vehicles = this.showVehicles ? this.positionVehicles(now) : [];
+    // The connections of the cargo pointed at / selected industry replace the lines and vehicles (they move on, just not drawn).
+    const links = this.industryLinks();
+    const vehicles = this.showVehicles ? this.positionVehicles(now) : [];
+    this.vehicles = links ? [] : vehicles;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = css("--map-bg");
     ctx.fillRect(0, 0, w, h);
@@ -420,6 +450,22 @@ export class MapView {
     }
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (links) this.drawLinksView(links, now);
+    else this.drawObjects();
+    this.drawMarker();
+    this.drawPin();
+
+    if ((links || this.showVehicles && now < this.animUntil) && !this.animTimer) {
+      this.animTimer = setTimeout(() => {
+        this.animTimer = 0;
+        this.requestDraw();
+      }, ANIM_FRAME_MS);
+    }
+  }
+
+  // Lines, industries, warehouses, stations, vehicles and towns: the normal map, without the selected industry's connections.
+  drawObjects() {
+    const { ctx } = this;
     // A point pointed at in the list, or a line pointed at in the panel or via a vehicle on the map (then together
     // with the selected object, e.g. a town): the rest semi-transparent, the pointed ones last, in full color.
     // The vehicles of the pointed or selected line are drawn last, the others dimmed.
@@ -445,15 +491,197 @@ export class MapView {
     else if (spot?.kind === "warehouse") this.drawWarehouse(spot);
     else if (spot?.kind === "station") this.drawStation(spot);
     else if (spot?.kind === "town") this.drawTown(spot, null);
-    this.drawMarker();
-    this.drawPin();
+  }
 
-    if (this.showVehicles && now < this.animUntil && !this.animTimer) {
-      this.animTimer = setTimeout(() => {
-        this.animTimer = 0;
-        this.requestDraw();
-      }, ANIM_FRAME_MS);
+  // ---------------------------------------------------------------- connections of an industry / a cargo
+  // A cargo pointed at in the details of a town or industry (kind, id): dir "in" - what it needs, its possible
+  // suppliers; "out" - what it produces, its possible consumers. Shown on the map instead of the normal view, zoomed out
+  // to fit them; when the pointer leaves, the view from before comes back. kind = null - none.
+  hoverCargo(kind, id, cargo, dir) {
+    const key = kind && cargo ? `${kind}|${id}|${cargo}|${dir}` : null;
+    if (key === (this.cargoHover?.key ?? null)) return;
+    if (!this.cargoHover) this.cargoView = { ...this.view };
+    this.cargoHover = key ? { key, kind, id, cargo, dir } : null;
+    if (!this.cargoHover || !this.fitLinks()) {
+      if (this.cargoView) this.view = this.cargoView;
+      if (!this.cargoHover) this.cargoView = null;
     }
+    this.requestDraw();
+  }
+
+  // Potential trade partners anywhere on the map, { center, dir, suppliers, consumers } with the cargo of each connection:
+  //  * the cargo pointed at (hoverCargo): the industries that produce it -> the town / industry ("in"),
+  //    or the industry -> the industries and towns that need it ("out");
+  //  * otherwise the selected industry (dir null): suppliers - industries that produce what it needs,
+  //    consumers - industries and towns that need what it produces.
+  // null when neither. Kept until the selection or the data changes.
+  industryLinks() {
+    const sel = this.selected, hover = this.cargoHover;
+    const key = hover ? `cargo|${hover.key}` : sel?.kind === "industry" ? `industry|${sel.id}` : null;
+    if (!key) return null;
+    const c = this.linksCache;
+    if (c?.key === key && c.industries === this.industries && c.towns === this.towns) return c.links;
+    let links = null;
+    const center = hover && (hover.kind === "town" ? this.towns : this.industries).find((x) => x.id === hover.id);
+    const ind = !hover && this.industries.find((i) => i.id === sel.id);
+    if (center) {
+      const { cargo, dir } = hover;
+      const link = (item) => ({ item, cargos: [cargo] });
+      const suppliers = dir === "in" ? this.industries.filter((i) => i !== center && i.produces.has(cargo)).map(link) : [];
+      const consumers = dir === "out" ? [...this.industries, ...this.towns].filter((x) => x !== center && x.needs.has(cargo)).map(link) : [];
+      links = { center, dir, suppliers, consumers };
+    } else if (ind) {
+      const common = (a, b) => [...a].filter((cargo) => b.has(cargo));
+      const suppliers = [], consumers = [];
+      for (const other of this.industries) {
+        if (other === ind) continue;
+        const gets = common(ind.needs, other.produces);
+        if (gets.length) suppliers.push({ item: other, cargos: gets });
+        const gives = common(ind.produces, other.needs);
+        if (gives.length) consumers.push({ item: other, cargos: gives });
+      }
+      for (const town of this.towns) {
+        const gives = common(ind.produces, town.needs);
+        if (gives.length) consumers.push({ item: town, cargos: gives });
+      }
+      links = { center: ind, dir: null, suppliers, consumers };
+    }
+    this.linksCache = { key, industries: this.industries, towns: this.towns, links };
+    return links;
+  }
+
+  // Zooms out to the industry / town with all its connections; false when it has none (or there are no connections).
+  fitLinks() {
+    const links = this.industryLinks();
+    if (!links || !links.suppliers.length && !links.consumers.length) return false;
+    const items = [links.center, ...links.suppliers.map((l) => l.item), ...links.consumers.map((l) => l.item)];
+    const xs = items.map((i) => i.px), ys = items.map((i) => i.py);
+    this.fit({ minX: Math.min(...xs), minY: Math.min(...ys), maxX: Math.max(...xs), maxY: Math.max(...ys) }, 0.25);
+    return true;
+  }
+
+  // The rest of the map dimmed (without lines and vehicles), the connections on top: green arrows from the suppliers,
+  // blue ones to the consumers, then the partners and the industry / town itself in full color, and a legend.
+  drawLinksView(links, now) {
+    const css = (name) => this.theme[name];
+    const { ctx } = this;
+    const { center } = links;
+    const partners = new Set([...links.suppliers, ...links.consumers].map((l) => l.item));
+    ctx.globalAlpha = DIM;
+    if (this.showIndustries) for (const ind of this.industries) if (ind !== center && !partners.has(ind)) this.drawIndustry(ind);
+    if (this.showWarehouses) this.drawWarehouses(null);
+    if (this.showStations) this.drawStops();
+    if (this.showStations) this.drawStations(null);
+    const labels = [];
+    for (const t of this.towns) if (t !== center && !partners.has(t)) this.drawTown(t, labels);
+    ctx.globalAlpha = 1;
+
+    const time = now / 1000;
+    const icons = links.suppliers.length + links.consumers.length <= LINK_ICONS_MAX;
+    for (const l of links.suppliers) this.drawLink(l.item, center, icons ? l.cargos : [], css("--link-supply"), time);
+    for (const l of links.consumers) this.drawLink(center, l.item, icons ? l.cargos : [], css("--link-consume"), time);
+    const partnerLabels = [];
+    for (const item of partners) {
+      if (item.kind === "town") this.drawTown(item, partnerLabels);
+      else this.drawIndustry(item);
+    }
+    if (center.kind === "town") this.drawTown(center, null);
+    else this.drawIndustry(center);
+    const spot = this.spotItem(this.listHover);
+    if (spot?.kind === "industry") this.drawIndustry(spot);
+    else if (spot?.kind === "town") this.drawTown(spot, null);
+    this.drawLinksLegend(links);
+  }
+
+  // One connection from -> to (map objects) as a curve: a faint wide glow, a thin line, arrows moving towards
+  // the receiver, an arrowhead at the end and the cargo icons in the middle.
+  drawLink(from, to, cargos, color, time) {
+    const css = (name) => this.theme[name];
+    const { ctx } = this;
+    const [x0, y0] = this.toScreen(from.px, from.py);
+    const [x1, y1] = this.toScreen(to.px, to.py);
+    const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy);
+    if (len < 24) return;
+    // the control point to the right of the direction (on screen)
+    const cx = (x0 + x1) / 2 - dy * LINK_BEND, cy = (y0 + y1) / 2 + dx * LINK_BEND;
+    if (Math.max(x0, x1, cx) < 0 || Math.max(y0, y1, cy) < 0 || Math.min(x0, x1, cx) > this.w || Math.min(y0, y1, cy) > this.h) return;
+    const curve = sampleQuad(x0, y0, cx, cy, x1, y1);
+    const s0 = 12, s1 = curve.length - 14; // not over the end objects
+    if (s1 - s0 < 10) return;
+
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    tracePart(ctx, curve, s0, s1);
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.18;
+    ctx.lineWidth = 7;
+    ctx.stroke();
+    ctx.globalAlpha = 0.75;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // moving arrows; they fade in after the start and out before the end
+    ctx.fillStyle = color;
+    const offset = (time * LINK_SPEED) % LINK_ARROW_GAP;
+    for (let s = s0 + offset; s < s1 - 12; s += LINK_ARROW_GAP) {
+      ctx.globalAlpha = 0.95 * Math.max(0, Math.min(1, (s - s0) / 25, (s1 - 12 - s) / 25));
+      arrowHead(ctx, curve.at(s), 5);
+    }
+    ctx.globalAlpha = 1;
+    arrowHead(ctx, curve.at(s1), 7);
+
+    const imgs = cargos.map((cargo) => this.image(cargoImg(cargo))).filter(Boolean).slice(0, 3);
+    if (imgs.length && len > 90) {
+      const mid = curve.at(curve.length / 2);
+      const s = LINK_ICON_PX, w = imgs.length * s + 6;
+      ctx.fillStyle = css("--panel");
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.roundRect(mid.x - w / 2, mid.y - s / 2 - 3, w, s + 6, (s + 6) / 2);
+      ctx.fill();
+      ctx.stroke();
+      imgs.forEach((img, i) => ctx.drawImage(img, mid.x - w / 2 + 3 + i * s, mid.y - s / 2, s, s));
+    }
+    ctx.restore();
+  }
+
+  // Top center (the map legend is at the bottom, the detail window on the left): what the colors mean and how many connections there are.
+  drawLinksLegend(links) {
+    const css = (name) => this.theme[name];
+    const { ctx } = this;
+    // one cargo pointed at: only its direction
+    const rows = [
+      links.dir !== "out" && [css("--link-supply"), t("links.suppliers", { n: fmtInt(links.suppliers.length) })],
+      links.dir !== "in" && [css("--link-consume"), t("links.consumers", { n: fmtInt(links.consumers.length) })],
+    ].filter(Boolean);
+    ctx.save();
+    ctx.font = `600 12px ${css("--font")}`;
+    ctx.textBaseline = "middle";
+    const w = Math.max(...rows.map(([, text]) => ctx.measureText(text).width)) + 52, h = rows.length * 20 + 12;
+    const x = Math.round((this.w - w) / 2), y = 12;
+    ctx.globalAlpha = 0.92;
+    ctx.fillStyle = css("--panel");
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 8);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    rows.forEach(([color, text], i) => {
+      const ry = y + 16 + i * 20;
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x + 10, ry);
+      ctx.lineTo(x + 26, ry);
+      ctx.stroke();
+      arrowHead(ctx, { x: x + 32, y: ry, angle: 0 }, 5);
+      ctx.fillStyle = css("--town-label");
+      ctx.fillText(text, x + 42, ry);
+    });
+    ctx.restore();
   }
 
   // The pointed line: in the panel list or via the vehicle under the cursor on the map; otherwise null.
@@ -1263,6 +1491,7 @@ export class MapView {
       const line = hit?.kind === "vehicle" ? hit.line : hit?.kind === "stop" ? hit.lines[0]?.id : undefined;
       const sel = line !== undefined ? { kind: "line", id: line, data: this.lines.get(line) } : hit?.kind === "stop" ? null : hit;
       this.select(sel?.kind, sel?.id);
+      if (sel?.kind === "industry") this.fitLinks();
       this.onSelect?.(sel);
     });
 
@@ -1278,6 +1507,49 @@ export class MapView {
 function loopDelta(d, L) {
   const m = ((d % L) + L) % L;
   return m > L * 0.75 ? m - L : m;
+}
+
+// A quadratic curve sampled into points with the distance along it: { pts, length, at(s) -> { x, y, angle } }.
+function sampleQuad(x0, y0, cx, cy, x1, y1, n = 32) {
+  const pts = [{ x: x0, y: y0, s: 0 }];
+  for (let i = 1; i <= n; i++) {
+    const u = i / n, v = 1 - u;
+    const x = v * v * x0 + 2 * u * v * cx + u * u * x1, y = v * v * y0 + 2 * u * v * cy + u * u * y1;
+    const prev = pts[i - 1];
+    pts.push({ x, y, s: prev.s + Math.hypot(x - prev.x, y - prev.y) });
+  }
+  const at = (s) => {
+    let i = 1;
+    while (i < n && pts[i].s < s) i++;
+    const a = pts[i - 1], b = pts[i];
+    const f = b.s > a.s ? Math.max(0, Math.min(1, (s - a.s) / (b.s - a.s))) : 0;
+    return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, angle: Math.atan2(b.y - a.y, b.x - a.x) };
+  };
+  return { pts, length: pts[n].s, at };
+}
+
+// The curve from distance s0 to s1 as a path (beginPath is the caller's).
+function tracePart(ctx, curve, s0, s1) {
+  const a = curve.at(s0);
+  ctx.moveTo(a.x, a.y);
+  for (const p of curve.pts) if (p.s > s0 && p.s < s1) ctx.lineTo(p.x, p.y);
+  const b = curve.at(s1);
+  ctx.lineTo(b.x, b.y);
+}
+
+// A filled arrowhead with its tip at p, pointing along p.angle.
+function arrowHead(ctx, p, size) {
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.rotate(p.angle);
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-size * 1.8, -size);
+  ctx.lineTo(-size * 1.3, 0);
+  ctx.lineTo(-size * 1.8, size);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
 }
 
 const truncate = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);

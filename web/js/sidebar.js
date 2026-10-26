@@ -9,11 +9,11 @@ import {
 import { companyHtml } from "./company.js";
 import { townEarnings } from "./earnings.js";
 import { locale, t } from "./i18n.js";
-import { industryKind, industryOutputs } from "./map.js";
+import { industryInputs, industryKind, industryOutputs, isInputStock } from "./map.js";
 import { ownerKey, ownersIndex } from "./owners.js";
 
 export class Sidebar {
-  constructor(root, detail, { windows, onPick, onStop, onClose, onPins, onLinesView, onHoverItem }) {
+  constructor(root, detail, { windows, onPick, onStop, onClose, onPins, onLinesView, onHoverItem, onHoverCargo }) {
     this.root = root;
     this.windows = windows;         // FloatingWindows (js/float.js): positions of the detail windows
     this.onPick = onPick;
@@ -124,14 +124,23 @@ export class Sidebar {
 
     // The same for lines in the details (of a town, station, industry): the pointed line on the map against the selected object.
     // In an owner's details the same for their towns, industries and stations (data-pick).
+    // A cargo of a town or industry (data-cargo, data-dir): what it needs - its possible suppliers on the map,
+    // what it produces - its possible consumers.
     this.detail.addEventListener("mouseover", (e) => {
+      const chip = e.target.closest("[data-cargo]");
+      const [cardKind, cardId] = splitPick(chip?.closest("[data-card]"), "card");
+      const hasLinks = cardKind === "town" || cardKind === "industry";
+      onHoverCargo?.(hasLinks ? cardKind : null, Number(cardId), chip?.dataset.cargo, chip?.dataset.dir);
       const line = e.target.closest("[data-line]");
       if (line) return onHoverItem?.("line", Number(line.dataset.line));
       const [kind, id] = splitPick(e.target.closest("[data-pick]"));
       const onMap = kind && kind !== "owner";
       onHoverItem?.(onMap ? kind : null, onMap ? Number(id) : null);
     });
-    this.detail.addEventListener("mouseleave", () => onHoverItem?.(null));
+    this.detail.addEventListener("mouseleave", () => {
+      onHoverItem?.(null);
+      onHoverCargo?.(null);
+    });
 
     this.detail.addEventListener("click", (e) => {
       const [cardKind, cardRaw] = splitPick(e.target.closest("[data-card]"), "card");
@@ -817,11 +826,11 @@ function townDetail(town, earnings) {
       const v = s.demand > 0
         ? `${fmtInt(Math.min(s.supply, s.demand))} / ${fmtInt(s.demand)} · ${fmtPercent(Math.min(s.supply, s.demand) / s.demand)}`
         : fmtInt(s.supply);
-      return `<li>${cargoLabel(s.cargo)}<span>${esc(v)}</span></li>`;
+      return `<li data-cargo="${esc(s.cargo)}" data-dir="in">${cargoLabel(s.cargo)}<span>${esc(v)}</span></li>`;
     }).join("")}</ul>`;
   } else {
     const chips = (town.cargoNeeds ?? []).flatMap((group) => Object.entries(group ?? {}))
-      .map(([cargo, v]) => `<li>${cargoLabel(cargo)}<span>${fmtDec(v)}</span></li>`).join("");
+      .map(([cargo, v]) => `<li data-cargo="${esc(cargo)}" data-dir="in">${cargoLabel(cargo)}<span>${fmtDec(v)}</span></li>`).join("");
     needs = chips ? `<h3>${esc(t("town.demand"))}</h3><ul class="chips">${chips}</ul>` : "";
   }
   return `
@@ -877,9 +886,10 @@ function industryDetail(i, lines) {
       ${stat(t("industry.productivity"), fmtPercent(i.productivity))}
       ${stat(t("industry.upgrade"), fmtPercent(i.upgrade))}
     </dl>
-    ${inputs.length ? `<h3>${esc(t("industry.needs"))}</h3><ul class="chips">${inputs.map((s) => `<li>${cargoLabel(s.cargo)}${perYear(s.consumedYear)}</li>`).join("")}</ul>` : ""}
+    ${inputs.length ? `<h3>${esc(t("industry.needs"))}</h3><ul class="chips">${inputs.map((s) =>
+      `<li data-cargo="${esc(s.cargo)}" data-dir="in">${cargoLabel(s.cargo)}${perYear(s.consumedYear)}</li>`).join("")}</ul>` : ""}
     ${outputs.size ? `<h3>${esc(t("industry.produces"))}</h3><ul class="chips">${[...outputs].map(([c, a]) =>
-      `<li>${cargoLabel(c)}${hasYear ? perYear(yearOut[c] ?? 0) : `<span>${fmtInt(a)}</span>`}</li>`).join("")}</ul>` : ""}
+      `<li data-cargo="${esc(c)}" data-dir="out">${cargoLabel(c)}${hasYear ? perYear(yearOut[c] ?? 0) : `<span>${fmtInt(a)}</span>`}</li>`).join("")}</ul>` : ""}
     ${storage}
     ${year}
     ${lineLinks(lines)}`;
@@ -915,14 +925,9 @@ function warehouseDetail(w, lines) {
     ${lineLinks(lines)}`;
 }
 
-// An older export has no input flag: the input is the stock of a cargo the industry doesn't produce.
-const isInputStock = (s, produced) => s.input ?? !produced.has(s.cargo);
-
 /** Cargo the industry produces (mode "out") or consumes (mode "in"). */
 function industryCargos(i, mode) {
-  const produced = new Set(industryOutputs(i).keys());
-  if (mode === "out") return produced;
-  return new Set((i.stocks ?? []).filter((s) => isInputStock(s, produced)).map((s) => s.cargo));
+  return mode === "out" ? new Set(industryOutputs(i).keys()) : industryInputs(i);
 }
 
 // The industry square in the kind's color with icons of the produced cargo (like the kind icon at stations).
