@@ -694,12 +694,54 @@ function curvePoint([p0, p1, p2, p3], t) {
   return { x: a * p0.x + b * p1.x + c * p2.x + d * p3.x, y: a * p0.y + b * p1.y + c * p2.y + d * p3.y };
 }
 
-/** Whether a route (a routeLine result) crosses the rectangle { minX, minY, maxX, maxY } in path coordinates. */
-export function routeInRect(route, r) {
+/**
+ * The route polyline simplified (Douglas-Peucker) so no point is more than tol from it: { path (Path2D of straight
+ * segments), poly }. For drawing many lines at once - a fraction of the points and no curves to flatten.
+ */
+export function simplifyRoute(route, tol) {
+  const p = route.poly, n = p.length;
+  if (n < 3) return { path: route.path, poly: p };
+  const keep = new Uint8Array(n);
+  keep[0] = keep[n - 1] = 1;
+  const tol2 = tol * tol;
+  const stack = [0, n - 1];
+  while (stack.length) {
+    const b = stack.pop(), a = stack.pop();
+    const ax = p[a].x, ay = p[a].y, dx = p[b].x - ax, dy = p[b].y - ay, len2 = dx * dx + dy * dy;
+    let worst = -1, worstD = tol2;
+    for (let i = a + 1; i < b; i++) {
+      let ex = p[i].x - ax, ey = p[i].y - ay;
+      if (len2 > 0) {
+        const t = Math.max(0, Math.min(1, (ex * dx + ey * dy) / len2));
+        ex -= t * dx;
+        ey -= t * dy;
+      }
+      const d = ex * ex + ey * ey;
+      if (d > worstD) { worstD = d; worst = i; }
+    }
+    if (worst < 0) continue;
+    keep[worst] = 1;
+    stack.push(a, worst, worst, b);
+  }
+  const path = new Path2D(), poly = [];
+  for (let i = 0; i < n; i++) {
+    if (!keep[i]) continue;
+    if (poly.length) path.lineTo(p[i].x, p[i].y);
+    else path.moveTo(p[i].x, p[i].y);
+    poly.push(p[i]);
+  }
+  return { path, poly };
+}
+
+/**
+ * Whether a route (a routeLine result) crosses the rectangle { minX, minY, maxX, maxY } in path coordinates.
+ * poly: the route's polyline or a simplified one (simplifyRoute) - fewer segments to check.
+ */
+export function routeInRect(route, r, poly = route?.poly) {
   const b = route?.bbox;
   if (!b || b.maxX < r.minX || b.minX > r.maxX || b.maxY < r.minY || b.minY > r.maxY) return false;
   if (b.minX >= r.minX && b.maxX <= r.maxX && b.minY >= r.minY && b.maxY <= r.maxY) return true;
-  const p = route.poly;
+  const p = poly;
   if (p.length === 1) return true; // a single stop: the bbox is a point, already checked
   for (let i = 1; i < p.length; i++) if (segmentInRect(p[i - 1], p[i], r)) return true;
   return false;

@@ -2,7 +2,7 @@
 // "Path" coordinates = (x, -y) from the game world, because in the game the y axis grows to the north, and on screen downwards.
 
 import { cargoImg, fmtInt, industryOfStation, rgb, stationImg, townSize, warehouseOfStation } from "./format.js";
-import { RouteGraph, pointAtDistance, projectOnLeg, routeInRect } from "./route.js";
+import { RouteGraph, pointAtDistance, projectOnLeg, routeInRect, simplifyRoute } from "./route.js";
 import { t } from "./i18n.js";
 import { frameStart, perfInfo, timed } from "./perf.js";
 
@@ -56,7 +56,11 @@ const STOP_R = 4;
 const STOP_LABEL_SCALE = 0.15;
 const WAITING_ICON_PX = 16; // the passenger icon next to the number waiting
 const OUTPUT_ICON_PX = 30; // production icons above the industry
-const PIN_HEAD_Y = 22;      // the pin head is this many px above the chosen point
+const LABEL_PAD = 4;        // room around a cached label for its outline (textLabel)
+const LABEL_CACHE_MAX = 3000;
+const PIN_HEAD_Y = 22;
+const SIMPLIFY_PX = 0.75;   // all lines on screen are drawn as polylines at most this far (screen px) from the route
+const VISIBLE_LINES_MS = 200; // the set of lines on screen goes to the panel this long after it stops changing      // the pin head is this many px above the chosen point
 const DIM = 0.3;            // opacity of the rest of the map when one object is pointed at in the panel list
 const FOOTPRINT_FILL = 0.18, FOOTPRINT_LINE = 0.6; // opacity of the station / warehouse / depot outlines
 const STREET_MIN_PX_PER_M = 1 / 8; // zoomed out: a 12 m street 1.5 px, a 24 m avenue 3 px
@@ -161,6 +165,7 @@ export class MapView {
     this.showVehicles = true;
     this.iconImages = new Map(); // url -> Image (game icons: station masks, cargo)
     this.iconCache = new Map();  // url|color|px -> canvas with the tinted icon
+    this.labelCache = new Map(); // text|font|colors|dpr -> a label with its outline (textLabel)
     this.lines = new Map();     // id -> line from dynamic.json
     this.graph = null;          // RouteGraph - for working out line routes
     this.routeCache = new Map(); // line id -> { key, route }
@@ -184,6 +189,11 @@ export class MapView {
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
+    // labels cached before the web font loaded were drawn with a fallback font
+    document.fonts?.addEventListener("loadingdone", () => {
+      this.labelCache.clear();
+      this.requestDraw();
+    });
     this.bindEvents();
     this.resize();
   }
@@ -327,6 +337,7 @@ export class MapView {
   // The Lines tab with the "eye" on: { match(line) -> bool } (panel filters), or null - off.
   setLinesView(view) {
     this.linesView = view;
+    clearTimeout(this.visibleTimer);
     if (!view) this.visibleIds = new Set();
     if (!view && this.listHover?.kind === "line") this.listHover = null;
     this.visibleKey = null; // after the filters change, report the set of lines again
@@ -453,8 +464,10 @@ export class MapView {
     });
   }
 
-  // The map is drawn in two parts: the static layer (terrain, footprints, network, lines - thousands of curves, the
-  // costly part) to an offscreen canvas, only when something changed; and on top of it, every frame, the rest.
+  // The map is drawn in layers: the static layer (terrain, footprints, network, lines - thousands of curves, the
+  // costly part - and industries, warehouses, stops, stations) and the towns layer (balls and labels) go to offscreen
+  // canvases only when something changed; every frame copies them, with the vehicles in between and the pointed
+  // objects on top.
   draw() {
     frameStart();
     timed("frame", () => this.drawFrame());
@@ -473,17 +486,23 @@ export class MapView {
     const focus = links ? null : timed("frame/focus", () => this.objectFocus());
 
     const layer = (this.layer ??= document.createElement("canvas"));
+    const townLayer = (this.townLayer ??= document.createElement("canvas"));
     if (layer.width !== this.canvas.width || layer.height !== this.canvas.height) {
-      layer.width = this.canvas.width;
-      layer.height = this.canvas.height;
+      layer.width = townLayer.width = this.canvas.width;
+      layer.height = townLayer.height = this.canvas.height;
       this.staticDirty = true;
     }
     if (this.staticDirty || themeKey !== this.themeKey) {
       this.staticDirty = false;
       this.themeKey = themeKey;
-      this.ctx = layer.getContext("2d");
       try {
+        this.ctx = layer.getContext("2d");
         timed("frame/static", () => this.drawStatic(focus));
+        if (focus) timed("frame/static/objects", () => this.drawStaticObjects(focus));
+        this.ctx = townLayer.getContext("2d");
+        this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+        this.ctx.clearRect(0, 0, townLayer.width, townLayer.height);
+        if (focus) timed("frame/static/towns", () => this.drawTownLayer(focus));
       } finally {
         this.ctx = ctx;
       }
@@ -494,7 +513,7 @@ export class MapView {
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (links) timed("frame/links view", () => this.drawLinksView(links, now));
-    else timed("frame/objects", () => this.drawObjects(focus));
+    else timed("frame/objects", () => this.drawObjects(focus, townLayer));
     timed("frame/marker, pin", () => {
       this.drawMarker();
       this.drawPin();
@@ -592,19 +611,39 @@ export class MapView {
     return { hotLine, spotLine, spot, selLines, focusLines, alpha: spot || spotLine !== null ? DIM : 1 };
   }
 
-  // Industries, warehouses, stations, vehicles and towns over the lines of the static layer: the normal map, without
-  // the selected industry's connections.
-  drawObjects({ spotLine, spot, focusLines, alpha }) {
-    const { ctx } = this;
+  // Industries, warehouses, stops and stations over the lines, into the static layer (the normal map, without the
+  // selected industry's connections).
+  drawStaticObjects({ spot, alpha }) {
+    const { ctx, dpr } = this;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.globalAlpha = alpha;
-    if (this.showIndustries) timed("frame/objects/industries", () => this.drawIndustries(spot));
-    if (this.showWarehouses) timed("frame/objects/warehouses", () => this.drawWarehouses(spot));
-    if (this.showStations) timed("frame/objects/stops", () => this.drawStops());
-    if (this.showStations) timed("frame/objects/stations", () => this.drawStations(spot));
+    if (this.showIndustries) timed("frame/static/objects/industries", () => this.drawIndustries(spot));
+    if (this.showWarehouses) timed("frame/static/objects/warehouses", () => this.drawWarehouses(spot));
+    if (this.showStations) timed("frame/static/objects/stops", () => this.drawStops());
+    if (this.showStations) timed("frame/static/objects/stations", () => this.drawStations(spot));
+    ctx.globalAlpha = 1;
+  }
+
+  // Towns into their own layer: over the vehicles, which move every frame.
+  drawTownLayer({ spot, alpha }) {
+    const { ctx, dpr } = this;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.globalAlpha = alpha;
+    this.drawTowns(spot);
+    ctx.globalAlpha = 1;
+  }
+
+  // Every frame, over the static layer: the vehicles, the towns layer, then the pointed line, its vehicles and the
+  // pointed object.
+  drawObjects({ spotLine, spot, focusLines, alpha }, townLayer) {
+    const { ctx, dpr } = this;
+    ctx.globalAlpha = alpha;
     // vehicles of other lines dimmed once (when the rest of the map is already dimmed - no extra DIM)
     if (this.showVehicles) timed("frame/objects/vehicles", () => this.drawVehicles((v) => !focusLines.has(v.line), !focusLines.size || ctx.globalAlpha < 1 ? 1 : DIM));
-    timed("frame/objects/towns", () => this.drawTowns(spot));
     ctx.globalAlpha = 1;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    timed("frame/objects/towns copy", () => ctx.drawImage(townLayer, 0, 0));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     timed("frame/objects/pointed", () => {
       if (spotLine !== null) this.drawLine(spotLine);
       if (this.showVehicles && focusLines.size) this.drawVehicles((v) => focusLines.has(v.line));
@@ -965,12 +1004,23 @@ export class MapView {
   lineRoute(id) {
     const line = this.lines.get(id);
     if (!line || !this.graph) return null;
-    const key = JSON.stringify([line.carrier, (line.stops ?? []).map((s) => s.pos)]);
     const cached = this.routeCache.get(id);
-    if (cached?.key === key) return cached.route;
+    if (cached?.line === line) return cached.route; // the same data batch - no need to compare the stops
+    const key = JSON.stringify([line.carrier, (line.stops ?? []).map((s) => s.pos)]);
+    if (cached?.key === key) {
+      cached.line = line;
+      return cached.route;
+    }
     const route = this.graph.routeLine(line, this.gameRoutes.get(id));
-    this.routeCache.set(id, { key, route });
+    this.routeCache.set(id, { key, line, route });
     return route;
+  }
+
+  // The route simplified for the current zoom (simplifyRoute), kept until the zoom changes by more than ~1.4x.
+  simpleRoute(route) {
+    const tol = 2 ** Math.round(Math.log2(SIMPLIFY_PX / this.view.scale));
+    if (route.simple?.tol !== tol) route.simple = { tol, ...simplifyRoute(route, tol) };
+    return route.simple;
   }
 
   // All lines crossing the screen (and matching the panel filters); with selected / pinned ones - only those.
@@ -981,9 +1031,22 @@ export class MapView {
     const [maxX, maxY] = this.toWorld(this.w, this.h);
     const rect = { minX, minY, maxX, maxY };
     const visible = timed("frame/static/lines/routes, on screen", () => [...this.lines.values()]
-      .filter((l) => this.linesView.match(l) && routeInRect(this.lineRoute(l.id), rect))
+      .filter((l) => {
+        if (!this.linesView.match(l)) return false;
+        const route = this.lineRoute(l.id);
+        return route && routeInRect(route, rect, this.simpleRoute(route).poly);
+      })
       .sort((a, b) => (a.vehicleCount ?? 0) - (b.vehicleCount ?? 0))); // the busiest on top
     perfInfo("lines on screen", `${visible.length} of ${this.lines.size}`);
+    perfInfo("line points drawn", () => {
+      let simple = 0, full = 0;
+      for (const l of visible) {
+        const route = this.lineRoute(l.id);
+        simple += route.simple?.poly.length ?? route.poly.length;
+        full += route.poly.length;
+      }
+      return `${simple} of ${full} (simplified to ${SIMPLIFY_PX} px)`;
+    });
 
     // The pointed line: the others semi-transparent, it on top and 50% wider.
     this.visibleIds = new Set(visible.map((l) => l.id));
@@ -997,15 +1060,18 @@ export class MapView {
       if (hot !== null) this.drawLine(hot, true, 1.5);
     });
 
+    // The panel rebuilds its line list: not inside the frame, and only once panning / zooming settles.
     const key = visible.map((l) => l.id).sort((a, b) => a - b).join(",");
     if (key !== this.visibleKey) {
       this.visibleKey = key;
-      this.onVisibleLines?.(new Set(this.visibleIds));
+      clearTimeout(this.visibleTimer);
+      const ids = new Set(this.visibleIds);
+      this.visibleTimer = setTimeout(() => this.onVisibleLines?.(ids), VISIBLE_LINES_MS);
     }
   }
 
   // A line on top: an outline in the background color, the route in the line color, stops as circles.
-  // compact: thinner, for drawing many lines at once; stops only when zoomed in.
+  // compact: thinner, for drawing many lines at once - simplified, without the curves; stops only when zoomed in.
   // widen: route width multiplier (highlighting the line pointed at in the list).
   drawLine(id, compact = false, widen = 1) {
     const route = this.lineRoute(id);
@@ -1015,16 +1081,17 @@ export class MapView {
     const s = view.scale;
     const color = rgb(this.lines.get(id).color, css("--accent"));
 
+    const path = compact ? this.simpleRoute(route).path : route.path;
     ctx.save();
     ctx.setTransform(s * dpr, 0, 0, s * dpr, (w / 2 - view.x * s) * dpr, (h / 2 - view.y * s) * dpr);
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.strokeStyle = css("--map-bg");
     ctx.lineWidth = ((compact ? 2.5 : 4) * widen + (compact ? 2 : 3)) / s; // the outline around the route
-    ctx.stroke(route.path);
+    ctx.stroke(path);
     ctx.strokeStyle = color;
     ctx.lineWidth = (compact ? 2.5 : 4) * widen / s;
-    ctx.stroke(route.path);
+    ctx.stroke(path);
     ctx.restore();
 
     if (compact && s < STATION_ICON_SCALE) return;
@@ -1110,22 +1177,14 @@ export class MapView {
     const cargos = Object.entries(d.cargo ?? {}).sort((a, b) => b[1] - a[1]).map(([c]) => cargoImg(c)).filter(Boolean);
     this.drawOutputs(cargos.slice(0, 4), x, y - half - roof * 0.5 - 3);
     if (!big || !d.capacity) return;
-    const label = `${fmtInt(d.amount ?? 0)} / ${fmtInt(d.capacity)}`;
-    ctx.font = `600 11px ${css("--font")}`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = css("--map-bg");
-    ctx.strokeText(label, x, by + bh + 3);
-    ctx.fillStyle = css("--town-label");
-    ctx.fillText(label, x, by + bh + 3);
-    ctx.textAlign = "start";
+    const label = this.textLabel(`${fmtInt(d.amount ?? 0)} / ${fmtInt(d.capacity)}`, 11, css("--town-label"));
+    this.drawLabel(label, x - label.textW / 2, by + bh + 3 + 11 / 2);
   }
 
   // Icons of the produced cargo in a row, centered above the industry square (bottomY = the bottom of the row).
   drawOutputs(srcs, x, bottomY) {
     const s = OUTPUT_ICON_PX, gap = 1;
-    const imgs = srcs.map((src) => this.image(src)).filter(Boolean);
+    const imgs = srcs.map((src) => this.tintedIcon(src, null, s)).filter(Boolean);
     let left = x - (imgs.length * s + (imgs.length - 1) * gap) / 2;
     for (const img of imgs) {
       this.ctx.drawImage(img, left, bottomY - s, s, s);
@@ -1161,23 +1220,15 @@ export class MapView {
   drawWaiting(n, x, topY) {
     const css = (name) => this.theme[name];
     const { ctx } = this;
-    const label = fmtInt(n), s = WAITING_ICON_PX, gap = 2;
-    ctx.font = `600 11px ${css("--font")}`;
-    const icon = this.image(cargoImg("passengers"));
-    const w = (icon ? s + gap : 0) + ctx.measureText(label).width;
+    const label = this.textLabel(fmtInt(n), 11, css("--town-label")), s = WAITING_ICON_PX, gap = 2;
+    const icon = this.tintedIcon(cargoImg("passengers"), null, s);
+    const w = (icon ? s + gap : 0) + label.textW;
     let left = x - w / 2;
     if (icon) {
       ctx.drawImage(icon, left, topY - 1, s, s);
       left += s + gap;
     }
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = css("--map-bg");
-    ctx.strokeText(label, left, topY + s / 2);
-    ctx.fillStyle = css("--town-label");
-    ctx.fillText(label, left, topY + s / 2);
-    ctx.textAlign = "start";
+    this.drawLabel(label, left, topY + s / 2);
   }
 
   // Zoomed in: a dark circle with a border in the kind's color and an icon; zoomed out: just a dot.
@@ -1394,7 +1445,8 @@ export class MapView {
   }
 
   // A game icon is a white mask: we tint it once per color and size (in device pixels)
-  // on a separate canvas and keep it in the cache. null until the image loads.
+  // on a separate canvas and keep it in the cache. color null - only scaled (cargo icons in color). null until the
+  // image loads.
   tintedIcon(src, color, size) {
     const img = this.image(src);
     if (!img) return null;
@@ -1407,12 +1459,49 @@ export class MapView {
       const c = canvas.getContext("2d");
       c.imageSmoothingQuality = "high";
       c.drawImage(img, 0, 0, px, px);
-      c.globalCompositeOperation = "source-in";
-      c.fillStyle = color;
-      c.fillRect(0, 0, px, px);
+      if (color) {
+        c.globalCompositeOperation = "source-in";
+        c.fillStyle = color;
+        c.fillRect(0, 0, px, px);
+      }
       this.iconCache.set(key, canvas);
     }
     return canvas;
+  }
+
+  // A label in the bold map font with an outline in the background color, drawn once on its own canvas and kept
+  // (strokeText is slow, and town / warehouse labels repeat in every redraw). textW: the text width in CSS px.
+  textLabel(text, size, color) {
+    const font = `600 ${size}px ${this.theme["--font"]}`, bg = this.theme["--map-bg"], dpr = this.dpr;
+    const key = `${text}|${font}|${color}|${bg}|${dpr}`;
+    let label = this.labelCache.get(key);
+    if (label) return label;
+    if (this.labelCache.size >= LABEL_CACHE_MAX) this.labelCache.clear(); // warehouse amounts keep changing
+    const canvas = document.createElement("canvas");
+    const c = canvas.getContext("2d");
+    c.font = font;
+    const textW = c.measureText(text).width;
+    const w = Math.ceil(textW) + 2 * LABEL_PAD, h = size + 2 * LABEL_PAD;
+    canvas.width = Math.ceil(w * dpr);
+    canvas.height = Math.ceil(h * dpr);
+    c.scale(dpr, dpr);
+    c.font = font;
+    c.textBaseline = "middle";
+    c.lineWidth = 3;
+    c.strokeStyle = bg;
+    c.strokeText(text, LABEL_PAD, h / 2);
+    c.fillStyle = color;
+    c.fillText(text, LABEL_PAD, h / 2);
+    label = { canvas, w, h, textW };
+    this.labelCache.set(key, label);
+    return label;
+  }
+
+  // A textLabel with the text's left edge at x and its middle at y (snapped to device pixels, so it stays sharp).
+  drawLabel(label, x, y) {
+    const dpr = this.dpr;
+    const left = Math.round((x - LABEL_PAD) * dpr) / dpr, top = Math.round((y - label.h / 2) * dpr) / dpr;
+    this.ctx.drawImage(label.canvas, left, top, label.canvas.width / dpr, label.canvas.height / dpr);
   }
 
   drawTowns(skip) {
@@ -1437,28 +1526,14 @@ export class MapView {
     const marked = !labels || this.isMarked(t);
     if (marked) this.ring(x, y, r * 2);
 
-    ctx.font = `600 12px ${css("--font")}`;
-    ctx.textBaseline = "middle";
-    const text = t.data.name ?? "";
+    const name = this.textLabel(t.data.name ?? "", 12, marked ? css("--accent") : css("--town-label"));
     // The owner (viewer, splitAllOwners) in a second line below the name: smaller, yellow.
-    const owner = t.data.owner ?? "";
-    const nameW = ctx.measureText(text).width;
-    ctx.font = `600 10px ${css("--font")}`;
-    const ownerW = owner ? ctx.measureText(owner).width : 0;
-    const box = { x: x + r + 4, y: y - 8, w: Math.max(nameW, ownerW) + 6, h: owner ? 28 : 16 };
+    const owner = t.data.owner ? this.textLabel(t.data.owner, 10, css("--accent")) : null;
+    const box = { x: x + r + 4, y: y - 8, w: Math.max(name.textW, owner?.textW ?? 0) + 6, h: owner ? 28 : 16 };
     if (labels && !marked && labels.some((b) => overlaps(b, box))) return;
     labels?.push(box);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = css("--map-bg");
-    if (owner) {
-      ctx.strokeText(owner, box.x, y + 12);
-      ctx.fillStyle = css("--accent");
-      ctx.fillText(owner, box.x, y + 12);
-    }
-    ctx.font = `600 12px ${css("--font")}`;
-    ctx.strokeText(text, box.x, y);
-    ctx.fillStyle = marked ? css("--accent") : css("--town-label");
-    ctx.fillText(text, box.x, y);
+    if (owner) this.drawLabel(owner, box.x, y + 12);
+    this.drawLabel(name, box.x, y);
   }
 
   // The radius of a town ball on screen: full from the zoom used when a town is selected (0.25),

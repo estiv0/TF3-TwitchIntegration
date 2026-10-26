@@ -31,7 +31,7 @@ export function frameStart() {
   if (perfOn) frames.push(performance.now());
 }
 
-/** A value shown under the table (the last one set). */
+/** A value shown under the table (the last one set); a function is called only when the table is shown. */
 export function perfInfo(name, value) {
   if (perfOn) info.set(name, value);
 }
@@ -83,7 +83,7 @@ function render() {
     }
     out.push(`${label}${(list.length / sec).toFixed(1).padStart(8)} ${f2(sum / list.length)}  ${f2(max)} ${f2(sum / sec)}`);
   }
-  if (info.size) out.push("", ...[...info].map(([k, v]) => `${k}: ${v}`));
+  if (info.size) out.push("", ...[...info].map(([k, v]) => `${k}: ${typeof v === "function" ? v() : v}`));
   box.textContent = out.join("\n");
 }
 
