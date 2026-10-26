@@ -489,16 +489,18 @@ function clipLeg(steps, a, b) {
 
 // Curves k - 1 and k meet at a junction, where a vehicle crossing it changes lanes (or turns): it does so over the
 // whole junction, not at its centre. Both curves are pulled back from the junction (by ~a junction's half: JOIN_EASE_M,
-// more for a bigger jump, never more than JOIN_EASE_SHARE of a curve), so joinCurves spreads the change. Not for
-// continuous edges (no jump) and U-turns.
+// more for a bigger jump, never more than JOIN_EASE_SHARE of a curve), so joinCurves spreads the change. Also the inside
+// of a turn, where trimOverlap left the curves meeting in a sharp corner. Not for continuous edges (no jump, no bend)
+// and U-turns.
 function easeJoin(curves, k) {
   const prev = curves[k - 1], next = curves[k];
   const p = prev[3], q = next[0];
   const gap = Math.hypot(q.x - p.x, q.y - p.y);
-  if (gap < 0.3) return;
   const dp = curveTangent(prev, 1), dq = curveTangent(next, 0);
   const lp = Math.hypot(dp.x, dp.y), lq = Math.hypot(dq.x, dq.y);
-  if (!(lp > 0) || !(lq > 0) || (dp.x * dq.x + dp.y * dq.y) / (lp * lq) < -0.5) return;
+  if (!(lp > 0) || !(lq > 0)) return;
+  const cos = (dp.x * dq.x + dp.y * dq.y) / (lp * lq);
+  if (cos < -0.5 || (gap < 0.3 && cos > 0.995)) return;
   const d = Math.max(JOIN_EASE_M, 1.5 * gap);
   const tp = curveAtLength(prev, Math.min(d, JOIN_EASE_SHARE * curveLength(prev)), true);
   const tq = curveAtLength(next, Math.min(d, JOIN_EASE_SHARE * curveLength(next)), false);
