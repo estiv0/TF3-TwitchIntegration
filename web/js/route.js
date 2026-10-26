@@ -9,6 +9,8 @@
 const SNAP_DISTANCE = 300; // m - further from the network a stop is connected with a straight line
 const SNAP_CANDIDATES = 8; // how many of a stop's nearest nodes we consider when connecting a segment
 const STOP_RADIUS = 60; // m - nodes of a directional network this close to the stop belong to the station (platforms)
+const STOP_EDGE_MARGIN = 10; // m - a stop this far beyond the edge's half width lies on that edge (a street stop at the curb)
+const STOP_EDGE_STEPS = 3; // how many steps at each end of a leg can carry its stop (a path starts a bit before the stop)
 
 // Line carrier -> the type of edge it runs on (WATER/AIR: a straight line).
 const ROAD_FOR_CARRIER = { RAIL: "TRACK", ROAD: "STREET", TRAM: "STREET" };
@@ -34,6 +36,7 @@ export class RouteGraph {
       const x0 = e[f.x0], y0 = -e[f.y0], x1 = e[f.x1], y1 = -e[f.y1];
       const edge = {
         road: e[f.road],
+        width: e[f.width] ?? 0,
         x0, y0, x1, y1,
         c0x: x0 + e[f.tx0] / 3, c0y: y0 - e[f.ty0] / 3,
         c1x: x1 - e[f.tx1] / 3, c1y: y1 + e[f.ty1] / 3,
@@ -284,9 +287,11 @@ export class RouteGraph {
     const directed = DIRECTED.has(road) && !allKnown ? this.directedLegs(stops, road) : [];
     const poly = [];
 
+    // each leg as curves; it starts and ends at the stop itself or at the point on the edge the stop stands on
+    // (clipLeg) - a leg without its own end point ends where the next one starts, so the loop stays continuous
+    const ends = [];
     for (let i = 0; i < stops.length; i++) {
       const j = (i + 1) % stops.length;
-      const a = stops[i], b = stops[j];
       // the leg as the game drives it; otherwise computed, and when it's impossible on the directional network:
       // the shortest way without direction
       let na = directed[i]?.from, steps = directed[i]?.steps;
@@ -300,24 +305,40 @@ export class RouteGraph {
         na = pair?.[0];
         steps = pair ? this.path(pair[0], pair[1], road) : null;
       }
+      ends.push({ na, ...clipLeg(steps, stops[i], stops[j]) });
+    }
+
+    for (let i = 0; i < stops.length; i++) {
+      const j = (i + 1) % stops.length;
+      const { na, curves, from } = ends[i];
+      const a = from ?? stops[i];
+      const b = ends[i].to ?? ends[j].from ?? stops[j];
       const first = poly.length;
       poly.push(a);
       path.moveTo(a.x, a.y);
-      if (steps) {
+      if (curves?.length) {
+        if (!from) {
+          path.lineTo(curves[0][0].x, curves[0][0].y);
+          poly.push(curves[0][0]);
+        }
+        for (const c of curves) {
+          path.bezierCurveTo(c[1].x, c[1].y, c[2].x, c[2].y, c[3].x, c[3].y);
+          // a few points from the curve, so vehicles on long arcs don't cut the corner
+          for (const t of BEZIER_SAMPLES) poly.push(curvePoint(c, t));
+          poly.push(c[3]);
+        }
+      } else if (curves && na && !from) {
         path.lineTo(na.x, na.y);
         poly.push(na);
-        for (const { edge: e, forward } of steps) {
-          if (forward) path.bezierCurveTo(e.c0x, e.c0y, e.c1x, e.c1y, e.x1, e.y1);
-          else path.bezierCurveTo(e.c1x, e.c1y, e.c0x, e.c0y, e.x0, e.y0);
-          // a few points from the curve, so vehicles on long arcs don't cut the corner
-          for (const t of BEZIER_SAMPLES) poly.push(bezierPoint(e, forward ? t : 1 - t));
-          poly.push(forward ? { x: e.x1, y: e.y1 } : { x: e.x0, y: e.y0 });
-        }
       }
-      path.lineTo(b.x, b.y);
-      legs.set(index[j], { first, last: poly.length }); // last = index of point b (the start of the next one)
+      const end = poly[poly.length - 1];
+      if (end.x !== b.x || end.y !== b.y) {
+        path.lineTo(b.x, b.y);
+        poly.push(b);
+      }
+      legs.set(index[j], { first, last: poly.length - 1 }); // last = index of point b (the start of the next one)
+      if (j !== 0) poly.pop(); // b is the first point of the next leg
     }
-    poly.push(stops[0]);
 
     const cum = new Float64Array(poly.length);
     for (let i = 1; i < poly.length; i++) cum[i] = cum[i - 1] + Math.hypot(poly[i].x - poly[i - 1].x, poly[i].y - poly[i - 1].y);
@@ -400,9 +421,76 @@ export function projectOnLeg(route, stop, p) {
 
 const BEZIER_SAMPLES = [0.25, 0.5, 0.75];
 
-function bezierPoint(e, t) {
+// The steps of a leg as cubic curves [p0, c0, c1, p1] in driving order: { curves, from, to }. A stop standing on an edge
+// near the start (end) of the leg cuts the leg there - a street stop is in the middle of an edge, and the game's path
+// covers that whole edge, sometimes with the one before it: from (to) is that point on the edge and the steps before
+// (after) it are dropped. Otherwise from / to are null and the leg is joined to the stop with a straight line.
+function clipLeg(steps, a, b) {
+  if (!steps) return { curves: null, from: null, to: null };
+  const n = steps.length;
+  const onEdge = (p, k0, k1) => {
+    let best = null;
+    for (let k = Math.max(0, k0); k < Math.min(n, k1); k++) {
+      const e = steps[k].edge, c = closestOnEdge(e, p);
+      if (c.d <= e.width / 2 + STOP_EDGE_MARGIN && (!best || c.d < best.d)) best = { k, t: c.t };
+    }
+    return best;
+  };
+  const sa = onEdge(a, 0, STOP_EDGE_STEPS);
+  const sb = onEdge(b, Math.max(sa?.k ?? 0, n - STOP_EDGE_STEPS), n);
+  const k0 = sa?.k ?? 0, k1 = sb?.k ?? n - 1;
+  const curves = [];
+  for (let k = k0; k <= k1; k++) {
+    const { edge: e, forward } = steps[k];
+    let t0 = forward ? 0 : 1, t1 = forward ? 1 : 0;
+    if (k === k0 && sa) t0 = sa.t;
+    if (k === k1 && sb) t1 = sb.t;
+    if (t0 !== t1) curves.push(subCurve(e, t0, t1));
+  }
+  return { curves, from: sa ? edgePoint(steps[k0].edge, sa.t) : null, to: sb ? edgePoint(steps[k1].edge, sb.t) : null };
+}
+
+// The parameter t of the point of edge e nearest to p, and the distance: { t, d }.
+function closestOnEdge(e, p) {
+  const N = 32;
+  const at = (t) => { const q = edgePoint(e, t); return { t, d: Math.hypot(q.x - p.x, q.y - p.y) }; };
+  let best = at(0);
+  for (let i = 1; i <= N; i++) {
+    const c = at(i / N);
+    if (c.d < best.d) best = c;
+  }
+  for (let h = 0.5 / N; h > 1e-4; h /= 2) { // refine around the best sample
+    for (const t of [best.t - h, best.t + h]) {
+      if (t < 0 || t > 1) continue;
+      const c = at(t);
+      if (c.d < best.d) best = c;
+    }
+  }
+  return best;
+}
+
+const edgeCurve = (e) => [{ x: e.x0, y: e.y0 }, { x: e.c0x, y: e.c0y }, { x: e.c1x, y: e.c1y }, { x: e.x1, y: e.y1 }];
+const edgePoint = (e, t) => curvePoint(edgeCurve(e), t);
+
+// The part of edge e from t0 to t1 (t0 > t1: against the edge) as a cubic curve.
+function subCurve(e, t0, t1) {
+  const lo = Math.min(t0, t1), hi = Math.max(t0, t1);
+  let c = edgeCurve(e);
+  if (lo > 0) c = splitCurve(c, lo)[1];
+  if (hi < 1) c = splitCurve(c, (hi - lo) / (1 - lo))[0];
+  return t0 <= t1 ? c : c.reverse();
+}
+
+// de Casteljau: a cubic curve split at t into [left, right]
+function splitCurve([p0, p1, p2, p3], t) {
+  const lerp = (a, b) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  const a = lerp(p0, p1), b = lerp(p1, p2), c = lerp(p2, p3), d = lerp(a, b), e = lerp(b, c), m = lerp(d, e);
+  return [[p0, a, d, m], [m, e, c, p3]];
+}
+
+function curvePoint([p0, p1, p2, p3], t) {
   const u = 1 - t, a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t, d = t * t * t;
-  return { x: a * e.x0 + b * e.c0x + c * e.c1x + d * e.x1, y: a * e.y0 + b * e.c0y + c * e.c1y + d * e.y1 };
+  return { x: a * p0.x + b * p1.x + c * p2.x + d * p3.x, y: a * p0.y + b * p1.y + c * p2.y + d * p3.y };
 }
 
 /** Whether a route (a routeLine result) crosses the rectangle { minX, minY, maxX, maxY } in path coordinates. */
