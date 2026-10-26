@@ -75,8 +75,12 @@
           <label><input type="radio" name="build-kind" value="industry"> <span data-i18n="build.industry">Industry</span></label>
         </div>
         <div class="build-field" data-build-type hidden>
-          <label for="build-type" data-i18n="build.type">Industry type</label>
-          <select id="build-type"></select>
+          <label for="build-type-btn" data-i18n="build.type">Industry type</label>
+          <select id="build-type" hidden></select>
+          <div class="type-picker" data-build-picker>
+            <button type="button" id="build-type-btn" class="type-picker-btn" aria-haspopup="listbox" aria-expanded="false"></button>
+            <ul class="type-picker-list" role="listbox" hidden></ul>
+          </div>
         </div>
         <div class="build-field">
           <label for="build-name" data-i18n="build.name">Name</label>

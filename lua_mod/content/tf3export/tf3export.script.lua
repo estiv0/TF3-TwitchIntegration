@@ -300,6 +300,7 @@ local DYN_STEPS = {
 	end },
 	{ "industries", function(job)
 		job.snap.industries = collectors.industries()
+		job.snap.industryTypes = collectors.industryTypes()
 		return true
 	end },
 	{ "warehouses", function(job)

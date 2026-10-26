@@ -185,6 +185,26 @@ button { font: inherit; color: inherit; }
   width: 100%; padding: 6px 8px; border-radius: 8px;
   background: var(--panel-2); border: 1px solid var(--border); color: var(--text); font: inherit; font-size: 13px;
 }
+/* Industry type picker (js/build.js): like the select, with icons of what the industry produces. */
+.build-form select[hidden] { display: none; }
+.build-form .type-picker-btn {
+  display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 8px; border-radius: 8px; text-align: left;
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text); font: inherit; font-size: 13px; font-weight: 400;
+}
+.type-picker-btn::after { content: "▾"; margin-left: auto; padding-left: 4px; color: var(--muted); }
+.type-picker-list {
+  margin: 4px 0 0; padding: 4px; list-style: none; max-height: 240px; overflow-y: auto;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+}
+.type-picker-list[hidden] { display: none; }
+.type-picker-list [role="option"] { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+.type-picker-list [role="option"]:hover, .type-picker-list [role="option"]:focus { background: var(--panel); outline: none; }
+.type-picker-list [role="option"]:focus-visible { box-shadow: inset 0 0 0 1px var(--accent); }
+.type-picker-list [aria-selected="true"] { color: var(--accent); }
+.type-icons { display: inline-flex; flex: none; gap: 2px; min-width: 1.3em; }
+.type-icons .cargo-ico { margin-right: 0; }
+.type-name { min-width: 0; line-height: 1.3; }
+.type-name small { color: var(--muted); font-size: 11px; }
 .build-form .pin-link input { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
 .build-check, .build-how { margin: 0; font-size: 12px; line-height: 1.4; color: var(--muted); }
 .build-check.neg { color: var(--pin); }

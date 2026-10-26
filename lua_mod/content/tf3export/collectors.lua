@@ -300,6 +300,48 @@ function C.industries()
 	return out
 end
 
+-- What a construction produces: the output cargos of its rules without boosters (updateScript.params.stockListConfig,
+-- as in the base .con files), sorted; empty when unknown.
+local function constructionOutputs(id)
+	local ok, rules = pcall(function()
+		local desc = api.res.constructionRep.getAsTable(id)
+		return desc.updateScript.params.stockListConfig.rules
+	end)
+	local set, out = {}, {}
+	for _, rule in ipairs(ok and type(rules) == "table" and rules or {}) do
+		if type(rule) == "table" and not rule.booster and type(rule.output) == "table" then
+			for cargo in pairs(rule.output) do
+				if type(cargo) == "string" and not set[cargo] then set[cargo] = true; out[#out + 1] = cargo end
+			end
+		end
+	end
+	table.sort(out)
+	return out
+end
+
+-- Every industry the game can build (visible "::/industries/x/x.con" constructions, like the sandbox menu), also
+-- those not on this map: { file, name, outputs } sorted by file. Resources don't change while the game runs, so cached.
+local industryTypes
+function C.industryTypes()
+	if industryTypes then return industryTypes end
+	local out = {}
+	local ok, all = pcall(function() return api.res.constructionRep.getAll() end)
+	for id, res in pairs(ok and type(all) == "table" and all or {}) do
+		local kind = type(res) == "string" and res:match("industries/([%w_]+)/%1%.con$")
+		if kind then
+			local okN, name = pcall(function() return api.res.constructionRep.get(id).description.name end)
+			out[#out + 1] = {
+				file = "::/industries/" .. kind .. "/" .. kind .. ".con",
+				name = okN and type(name) == "string" and name or nil,
+				outputs = constructionOutputs(id),
+			}
+		end
+	end
+	table.sort(out, function(a, b) return a.file < b.file end)
+	if ok then industryTypes = out end -- after an error try again next time
+	return out
+end
+
 ---------------------------------------------------------------- warehouses
 -- The player's warehouses (WAREHOUSE component: stockList + construction), like the game's warehouse window
 -- (gui/main/cargo_util.tl, forEachCargoInStock): a warehouse has several stores (stocks), a store has

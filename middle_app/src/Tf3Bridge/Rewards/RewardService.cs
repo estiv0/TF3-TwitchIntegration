@@ -313,7 +313,8 @@ public sealed class RewardService
         else if (RewardKinds.Creates(kind))
         {
             if (objects.Count == 0) return Reject(Loc.T("no game data (is TF3 running?)"));
-            var parsed = BuildCode.Parse(input, kind == RewardKind.CreateIndustry, objects, MapBounds.Load(_terrainPath), _terrain(), Settings.Zones);
+            var parsed = BuildCode.Parse(input, kind == RewardKind.CreateIndustry, objects, MapBounds.Load(_terrainPath), _terrain(), Settings.Zones,
+                GameObjects.LoadIndustryTypes(_dynamicPath));
             if (parsed.Place is not { } place) return Reject(parsed.Error!);
             command = place.File is { } file
                 ? ModCommand.CreateIndustry(place.X, place.Y, file, place.Name, owner, CommandSource.ChannelPoints, created)

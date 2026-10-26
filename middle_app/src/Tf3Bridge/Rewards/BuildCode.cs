@@ -62,8 +62,10 @@ public static partial class BuildCode
     /// <param name="terrain">Ground from the newest heightmap; null = not known yet (then neither water and slopes
     /// for towns nor regions for industries are checked).</param>
     /// <param name="zones">Industry type -> required region (<see cref="IndustryZones"/>); null = defaults.</param>
+    /// <param name="industryTypes">.con files of every industry the game can build (<see cref="GameObjects.LoadIndustryTypes"/>);
+    /// null or empty = only the types already on the map.</param>
     public static Result Parse(string input, bool industry, IReadOnlyCollection<GameObject> objects, MapBounds? bounds,
-        BuildTerrain? terrain = null, IReadOnlyDictionary<string, IndustryZone>? zones = null)
+        BuildTerrain? terrain = null, IReadOnlyDictionary<string, IndustryZone>? zones = null, IReadOnlyCollection<string>? industryTypes = null)
     {
         var m = Code().Match(input);
         if (!m.Success) return Error(Loc.T("that isn't a code from the map (copy it from the website: the 🏗 button)"));
@@ -84,8 +86,9 @@ public static partial class BuildCode
         string? file = null;
         if (type is not null)
         {
-            file = objects.FirstOrDefault(o => o.Kind == GameObjectKind.Industry && string.Equals(IndustryType(o.File), type, StringComparison.OrdinalIgnoreCase))?.File;
-            if (file is null) return Error(Loc.F("unknown industry type \"{0}\" (there are none on this map)", type));
+            file = (industryTypes ?? []).FirstOrDefault(f => string.Equals(IndustryType(f), type, StringComparison.OrdinalIgnoreCase))
+                ?? objects.FirstOrDefault(o => o.Kind == GameObjectKind.Industry && string.Equals(IndustryType(o.File), type, StringComparison.OrdinalIgnoreCase))?.File;
+            if (file is null) return Error(Loc.F("unknown industry type \"{0}\" (the game has no such industry)", type));
             var kind = type.ToLowerInvariant();
             if (terrain is not null && (zones ?? IndustryZones.Defaults).TryGetValue(kind, out var zone) && !terrain.Zones.Allows(zone, x, y))
                 return Error(Loc.F("{0}: this industry type can only be built {1} (forbidden ground is red on the map)", IndustryZones.Name(kind), IndustryZones.Label(zone)));

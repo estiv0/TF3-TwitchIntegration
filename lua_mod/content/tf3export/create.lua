@@ -20,7 +20,7 @@ local MAX_NAME = 200       -- bytes, as in setName
 local FIND_RADIUS = 1500   -- m: how far from the chosen point we look for the new industry
 
 -- Industries placed on water (the rest only on land).
-local ON_WATER = { oil_platform = true, fishing_grounds = true, dredging_platform = true }
+local ON_WATER = { oil_platform = true, fishing_grounds = true, sand_excavator = true }
 
 local function vec2(x, y) return api.type.Vec2f.new(x, y) end
 

@@ -8,7 +8,7 @@
 // "lowland" | "inland". Thresholds and logic as in C#; here only a hint, Tf3Bridge decides.
 
 export const TOWN_MAX_WATER = 0.3, TOWN_MAX_STEEP = 0.5;
-export const ON_WATER = new Set(["oil_platform", "fishing_grounds", "dredging_platform"]); // as in create.lua
+export const ON_WATER = new Set(["oil_platform", "fishing_grounds", "sand_excavator"]); // as in create.lua
 const BLOCKED_RGBA = [220, 60, 50, 90]; // map overlay: building not allowed here
 
 function pixels(bitmap) {

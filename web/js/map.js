@@ -6,7 +6,7 @@ import { RouteGraph, pointAtDistance, projectOnLeg, routeInRect } from "./route.
 
 const RAW_INDUSTRIES = new Set([
   "coal_mine", "iron_ore_mine", "quarry", "forest", "farm", "oil_well",
-  "oil_platform", "fishing_grounds", "sand_excavator",
+  "oil_platform", "fishing_grounds", "sand_excavator", "sand_pit", "clay_pit",
 ]);
 
 export const industryKind = (ind) => {

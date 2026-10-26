@@ -63,6 +63,28 @@ public static class GameObjects
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return []; }
     }
 
+    /// <summary>
+    /// The .con files of every industry the game can build (industryTypes from the mod, also those not on this map);
+    /// empty when missing (an older mod).
+    /// </summary>
+    public static List<string> LoadIndustryTypes(string dynamicJsonPath)
+    {
+        if (!File.Exists(dynamicJsonPath)) return [];
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllBytes(dynamicJsonPath));
+            return ParseIndustryTypes(doc.RootElement);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return []; }
+    }
+
+    internal static List<string> ParseIndustryTypes(JsonElement root) =>
+        root.TryGetProperty("industryTypes", out var items) && items.ValueKind == JsonValueKind.Array
+            ? items.EnumerateArray()
+                .Select(x => x.ValueKind == JsonValueKind.Object && x.TryGetProperty("file", out var f) && f.ValueKind == JsonValueKind.String ? f.GetString() : null)
+                .OfType<string>().ToList()
+            : [];
+
     internal static List<GameObject> Parse(JsonElement root)
     {
         var list = new List<GameObject>();

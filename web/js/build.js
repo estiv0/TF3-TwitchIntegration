@@ -9,6 +9,8 @@
 import { config } from "../config.js";
 import { dict, locale, t } from "./i18n.js";
 import { Ground, ON_WATER, TOWN_MAX_STEEP, TOWN_MAX_WATER } from "./ground.js";
+import { cargoImg, cargoName } from "./format.js";
+import { industryOutputs } from "./map.js";
 
 // The same numbers as in BuildCode.cs: here only a hint, Tf3Bridge decides.
 const MIN_NAME = 2, MAX_NAME = 40;
@@ -41,7 +43,13 @@ export class BuildController {
     this.getDynamic = getDynamic;
     this.kindInputs = [...form.querySelectorAll("input[name=build-kind]")];
     this.typeRow = form.querySelector("[data-build-type]");
-    this.type = form.querySelector("#build-type");
+    this.type = form.querySelector("#build-type"); // hidden: holds the value, the picker below shows it with icons
+    this.picker = form.querySelector("[data-build-picker]");
+    this.pickerBtn = this.picker.querySelector("button");
+    this.pickerList = this.picker.querySelector("[role=listbox]");
+    this.typeOutputs = new Map(); // industry kind -> output cargo resources
+    this.typeName = (k) => k;
+    this.typeWhere = () => null;
     this.name = form.querySelector("#build-name");
     this.check = form.querySelector("[data-build-check]");
     this.code = form.querySelector("#build-code");
@@ -60,6 +68,24 @@ export class BuildController {
     button.addEventListener("click", () => map.setPlaceMode(map.placeMode === "build" ? null : "build"));
     for (const input of this.kindInputs) input.addEventListener("change", () => this.update());
     this.type.addEventListener("change", () => this.update());
+    this.pickerBtn.addEventListener("click", () => this.togglePicker());
+    this.pickerBtn.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        this.togglePicker(true);
+      } else if (e.key === "Escape" && !this.pickerList.hidden) {
+        e.stopPropagation(); // only the list closes, not the build window
+        this.togglePicker(false);
+      }
+    });
+    this.pickerList.addEventListener("click", (e) => {
+      const option = e.target.closest("[role=option]");
+      if (option) this.pickType(option.dataset.type);
+    });
+    this.pickerList.addEventListener("keydown", (e) => this.pickerKey(e));
+    document.addEventListener("pointerdown", (e) => {
+      if (!this.pickerList.hidden && !this.picker.contains(e.target)) this.togglePicker(false, false);
+    });
     this.name.addEventListener("input", () => this.update());
     form.addEventListener("submit", (e) => {
       e.preventDefault();
@@ -142,16 +168,116 @@ export class BuildController {
     this.update();
   }
 
-  // The industry kinds present on this map (Tf3Bridge only accepts those), by name.
+  // Every industry kind the game can build (industryTypes, like the sandbox menu; an older mod: only those on this map), by name.
   fillTypes() {
     const keep = this.type.value;
-    const types = new Set((this.getDynamic()?.industries ?? []).map((i) => industryType(i.file)).filter(Boolean));
+    const dynamic = this.getDynamic();
+    const gameNames = new Map((dynamic?.industryTypes ?? []).map((i) => [industryType(i.file), i.name]));
+    const types = new Set([...gameNames.keys(), ...(dynamic?.industries ?? []).map((i) => industryType(i.file))].filter(Boolean));
     const names = dict().industry ?? {};
-    const where = (k) => ON_WATER.has(k) ? t("build.water") : this.rules[k] ? t(`zone.${this.rules[k]}`) : null;
-    const label = (k) => (names[k] ?? k.replace(/_/g, " ")) + (where(k) ? ` (${where(k)})` : "");
+    this.typeName = (k) => names[k] ?? gameNames.get(k) ?? k.replace(/_/g, " ");
+    this.typeWhere = (k) => ON_WATER.has(k) ? t("build.water") : this.rules[k] ? t(`zone.${this.rules[k]}`) : null;
+    const label = (k) => this.typeName(k) + (this.typeWhere(k) ? ` (${this.typeWhere(k)})` : "");
+
+    // What each kind produces: from the game (industryTypes), else from such an industry on the map.
+    this.typeOutputs = new Map();
+    for (const i of dynamic?.industryTypes ?? [])
+      if (Array.isArray(i.outputs) && i.outputs.length) this.typeOutputs.set(industryType(i.file), i.outputs);
+    for (const ind of dynamic?.industries ?? []) {
+      const k = industryType(ind.file);
+      const outputs = k && !this.typeOutputs.has(k) ? [...industryOutputs(ind).keys()] : [];
+      if (outputs.length) this.typeOutputs.set(k, outputs);
+    }
+
     const sorted = [...types].sort((a, b) => label(a).localeCompare(label(b)));
     this.type.replaceChildren(...sorted.map((k) => new Option(label(k), k)));
     if (types.has(keep)) this.type.value = keep;
+    this.pickerList.replaceChildren(...sorted.map((k) => {
+      const option = document.createElement("li");
+      option.role = "option";
+      option.tabIndex = -1;
+      option.dataset.type = k;
+      option.append(this.typeContent(k));
+      return option;
+    }));
+    this.syncPicker();
+  }
+
+  // Icons of what the kind produces, its name and where it may stand (DOM nodes: names may come from mods).
+  typeContent(k) {
+    const frag = document.createDocumentFragment();
+    const icons = document.createElement("span");
+    icons.className = "type-icons";
+    for (const res of this.typeOutputs.get(k) ?? []) {
+      const src = cargoImg(res);
+      if (!src) continue;
+      const img = new Image();
+      img.className = "cargo-ico";
+      img.src = src;
+      img.alt = "";
+      img.title = cargoName(res);
+      img.onerror = () => img.remove();
+      icons.append(img);
+    }
+    const name = document.createElement("span");
+    name.className = "type-name";
+    name.textContent = this.typeName(k);
+    const where = this.typeWhere(k);
+    if (where) {
+      const hint = document.createElement("small");
+      hint.textContent = ` (${where})`;
+      name.append(hint);
+    }
+    frag.append(icons, name);
+    return frag;
+  }
+
+  // The picker button shows the selected kind; the list marks it.
+  syncPicker() {
+    const value = this.type.value;
+    if (value) this.pickerBtn.replaceChildren(this.typeContent(value));
+    else this.pickerBtn.textContent = t("build.noTypes");
+    for (const option of this.pickerList.children) option.setAttribute("aria-selected", String(option.dataset.type === value));
+  }
+
+  togglePicker(open = this.pickerList.hidden, focusButton = true) {
+    if (open === !this.pickerList.hidden) return;
+    this.pickerList.hidden = !open;
+    this.pickerBtn.setAttribute("aria-expanded", String(open));
+    if (open) {
+      const selected = this.pickerList.querySelector("[aria-selected=true]") ?? this.pickerList.firstElementChild;
+      selected?.scrollIntoView({ block: "nearest" });
+      selected?.focus();
+    } else if (focusButton) this.pickerBtn.focus();
+  }
+
+  pickType(k) {
+    if (this.type.value !== k) {
+      this.type.value = k;
+      this.type.dispatchEvent(new Event("change"));
+    }
+    this.syncPicker();
+    this.togglePicker(false);
+  }
+
+  // Arrows / Home / End move, Enter or Space picks, Escape and Tab close; a letter jumps to the next name with it.
+  pickerKey(e) {
+    const options = [...this.pickerList.children];
+    const at = options.indexOf(document.activeElement);
+    const go = (i) => options[Math.max(0, Math.min(options.length - 1, i))]?.focus();
+    if (e.key === "ArrowDown") go(at + 1);
+    else if (e.key === "ArrowUp") go(at - 1);
+    else if (e.key === "Home") go(0);
+    else if (e.key === "End") go(options.length - 1);
+    else if (e.key === "Enter" || e.key === " ") { if (at >= 0) this.pickType(options[at].dataset.type); }
+    else if (e.key === "Escape") { e.stopPropagation(); this.togglePicker(false); } // only the list, not the build window
+    else if (e.key === "Tab") { this.togglePicker(false, false); return; }
+    else if (e.key.length === 1 && /\p{L}|\d/u.test(e.key)) {
+      const letter = e.key.toLocaleLowerCase();
+      const next = options.findIndex((o, i) => i > at && o.textContent.trim().toLocaleLowerCase().startsWith(letter));
+      go(next >= 0 ? next : options.findIndex((o) => o.textContent.trim().toLocaleLowerCase().startsWith(letter)));
+    } else return;
+    e.preventDefault();
   }
 
   update() {
@@ -285,6 +411,7 @@ export class BuildController {
   }
 
   close() {
+    this.togglePicker(false, false);
     this.form.hidden = true;
     this.draft = null;
     this.map.setMarker(null);

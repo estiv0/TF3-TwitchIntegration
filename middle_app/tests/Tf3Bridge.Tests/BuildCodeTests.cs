@@ -31,6 +31,19 @@ public sealed class BuildCodeTests
         Assert.Equal(new BuildPlace(-3000, 2000, "Kopalnia Jasia", Coal), r.Place);
     }
 
+    [Fact]
+    public void Industry_code_may_use_any_game_type_not_on_the_map()
+    {
+        const string sandPit = "::/industries/sand_pit/sand_pit.con";
+        var types = GameObjects.ParseIndustryTypes(System.Text.Json.JsonDocument.Parse(
+            """{ "industryTypes": [{ "file": "::/industries/coal_mine/coal_mine.con", "name": "Coal Mine" }, { "file": "::/industries/sand_pit/sand_pit.con" }] }""").RootElement);
+
+        var r = BuildCode.Parse("[-3000,2000,sand_pit] Piaskarnia Jasia", industry: true, Objects, Bounds, industryTypes: types);
+
+        Assert.Equal(new BuildPlace(-3000, 2000, "Piaskarnia Jasia", sandPit), r.Place);
+        Assert.Contains("nieznany rodzaj zakładu", BuildCode.Parse("[-3000,2000,steel_mill] Huta", true, Objects, Bounds, industryTypes: types).Error);
+    }
+
     [Theory]
     [InlineData("Nowa Wieś", false, "to nie jest kod z mapy")]
     [InlineData("[3000, -2500] ", false, "podaj nazwę")]
