@@ -467,7 +467,54 @@ function clipLeg(steps, a, b) {
     if (k === k1 && sb) to = c[3];
     if (t0 !== t1) curves.push(c);
   }
+  for (let k = 1; k < curves.length; k++) trimOverlap(curves, k);
   return { curves, from, to };
+}
+
+// Curves k - 1 and k moved onto lanes: on the inside of a turn they run past each other at the junction (one lane ends
+// beyond the other street's lane). The one that runs past where their directions cross is cut there, so joinCurves
+// turns at that point instead of looping back.
+function trimOverlap(curves, k) {
+  const prev = curves[k - 1], next = curves[k];
+  const p = prev[3], q = next[0];
+  const dp = curveTangent(prev, 1), dq = curveTangent(next, 0);
+  const lp = Math.hypot(dp.x, dp.y), lq = Math.hypot(dq.x, dq.y);
+  if (!(lp > 0) || !(lq > 0)) return;
+  const ux = dp.x / lp, uy = dp.y / lp, vx = dq.x / lq, vy = dq.y / lq;
+  const cross = ux * vy - uy * vx;
+  if (Math.abs(cross) < 0.1) return; // (almost) parallel: a lane change or a U-turn
+  const wx = q.x - p.x, wy = q.y - p.y;
+  // the crossing X = p + s * u = q - r * v; s < 0: prev runs past X, r < 0: next starts past X
+  const s = (wx * vy - wy * vx) / cross, r = (ux * wy - uy * wx) / cross;
+  const x = { x: p.x + s * ux, y: p.y + s * uy };
+  const reach = 2 * Math.hypot(wx, wy) + 10; // only a junction's worth, not a crossing far away
+  if (s < 0 && -s < reach) {
+    const t = closestOnCurve(prev, x);
+    if (t > 0) curves[k - 1] = splitCurve(prev, t)[0];
+  }
+  if (r < 0 && -r < reach) {
+    const t = closestOnCurve(next, x);
+    if (t < 1) curves[k] = splitCurve(next, t)[1];
+  }
+}
+
+// The parameter of the point of curve c nearest to p.
+function closestOnCurve(c, p) {
+  const N = 32;
+  const dist = (t) => { const q = curvePoint(c, t); return Math.hypot(q.x - p.x, q.y - p.y); };
+  let best = 0, bestD = dist(0);
+  for (let i = 1; i <= N; i++) {
+    const d = dist(i / N);
+    if (d < bestD) { best = i / N; bestD = d; }
+  }
+  for (let h = 0.5 / N; h > 1e-4; h /= 2) {
+    for (const t of [best - h, best + h]) {
+      if (t < 0 || t > 1) continue;
+      const d = dist(t);
+      if (d < bestD) { best = t; bestD = d; }
+    }
+  }
+  return best;
 }
 
 // How far (m) the lane through point lane lies to the right of edge e's centre line (looking from node0 to node1);
