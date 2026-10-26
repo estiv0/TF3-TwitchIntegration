@@ -480,8 +480,60 @@ function clipLeg(steps, a, b) {
     if (k === k1 && sb) to = c[3];
     if (t0 !== t1) curves.push(c);
   }
-  for (let k = 1; k < curves.length; k++) trimOverlap(curves, k);
+  for (let k = 1; k < curves.length; k++) {
+    trimOverlap(curves, k);
+    easeJoin(curves, k);
+  }
   return { curves, from, to };
+}
+
+// Curves k - 1 and k meet at a junction, where a vehicle crossing it changes lanes (or turns): it does so over the
+// whole junction, not at its centre. Both curves are pulled back from the junction (by ~a junction's half: JOIN_EASE_M,
+// more for a bigger jump, never more than JOIN_EASE_SHARE of a curve), so joinCurves spreads the change. Not for
+// continuous edges (no jump) and U-turns.
+function easeJoin(curves, k) {
+  const prev = curves[k - 1], next = curves[k];
+  const p = prev[3], q = next[0];
+  const gap = Math.hypot(q.x - p.x, q.y - p.y);
+  if (gap < 0.3) return;
+  const dp = curveTangent(prev, 1), dq = curveTangent(next, 0);
+  const lp = Math.hypot(dp.x, dp.y), lq = Math.hypot(dq.x, dq.y);
+  if (!(lp > 0) || !(lq > 0) || (dp.x * dq.x + dp.y * dq.y) / (lp * lq) < -0.5) return;
+  const d = Math.max(JOIN_EASE_M, 1.5 * gap);
+  const tp = curveAtLength(prev, Math.min(d, JOIN_EASE_SHARE * curveLength(prev)), true);
+  const tq = curveAtLength(next, Math.min(d, JOIN_EASE_SHARE * curveLength(next)), false);
+  if (tp < 1) curves[k - 1] = splitCurve(prev, tp)[0];
+  if (tq > 0) curves[k] = splitCurve(next, tq)[1];
+}
+
+const JOIN_EASE_M = 8;
+const JOIN_EASE_SHARE = 0.4;
+
+function curveLength(c, n = 16) {
+  let len = 0, a = c[0];
+  for (let i = 1; i <= n; i++) {
+    const b = curvePoint(c, i / n);
+    len += Math.hypot(b.x - a.x, b.y - a.y);
+    a = b;
+  }
+  return len;
+}
+
+// The parameter d m along curve c from its start (fromEnd: from its end), sampled.
+function curveAtLength(c, d, fromEnd) {
+  const n = 32;
+  let len = 0, a = curvePoint(c, fromEnd ? 1 : 0);
+  for (let i = 1; i <= n; i++) {
+    const t = fromEnd ? 1 - i / n : i / n, b = curvePoint(c, t);
+    const step = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len + step >= d) {
+      const f = step > 0 ? (d - len) / step : 0, t0 = fromEnd ? 1 - (i - 1) / n : (i - 1) / n;
+      return t0 + (t - t0) * f;
+    }
+    len += step;
+    a = b;
+  }
+  return fromEnd ? 0 : 1;
 }
 
 // Curves k - 1 and k moved onto lanes: on the inside of a turn they run past each other at the junction (one lane ends
