@@ -185,7 +185,7 @@ export class MapView {
     this.frame = 0;
     this.cargoHover = null;     // { key, kind, id, cargo, dir } - the cargo pointed at in the details (hoverCargo)
     this.cargoView = null;      // the view from before hoverCargo zoomed out - restored when the pointer leaves
-    this.linksCache = null;     // { key, industries, towns, links } - industryLinks() for the cargo / selected industry
+    this.linksCache = null;     // { key, industries, towns, links } - industryLinks() for the cargo pointed at
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
@@ -400,7 +400,6 @@ export class MapView {
       this.onLayers?.();
     }
     this.selected = { kind, id };
-    if (kind === "industry" && this.fitLinks()) return;
     this.view.scale = Math.max(this.view.scale, 0.25);
     this.centerOn(item.px, item.py);
   }
@@ -671,42 +670,24 @@ export class MapView {
     this.requestDraw();
   }
 
-  // Potential trade partners anywhere on the map, { center, dir, suppliers, consumers } with the cargo of each connection:
-  //  * the cargo pointed at (hoverCargo): the industries that produce it -> the town / industry ("in"),
-  //    or the industry -> the industries and towns that need it ("out");
-  //  * otherwise the selected industry (dir null): suppliers - industries that produce what it needs,
-  //    consumers - industries and towns that need what it produces.
-  // null when neither. Kept until the selection or the data changes.
+  // Potential trade partners anywhere on the map of the cargo pointed at (hoverCargo), { center, dir, suppliers, consumers }
+  // with the cargo of each connection: the industries that produce it -> the town / industry ("in"),
+  // or the industry -> the industries and towns that need it ("out").
+  // null when none. Kept until the cargo or the data changes.
   industryLinks() {
-    const sel = this.selected, hover = this.cargoHover;
-    const key = hover ? `cargo|${hover.key}` : sel?.kind === "industry" ? `industry|${sel.id}` : null;
-    if (!key) return null;
+    const hover = this.cargoHover;
+    if (!hover) return null;
+    const key = hover.key;
     const c = this.linksCache;
     if (c?.key === key && c.industries === this.industries && c.towns === this.towns) return c.links;
     let links = null;
-    const center = hover && (hover.kind === "town" ? this.towns : this.industries).find((x) => x.id === hover.id);
-    const ind = !hover && this.industries.find((i) => i.id === sel.id);
+    const center = (hover.kind === "town" ? this.towns : this.industries).find((x) => x.id === hover.id);
     if (center) {
       const { cargo, dir } = hover;
       const link = (item) => ({ item, cargos: [cargo] });
       const suppliers = dir === "in" ? this.industries.filter((i) => i !== center && i.produces.has(cargo)).map(link) : [];
       const consumers = dir === "out" ? [...this.industries, ...this.towns].filter((x) => x !== center && x.needs.has(cargo)).map(link) : [];
       links = { center, dir, suppliers, consumers };
-    } else if (ind) {
-      const common = (a, b) => [...a].filter((cargo) => b.has(cargo));
-      const suppliers = [], consumers = [];
-      for (const other of this.industries) {
-        if (other === ind) continue;
-        const gets = common(ind.needs, other.produces);
-        if (gets.length) suppliers.push({ item: other, cargos: gets });
-        const gives = common(ind.produces, other.needs);
-        if (gives.length) consumers.push({ item: other, cargos: gives });
-      }
-      for (const town of this.towns) {
-        const gives = common(ind.produces, town.needs);
-        if (gives.length) consumers.push({ item: town, cargos: gives });
-      }
-      links = { center: ind, dir: null, suppliers, consumers };
     }
     this.linksCache = { key, industries: this.industries, towns: this.towns, links };
     return links;
@@ -1690,7 +1671,6 @@ export class MapView {
       const line = hit?.kind === "vehicle" ? hit.line : hit?.kind === "stop" ? hit.lines[0]?.id : undefined;
       const sel = line !== undefined ? { kind: "line", id: line, data: this.lines.get(line) } : hit?.kind === "stop" ? null : hit;
       this.select(sel?.kind, sel?.id);
-      if (sel?.kind === "industry") this.fitLinks();
       this.onSelect?.(sel);
     });
 
