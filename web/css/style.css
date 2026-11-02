@@ -101,6 +101,9 @@ button { font: inherit; color: inherit; }
 }
 .chains-btn:hover { border-color: var(--accent); color: var(--accent); }
 .chains-ico { width: 14px; height: 14px; flex: none; fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+/* GitHub link: the same pill, just the icon. */
+.gh-btn { padding: 6px; }
+.gh-ico { width: 14px; height: 14px; flex: none; fill: currentColor; }
 
 /* Stream button (js/stream.js): Twitch color; a pulsing red dot when the game sends fresh data. */
 .stream-btn {
@@ -491,6 +494,11 @@ button { font: inherit; color: inherit; }
 
 /* ---------------------------------------------------------------- narrow screens */
 .sheet-toggle { display: none; }
+
+@media (max-width: 1600px) {
+  /* The top bar no longer fits in one row: the chains link shrinks to its icon, the text in the tooltip (title). */
+  .chains-btn { font-size: 0; gap: 0; padding: 6px; }
+}
 
 @media (max-width: 900px) {
   /* The top bar in two low rows: logo + name, status and language; below them the indicators in one line. */

@@ -16,6 +16,11 @@ The interfaces of Tf3Bridge and the website are in **English and Polish**.
 
 **Live demo:** [gin.estfosoft.com](https://gin.estfosoft.com/)
 
+**Authors:**
+
+- **Idea:** GwizdeK ([twitch.tv/gwizdek_and_newt](https://www.twitch.tv/gwizdek_and_newt))
+- **Development:** estiv0
+
 ![The website: a town with its needs and the earnings of the lines that serve it](docs/screenshots/town.webp)
 
 ## How it works
