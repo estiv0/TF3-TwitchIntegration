@@ -24,6 +24,7 @@ local commands = ug_require "commands.lua"
 local effects = ug_require "effects.lua"
 local footprint = ug_require "footprint.lua"
 local routes = ug_require "routes.lua"
+local names = ug_require "names.lua"
 
 local cfg = {
 	dynamicEveryDays = 2,          -- export of towns, industry, stations, lines and vehicles (game time)...
@@ -55,6 +56,7 @@ local cfg = {
 	terrain = true,                -- terrain export; false = off
 	settingsEveryWallSec = 5,      -- how often to read the settings from Tf3Bridge (see SETTINGS)
 	commandsEveryWallSec = 1,      -- how often to read the command queue from Tf3Bridge (commands.lua)
+	namesEveryWallSec = 10,        -- how often to fix names of industries the game built by an adopted town (names.lua)
 }
 
 -- Settings from the "Mod settings" window in Tf3Bridge: local\towns_industries\tf3export_settings.lua
@@ -108,6 +110,7 @@ local S = {
 	companyKey = nil,        -- the month company comes from
 	settingsWall = nil,      -- when we last read the settings (doesn't depend on the session)
 	commandsWall = nil,      -- when we last read the command queue
+	namesWall = nil,         -- when we last fixed industry names
 }
 local terrainBenchDone = false -- once per game start, not per session
 
@@ -129,6 +132,7 @@ local function newSession(now)
 	S.vehiclePos, S.vehiclePosMs, S.dyn = cfg.vehiclePositions, {}, nil
 	S.company, S.companyKey = nil, nil
 	commands.reset()
+	names.reset()
 	util.log(string.format("new session %s (writer mode '%s')", S.session, writer.mode()))
 end
 
@@ -752,6 +756,13 @@ local script = {
 			S.commandsWall = wall
 			local okCmd, errCmd = pcall(commands.poll, wall, now, state:get() or {})
 			if not okCmd then util.log("commands failed: " .. tostring(errCmd)) end
+		end
+
+		-- industries the game named "Town | owner Mine" -> "Town Mine | owner"
+		if S.namesWall == nil or wall - S.namesWall >= cfg.namesEveryWallSec then
+			S.namesWall = wall
+			local okNames, errNames = pcall(names.step, wall)
+			if not okNames then util.log("names failed: " .. tostring(errNames)) end
 		end
 
 		-- new session: the first start or game time rolled back (an older save loaded)

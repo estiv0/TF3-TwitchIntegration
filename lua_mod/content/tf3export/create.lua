@@ -18,6 +18,18 @@ local C = {}
 
 local MAX_NAME = 200       -- bytes, as in setName
 local FIND_RADIUS = 1500   -- m: how far from the chosen point we look for the new industry
+local NAMING_SEC = 60      -- how long names.lua keeps its hands off an industry we're naming
+
+-- industry id -> wall time when we found it; names.lua skips these (see C.isNaming)
+local naming = {}
+
+local function wallNow() return (os and os.time) and os.time() or 0 end
+
+-- true while a viewer's new industry is waiting for its name (names.lua must not rename it meanwhile).
+function C.isNaming(id, wall)
+	local t = naming[id]
+	return t ~= nil and (wall or wallNow()) - t < NAMING_SEC
+end
 
 -- Industries placed on water (the rest only on land).
 local ON_WATER = { oil_platform = true, fishing_grounds = true, sand_excavator = true }
@@ -181,9 +193,13 @@ function C.industry(c, pending)
 	local found, renamed = nil, false
 	local info = {} -- info.entity: id of the new industry (for the chat link and the notification)
 	return function()
-		found = found or newIndustryNear(before, p.x, p.y)
-		if not found then return false end
+		if not found then
+			found = newIndustryNear(before, p.x, p.y)
+			if not found then return false end
+			naming[found] = wallNow()
+		end
 		if util.name(found) == p.full then
+			naming[found] = nil
 			info.entity = found
 			return true
 		end
